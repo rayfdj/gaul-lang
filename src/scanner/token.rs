@@ -1,0 +1,76 @@
+
+#[derive(Clone, Debug)]
+pub struct Token {
+    pub token_type: TokenType,
+    pub lexeme: String,
+    pub line: usize,
+}
+
+impl Token {
+    pub fn new(token_type: TokenType, lexeme: impl Into<String>, /* literal: Option<String>,*/ line: usize) -> Self {
+        Token {
+            token_type,
+            lexeme: lexeme.into(),
+            line
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum TokenType {
+    // Single-character tokens
+    LeftParen,      // (
+    RightParen,     // )
+    LeftBrace,      // {
+    RightBrace,     // }
+    Comma,          // ,
+    Dot,            // .
+    Minus,          // -
+    Plus,           // +
+    Semicolon,      // ;
+    Slash,          // /
+    Star,           // *
+
+    // One or two character tokens
+    Bang,           // !
+    NotEqual,       // !=
+    Assign,         // =
+    Equals,         // ==
+    Greater,        // >
+    GreaterEqual,   // >=
+    Less,           // <
+    LessEqual,      // <=
+
+    // Funky operators
+    Pipe,           // |>
+    ApproxEqual,    // ~= (jam karet!)
+    Range,          // ..
+
+    // Literals
+    Identifier,     // variable names, function names
+    String(String), // "hello world"
+    Number(f64),    // 123, 45.67
+
+    // Keywords
+    And,            // and
+    Class,          // class
+    Else,           // else
+    False,          // false
+    Function,       // fn
+    For,            // for
+    In,             // in
+    If,             // if
+    Null,           // null
+    Or,             // or
+    Return,         // return
+    Super,          // super
+    This,           // this
+    True,           // true
+    Let,            // let (immutable binding)
+    Var,            // var (mutable binding)
+    While,          // while
+
+    // Control
+    Newline,        // significant for ending identifier
+    Eof,            // end of file
+}
