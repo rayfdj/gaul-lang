@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::scanner::token::{Token, TokenType};
+use std::collections::HashMap;
 
 pub struct Scanner {
     source: Vec<char>,
@@ -62,7 +62,7 @@ impl Scanner {
                 } else {
                     self.add_token(TokenType::Dot)
                 }
-            },
+            }
 
             // Pipe operator
             '|' => {
@@ -71,7 +71,7 @@ impl Scanner {
                 } else {
                     self.report_error("Expected '>' after '|' for pipe operator")
                 }
-            },
+            }
 
             // Approximate equality (jam karet!)
             '~' => {
@@ -80,7 +80,7 @@ impl Scanner {
                 } else {
                     self.report_error("Expected '=' after '~' for approximate equality")
                 }
-            },
+            }
 
             // One or two character tokens
             '!' => {
@@ -90,7 +90,7 @@ impl Scanner {
                     TokenType::Bang
                 };
                 self.add_token(token_type);
-            },
+            }
 
             '=' => {
                 let token_type = if self.match_char('=') {
@@ -99,7 +99,7 @@ impl Scanner {
                     TokenType::Assign
                 };
                 self.add_token(token_type);
-            },
+            }
 
             '>' => {
                 let token_type = if self.match_char('=') {
@@ -108,7 +108,7 @@ impl Scanner {
                     TokenType::Greater
                 };
                 self.add_token(token_type);
-            },
+            }
 
             '<' => {
                 let token_type = if self.match_char('=') {
@@ -117,7 +117,7 @@ impl Scanner {
                     TokenType::Less
                 };
                 self.add_token(token_type);
-            },
+            }
 
             '/' => {
                 // Handle comments or division
@@ -129,37 +129,37 @@ impl Scanner {
                 } else {
                     self.add_token(TokenType::Slash);
                 }
-            },
+            }
 
             // Whitespace (not newlines)
-            ' ' | '\r' | '\t' => {},
+            ' ' | '\r' | '\t' => {}
 
             // Newlines - significant in Gaul Lang!
             '\n' => {
                 self.line += 1;
                 // Only emit if last token wasn't already a Newline (collapse consecutive)
-                let should_emit = self.tokens.last()
+                let should_emit = self
+                    .tokens
+                    .last()
                     .map(|t| t.token_type != TokenType::Newline)
                     .unwrap_or(true);
                 if should_emit {
                     self.add_token(TokenType::Newline);
                 }
-            },
+            }
 
             // strings
             '"' => self.handle_string(),
 
             // numbers
-            c if c.is_ascii_digit() => {
-                match c {
-                    '0' => match self.peek() {
-                        Some('x') | Some('X') => { self.handle_non_base10(16) },
-                        Some('b') | Some('B') => { self.handle_non_base10(2) },
-                        Some('o') | Some('O') => { self.handle_non_base10(8) },
-                        _ => { self.handle_number() }
-                    },
-                    _ => { self.handle_number() }
-                }
+            c if c.is_ascii_digit() => match c {
+                '0' => match self.peek() {
+                    Some('x') | Some('X') => self.handle_non_base10(16),
+                    Some('b') | Some('B') => self.handle_non_base10(2),
+                    Some('o') | Some('O') => self.handle_non_base10(8),
+                    _ => self.handle_number(),
+                },
+                _ => self.handle_number(),
             },
 
             // identifiers
@@ -196,8 +196,11 @@ impl Scanner {
 
     fn match_char(&mut self, expected: char) -> bool {
         match self.current_char() {
-            Some(ch) if ch == expected => { self.current += 1; true }
-            _ => false
+            Some(ch) if ch == expected => {
+                self.current += 1;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -217,7 +220,9 @@ impl Scanner {
         self.advance();
 
         // remember this is the string value, not the lexeme, so we're excluding the double quotation marks
-        let value = self.source[self.start + 1..self.current - 1].iter().collect::<String>();
+        let value = self.source[self.start + 1..self.current - 1]
+            .iter()
+            .collect::<String>();
         self.add_token(TokenType::String(value));
     }
 
@@ -228,7 +233,10 @@ impl Scanner {
         // Check for leading underscore
         if self.peek() == Some('_') {
             let prefix: String = self.source[self.start..self.current].iter().collect();
-            self.report_error(format!("Invalid number - leading underscore after '{}'", prefix));
+            self.report_error(format!(
+                "Invalid number - leading underscore after '{}'",
+                prefix
+            ));
             while self.peek().is_some_and(|c| c.is_alphanumeric() || c == '_') {
                 self.advance();
             }
@@ -264,7 +272,10 @@ impl Scanner {
 
         // Check for trailing underscore
         if raw.ends_with('_') {
-            self.report_error(format!("Invalid number '{}' - trailing underscore not allowed", raw));
+            self.report_error(format!(
+                "Invalid number '{}' - trailing underscore not allowed",
+                raw
+            ));
             return;
         }
 
@@ -277,17 +288,16 @@ impl Scanner {
         if text.is_empty() {
             self.report_error(format!(
                 "Expected digits after '{}'",
-                self.source[self.start..self.start + 2].iter().collect::<String>()
+                self.source[self.start..self.start + 2]
+                    .iter()
+                    .collect::<String>()
             ));
             return;
         }
 
         match i64::from_str_radix(&text, radix) {
             Ok(value) => self.add_token(TokenType::Number(value as f64)),
-            Err(_) => self.report_error(format!(
-                "Invalid literal: '{}'",
-                raw
-            )),
+            Err(_) => self.report_error(format!("Invalid literal: '{}'", raw)),
         }
     }
 
@@ -324,13 +334,19 @@ impl Scanner {
 
         // Check for trailing underscore
         if raw.ends_with('_') {
-            self.report_error(format!("Invalid number '{}' - trailing underscore not allowed", raw));
+            self.report_error(format!(
+                "Invalid number '{}' - trailing underscore not allowed",
+                raw
+            ));
             return;
         }
 
         // Check for underscore next to decimal point
         if raw.contains("_.") || raw.contains("._") {
-            self.report_error(format!("Invalid number '{}' - underscore cannot be adjacent to decimal point", raw));
+            self.report_error(format!(
+                "Invalid number '{}' - underscore cannot be adjacent to decimal point",
+                raw
+            ));
             return;
         }
 
@@ -350,6 +366,15 @@ impl Scanner {
                 self.advance();
             }
 
+            let text: String = self.source[self.start..self.current].iter().collect();
+
+            // If current word is a keyword, stop here — don't absorb more words
+            if self.keywords.contains_key(&text) {
+                let token_type = self.keywords.get(&text).cloned().unwrap();
+                self.add_token(token_type);
+                return;
+            }
+
             // Space followed by alphabetic char? Continue the identifier!
             if self.peek() == Some(' ') && self.peek_next().is_some_and(|c| c.is_alphabetic()) {
                 self.advance(); // consume the space
@@ -364,7 +389,10 @@ impl Scanner {
 
         // Reserved words only match if single word (no spaces)
         let token_type = if !text.contains(' ') {
-            self.keywords.get(&text).cloned().unwrap_or(TokenType::Identifier)
+            self.keywords
+                .get(&text)
+                .cloned()
+                .unwrap_or(TokenType::Identifier)
         } else {
             TokenType::Identifier
         };
@@ -373,7 +401,9 @@ impl Scanner {
     }
 
     fn add_token(&mut self, t: TokenType) {
-        let text = self.source[self.start..self.current].iter().collect::<String>();
+        let text = self.source[self.start..self.current]
+            .iter()
+            .collect::<String>();
         self.tokens.push(Token::new(t, text, self.line));
     }
 
@@ -381,5 +411,4 @@ impl Scanner {
         let error = format!("Line {}: {}", self.line, message.into());
         self.errors.push(error);
     }
-
 }

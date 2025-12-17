@@ -7,7 +7,7 @@ pub struct Token {
 }
 
 impl Token {
-    pub fn new(token_type: TokenType, lexeme: impl Into<String>, /* literal: Option<String>,*/ line: usize) -> Self {
+    pub fn new(token_type: TokenType, lexeme: impl Into<String>, line: usize) -> Self {
         Token {
             token_type,
             lexeme: lexeme.into(),

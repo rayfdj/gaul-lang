@@ -30,8 +30,8 @@ pub enum ExprKind {
     // Control Flow Expressions
     If {
         condition: Box<Expr>,
-        then: Box<Expr>,
-        else_: Option<Box<Expr>>,
+        then_branch: Box<Expr>,
+        else_branch: Option<Box<Expr>>,
     },
     While {
         condition: Box<Expr>,
@@ -77,7 +77,7 @@ pub enum ExprKind {
 
     // Primary Expressions
     Number(f64),
-    String(String),
+    Str(String),
     Bool(bool),
     Null,
     Identifier(String),

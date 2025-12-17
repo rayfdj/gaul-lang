@@ -1,6 +1,6 @@
+mod keywords;
 mod parser;
 mod scanner;
-mod keywords;
 
 use crate::keywords::load_keywords;
 use crate::parser::parser::Parser;
@@ -40,18 +40,81 @@ fn main() -> Result<()> {
 
 fn run_prompt(keywords: &HashMap<String, TokenType>) -> Result<()> {
     let stdin = io::stdin();
-    let reader = BufReader::new(stdin.lock());
+    let mut reader = BufReader::new(stdin.lock());
+    let mut buffer = String::new();
 
-    print!("> ");
-    io::stdout().flush()?;
-
-    for line in reader.lines() {
-        run(&line?, keywords)?;
-        print!("> ");
+    loop {
+        // Change prompt if we are in the middle of a multi-line block
+        if buffer.is_empty() {
+            print!("> ");
+        } else {
+            print!("| ");
+        }
         io::stdout().flush()?;
+
+        let mut line = String::new();
+        let bytes_read = reader.read_line(&mut line)?;
+
+        if bytes_read == 0 {
+            break;
+        } // Ctrl+D
+
+        buffer.push_str(&line);
+
+        // Check if the current buffer has balanced braces/parens
+        if is_complete(&buffer) {
+            if !buffer.trim().is_empty() {
+                if let Err(e) = run(&buffer, keywords) {
+                    eprintln!("Execution error: {}", e);
+                }
+            }
+            buffer.clear();
+        }
+    }
+    Ok(())
+}
+
+fn is_complete(code: &str) -> bool {
+    let mut indent = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut iter = code.chars().peekable();
+
+    while let Some(c) = iter.next() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            } else if c == '\n' {
+                // Unterminated string on this line - but keep going,
+                // the scanner will report the error
+                in_string = false;
+            }
+            continue;
+        }
+
+        match c {
+            '"' => in_string = true,
+            '/' => {
+                if iter.peek() == Some(&'/') {
+                    while let Some(&next) = iter.peek() {
+                        if next == '\n' {
+                            break;
+                        }
+                        iter.next();
+                    }
+                }
+            }
+            '{' | '(' => indent += 1,
+            '}' | ')' => indent -= 1,
+            _ => {}
+        }
     }
 
-    Ok(())
+    indent <= 0 && !in_string
 }
 
 fn run_file(path: &str, keywords: &HashMap<String, TokenType>) -> Result<()> {
@@ -67,7 +130,7 @@ fn run(source: &str, keywords: &HashMap<String, TokenType>) -> Result<()> {
         Ok(tokens) => {
             tokens.iter().for_each(|token| println!("{:?}", token));
 
-            let mut parser = Parser::new(tokens);
+            let parser = Parser::new(tokens);
             match parser.parse() {
                 Ok(expr) => println!("Parsed: {:?}", expr),
                 Err(e) => eprintln!("Parse error: {:?}", e),
