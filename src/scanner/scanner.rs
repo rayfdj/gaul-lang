@@ -376,7 +376,7 @@ impl Scanner {
             }
 
             // Space followed by alphabetic char? Continue the identifier!
-            if self.peek() == Some(' ') && self.peek_next().is_some_and(|c| c.is_alphabetic()) {
+            if self.peek() == Some(' ') && self.peek_next().is_some_and(|c| c.is_alphanumeric() || c == '_') {
                 self.advance(); // consume the space
                 continue;
             }

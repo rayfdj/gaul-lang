@@ -16,7 +16,6 @@ pub struct ParseError {
 pub struct Parser {
     tokens: Vec<Token>,
     current: usize,
-    errors: Vec<ParseError>,
 }
 
 impl Parser {
@@ -24,7 +23,6 @@ impl Parser {
         Self {
             tokens,
             current: 0,
-            errors: Vec::new(),
         }
     }
 
@@ -98,6 +96,15 @@ impl Parser {
         let mut errors = Vec::new();
 
         while !self.is_at_end() {
+            // Skip newlines between declarations
+            while self.check(TokenType::Newline) {
+                self.advance();
+            }
+
+            if self.is_at_end() {
+                break;
+            }
+
             match self.declaration() {
                 Ok(decl) => declarations.push(decl),
                 Err(e) => {
