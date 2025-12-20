@@ -676,15 +676,22 @@ impl Parser {
             } else {
                 let expr = self.expression()?;
 
-                if self.check(TokenType::RightBrace) {
-                    final_expr = Some(Box::new(expr));
-                } else {
-                    self.consume(TokenType::Newline, "newline")?;
+                // Skip newlines, then check if we're at }
+                if self.check(TokenType::Newline) {
+                    self.advance();
+                    // skip any extra newlines
+                    while self.check(TokenType::Newline) {
+                        self.advance();
+                    }
                     let expr_line = expr.line;
-                    declarations.push(Declaration {
-                        kind: ExprStmt(expr),
-                        line: expr_line,
-                    });
+                    if self.check(TokenType::RightBrace) {
+                        final_expr = Some(Box::new(expr));
+                    } else {
+                        // there's more stuff, so this was a statement
+                        declarations.push(Declaration { kind: ExprStmt(expr), line: expr_line });
+                    }
+                } else if self.check(TokenType::RightBrace) {
+                    final_expr = Some(Box::new(expr));
                 }
             }
         }
