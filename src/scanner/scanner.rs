@@ -94,7 +94,7 @@ impl Scanner {
 
             '=' => {
                 let token_type = if self.match_char('=') {
-                    TokenType::Equals
+                    TokenType::Equal
                 } else {
                     TokenType::Assign
                 };

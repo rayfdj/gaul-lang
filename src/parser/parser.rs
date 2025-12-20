@@ -419,7 +419,7 @@ impl Parser {
         let mut left = self.comparison()?;
 
         while self.match_any(&[
-            TokenType::Equals,
+            TokenType::Equal,
             TokenType::NotEqual,
             TokenType::ApproxEqual,
         ]) {

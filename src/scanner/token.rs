@@ -35,7 +35,7 @@ pub enum TokenType {
     Bang,           // !
     NotEqual,       // !=
     Assign,         // =
-    Equals,         // ==
+    Equal,         // ==
     Greater,        // >
     GreaterEqual,   // >=
     Less,           // <

@@ -1,6 +1,7 @@
 mod keywords;
 mod parser;
 mod scanner;
+mod interpreter;
 
 use crate::keywords::load_keywords;
 use crate::parser::parser::Parser;
@@ -12,6 +13,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::io::{BufRead, BufReader, Write};
+use crate::interpreter::environment::Environment;
+use crate::interpreter::interpreter::Interpreter;
 
 #[derive(ClapParser)]
 #[command(name = "gaul")]
@@ -29,16 +32,17 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let keywords = load_keywords(cli.keywords.as_deref())?;
+    let mut interpreter = Interpreter::new(Environment::new());
 
     match cli.script {
-        None => run_prompt(&keywords)?,
-        Some(path) => run_file(&path, &keywords)?,
+        None => run_prompt(&keywords, &mut interpreter)?,
+        Some(path) => run_file(&path, &keywords, &mut interpreter)?,
     }
 
     Ok(())
 }
 
-fn run_prompt(keywords: &HashMap<String, TokenType>) -> Result<()> {
+fn run_prompt(keywords: &HashMap<String, TokenType>, interpreter: &mut Interpreter) -> Result<()> {
     let stdin = io::stdin();
     let mut reader = BufReader::new(stdin.lock());
     let mut buffer = String::new();
@@ -64,7 +68,7 @@ fn run_prompt(keywords: &HashMap<String, TokenType>) -> Result<()> {
         // Check if the current buffer has balanced braces/parens
         if is_complete(&buffer) {
             if !buffer.trim().is_empty() {
-                if let Err(e) = run(&buffer, keywords) {
+                if let Err(e) = run(&buffer, keywords, interpreter) {
                     eprintln!("Execution error: {}", e);
                 }
             }
@@ -117,22 +121,28 @@ fn is_complete(code: &str) -> bool {
     indent <= 0 && !in_string
 }
 
-fn run_file(path: &str, keywords: &HashMap<String, TokenType>) -> Result<()> {
+fn run_file(path: &str, keywords: &HashMap<String, TokenType>, interpreter: &mut Interpreter) -> Result<()> {
     let contents = fs::read_to_string(path)?;
-    run(&contents, keywords)?;
+    run(&contents, keywords, interpreter)?;
     Ok(())
 }
 
-fn run(source: &str, keywords: &HashMap<String, TokenType>) -> Result<()> {
+fn run(source: &str, keywords: &HashMap<String, TokenType>, interpreter: &mut Interpreter) -> Result<()> {
     let scanner = Scanner::new(source, keywords);
 
     match scanner.scan_tokens() {
         Ok(tokens) => {
-            tokens.iter().for_each(|token| println!("{:?}", token));
+            // tokens.iter().for_each(|token| println!("{:?}", token));
 
             let parser = Parser::new(tokens);
             match parser.parse() {
-                Ok(expr) => println!("Parsed: {:?}", expr),
+                Ok(program) => {
+                    // println!("Parsed: {:?}", program);
+                    match interpreter.interpret(program) {
+                        Ok(value) => println!("Value: {:?}", value),
+                        Err(e) => eprintln!("Runtime error: {:?}", e),
+                    }
+                },
                 Err(e) => eprintln!("Parse error: {:?}", e),
             }
         }
