@@ -339,7 +339,7 @@ impl Parser {
             let value = Box::new(self.assignment()?); // right-associative
 
             match &expr.kind {
-                Identifier(_) | Get { .. } => Ok(Expr {
+                Identifier { .. } | Get { .. } => Ok(Expr {
                     kind: Assign {
                         target: Box::new(expr),
                         value,
@@ -632,7 +632,10 @@ impl Parser {
                 let name = token.lexeme.clone();
                 self.advance();
                 Ok(Expr {
-                    kind: Identifier(name),
+                    kind: Identifier {
+                        name,
+                        resolved: None,
+                    },
                     line,
                 })
             }

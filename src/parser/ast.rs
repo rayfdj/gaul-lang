@@ -80,7 +80,10 @@ pub enum ExprKind {
     Str(String),
     Bool(bool),
     Null,
-    Identifier(String),
+    Identifier {
+        name: String,
+        resolved: Option<(usize, usize)>
+    },
 
     // Blocks
     Block {

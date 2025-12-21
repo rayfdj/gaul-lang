@@ -1,8 +1,9 @@
-use std::rc::Rc;
+use std::cell::RefCell;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::{Function, NativeFunction, Value};
 use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
 use crate::scanner::token::TokenType;
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeError {
@@ -15,8 +16,8 @@ pub struct Interpreter {
 }
 
 impl Interpreter {
-    pub fn new(env: Environment) -> Interpreter {
-        let mut interpreter = Interpreter { env };
+    pub fn new(env: Environment) -> Self {
+        let mut interpreter = Self { env };
         interpreter.define_native_functions();
         interpreter
     }
@@ -24,23 +25,19 @@ impl Interpreter {
     fn define_native_functions(&mut self) {
         self.env
             .define(
-                "println",
-                Value::NativeFn(
-                    Rc::from(NativeFunction {
-                        name: Rc::from("println"),
-                        arity: None,
-                        func: |args| {
-                            for arg in args {
-                                print!("{}", arg); // need Display impl for Value
-                            }
-                            println!(); // newline at end
-                            Ok(Value::Null)
+                Value::NativeFn(Rc::from(NativeFunction {
+                    name: Rc::from("println"),
+                    arity: None,
+                    func: |args| {
+                        for arg in args {
+                            print!("{}", arg); // need Display impl for Value
                         }
-                    })
-                ),
+                        println!(); // newline at end
+                        Ok(Value::Null)
+                    },
+                })),
                 false,
-            )
-            .unwrap();
+            );
     }
 
     pub fn interpret(&mut self, program: Program) -> Result<Value, RuntimeError> {
@@ -55,37 +52,39 @@ impl Interpreter {
         match &declaration.kind {
             DeclarationKind::Let { name, initializer } => {
                 let value = self.evaluate_expression(&initializer)?;
-                self.env
-                    .define(name.as_str(), value, false)
-                    .map(|()| Value::Null)
-                    .map_err(|msg| RuntimeError {
-                        line: declaration.line,
-                        message: msg,
-                    })
+                self.env.define(value, false);
+                Ok(Value::Null)
             }
             DeclarationKind::Var { name, initializer } => {
                 let value = self.evaluate_expression(&initializer)?;
-                self.env
-                    .define(name.as_str(), value, true)
-                    .map(|()| Value::Null)
-                    .map_err(|msg| RuntimeError {
-                        line: declaration.line,
-                        message: msg,
-                    })
+                self.env.define(value, true);
+                Ok(Value::Null)
             }
             DeclarationKind::Fn { name, params, body } => {
-                let function = Value::Fn(Rc::from(Function {
+                // 1) Reserve slot in current env
+                let slot = self.env.current_scope_len(); 
+                self.env.define(Value::Null, false);      // placeholder so slot exists
+
+                // 2) Capture closure AFTER reserving slot
+                let closure = Rc::new(RefCell::new(self.env.clone()));
+
+                // 3) Build function
+                let fun_rc = Rc::new(Function {
                     name: Rc::from(name.as_str()),
                     params: params.iter().map(|p| Rc::<str>::from(p.as_str())).collect(),
                     body: Rc::new(body.clone()),
-                }));
-                self.env
-                    .define(name.as_str(), function, false)
-                    .map(|()| Value::Null)
-                    .map_err(|msg| RuntimeError {
-                        line: declaration.line,
-                        message: msg,
-                    })
+                    closure: closure.clone(),
+                });
+
+                let fun_val = Value::Fn(fun_rc);
+
+                // 4) Patch function into BOTH:
+                //   - current env
+                //   - closure env
+                self.env.set_at(0, slot, fun_val.clone());
+                closure.borrow_mut().set_at(0, slot, fun_val);
+
+                Ok(Value::Null)
             }
             DeclarationKind::ExprStmt(expr) => self.evaluate_expression(&expr),
         }
@@ -98,23 +97,29 @@ impl Interpreter {
             ExprKind::Str(s) => Ok(Value::Str(Rc::<str>::from(s.as_str()))),
             ExprKind::Bool(b) => Ok(Value::Bool(*b)),
             ExprKind::Null => Ok(Value::Null),
-            ExprKind::Identifier(id) => self.env.get(id).map_err(|msg| RuntimeError {
-                line: expression.line,
-                message: msg,
-            }),
+            ExprKind::Identifier { name, resolved } => {
+                match resolved {
+                    Some((depth, slot)) => Ok(self.env.get_at(*depth, *slot)),
+                    None => panic!("Unresolved variable '{}'", name),  // should never happen
+                }
+            }
 
             // assignment
             ExprKind::Assign { target, value } => {
                 let value = self.evaluate_expression(&*value)?;
                 match &target.kind {
-                    ExprKind::Identifier(id) => self
-                        .env
-                        .assign(id.as_str(), value)
-                        .map(|()| Value::Null)
-                        .map_err(|msg| RuntimeError {
-                            line: expression.line,
-                            message: msg,
-                        }),
+                    ExprKind::Identifier { name, resolved } => {
+                        match resolved {
+                            Some((depth, slot)) => {
+                                self.env.assign_at(*depth, *slot, value).map_err(|msg| RuntimeError {
+                                    line: expression.line,
+                                    message: msg,
+                                })?;
+                                Ok(Value::Null)
+                            },
+                            None => panic!("Unresolved variable '{}'", name),  // should never happen
+                        }
+                    }
                     other => Err(RuntimeError {
                         line: expression.line,
                         message: format!(
@@ -332,20 +337,13 @@ impl Interpreter {
                 match iterable {
                     Value::Range(start, end) => {
                         self.env.push_scope();
+                        self.env.define(Value::Num(0.0), true);  // slot 0
                         let result = (|| {
-                            self.env
-                                .define(&variable, Value::Num(0.0), true)
-                                .map_err(|msg| RuntimeError {
+                            for i in (start as i64)..(end as i64) {
+                                self.env.assign_at(0, 0, Value::Num(i as f64)).map_err(|msg| RuntimeError {
                                     line: expression.line,
                                     message: msg,
                                 })?;
-                            for i in (start as i64)..(end as i64) {
-                                self.env.assign(variable.as_str(), Value::Num(i as f64)).map_err(
-                                    |msg| RuntimeError {
-                                        line: expression.line,
-                                        message: msg,
-                                    },
-                                )?;
                                 self.evaluate_expression(body.as_ref())?;
                             }
                             Ok(Value::Null)
@@ -381,19 +379,19 @@ impl Interpreter {
                                 ),
                             });
                         };
+                        // Save current env, switch to closure's env
+                        let saved_env = std::mem::replace(&mut self.env, fun.closure.borrow().clone());
+
                         self.env.push_scope();
                         let result = (|| {
-                            for (param, arg) in fun.params.iter().zip(argument_values) {
-                                self.env
-                                    .define(param.as_ref(), arg, false)
-                                    .map_err(|msg| RuntimeError {
-                                        line: expression.line,
-                                        message: msg,
-                                    })?;
+                            for (param, arg) in fun.params.iter().zip(argument_values.into_iter()) {
+                                self.env.define(arg, false); // or define_at_slot; depending on your slot env API
                             }
                             self.evaluate_expression(fun.body.as_ref())
                         })();
                         self.env.pop_scope();
+
+                        self.env = saved_env;
                         result
                     }
                     Value::NativeFn(native_fun) => {

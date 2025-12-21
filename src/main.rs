@@ -1,10 +1,14 @@
+mod interpreter;
 mod keywords;
 mod parser;
+mod resolver;
 mod scanner;
-mod interpreter;
 
+use crate::interpreter::environment::Environment;
+use crate::interpreter::interpreter::Interpreter;
 use crate::keywords::load_keywords;
 use crate::parser::parser::Parser;
+use crate::resolver::Resolver;
 use crate::scanner::scanner::Scanner;
 use crate::scanner::token::TokenType;
 use anyhow::Result;
@@ -13,8 +17,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::io::{BufRead, BufReader, Write};
-use crate::interpreter::environment::Environment;
-use crate::interpreter::interpreter::Interpreter;
 
 #[derive(ClapParser)]
 #[command(name = "gaul")]
@@ -121,13 +123,21 @@ fn is_complete(code: &str) -> bool {
     indent <= 0 && !in_string
 }
 
-fn run_file(path: &str, keywords: &HashMap<String, TokenType>, interpreter: &mut Interpreter) -> Result<()> {
+fn run_file(
+    path: &str,
+    keywords: &HashMap<String, TokenType>,
+    interpreter: &mut Interpreter,
+) -> Result<()> {
     let contents = fs::read_to_string(path)?;
     run(&contents, keywords, interpreter)?;
     Ok(())
 }
 
-fn run(source: &str, keywords: &HashMap<String, TokenType>, interpreter: &mut Interpreter) -> Result<()> {
+fn run(
+    source: &str,
+    keywords: &HashMap<String, TokenType>,
+    interpreter: &mut Interpreter,
+) -> Result<()> {
     let scanner = Scanner::new(source, keywords);
 
     match scanner.scan_tokens() {
@@ -136,13 +146,22 @@ fn run(source: &str, keywords: &HashMap<String, TokenType>, interpreter: &mut In
 
             let parser = Parser::new(tokens);
             match parser.parse() {
-                Ok(program) => {
+                Ok(mut program) => {
+                    let mut resolver = Resolver::new();
+                    match resolver.resolve(&mut program) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            eprintln!("Resolver error: {:?}", e);
+                            return Ok(());
+                        },
+                    }
+
                     // println!("Parsed: {:?}", program);
                     match interpreter.interpret(program) {
                         Ok(value) => println!("Value: {:?}", value),
                         Err(e) => eprintln!("Runtime error: {:?}", e),
                     }
-                },
+                }
                 Err(e) => eprintln!("Parse error: {:?}", e),
             }
         }

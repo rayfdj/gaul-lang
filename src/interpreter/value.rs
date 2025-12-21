@@ -1,5 +1,7 @@
-use std::rc::Rc;
+use crate::interpreter::environment::Environment;
 use crate::parser::ast::Expr;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -17,6 +19,7 @@ pub struct Function {
     pub name: Rc<str>,
     pub params: Vec<Rc<str>>,
     pub body: Rc<Expr>,
+    pub closure: Rc<RefCell<Environment>>,
 }
 
 #[derive(Debug)]
