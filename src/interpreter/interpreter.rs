@@ -297,8 +297,8 @@ impl Interpreter {
             }
 
             ExprKind::Range { start, end } => {
-                let start_val = self.evaluate_expression(&*start)?;
-                let end_val = self.evaluate_expression(&*end)?;
+                let start_val = self.evaluate_expression(start.as_ref())?;
+                let end_val = self.evaluate_expression(end.as_ref())?;
                 match (&start_val, &end_val) {
                     (Value::Num(n1), Value::Num(n2)) => {
                         if n1.fract() != 0.0 || n2.fract() != 0.0 {
