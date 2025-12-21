@@ -20,10 +20,10 @@ impl Environment {
         }
     }
 
-    pub fn define(&mut self, name: impl Into<String>, value: Value, is_mutable: bool) -> Result<(), String> {
+    pub fn define(&mut self, name: &str, value: Value, is_mutable: bool) -> Result<(), String> {
         let current_scope = self.scopes.last_mut().expect("environment has no scope");
 
-        match current_scope.entry(name.into()) {
+        match current_scope.entry(name.to_string()) {
             Entry::Vacant(e) => {
                 e.insert(Binding { value, is_mutable });
                 Ok(())

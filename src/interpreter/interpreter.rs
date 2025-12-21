@@ -1,5 +1,6 @@
+use std::rc::Rc;
 use crate::interpreter::environment::Environment;
-use crate::interpreter::value::Value;
+use crate::interpreter::value::{Function, NativeFunction, Value};
 use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
 use crate::scanner::token::TokenType;
 
@@ -24,17 +25,19 @@ impl Interpreter {
         self.env
             .define(
                 "println",
-                Value::NativeFn {
-                    name: "println".to_string(),
-                    arity: None,
-                    func: |args| {
-                        for arg in &args {
-                            print!("{}", arg); // need Display impl for Value
+                Value::NativeFn(
+                    Rc::from(NativeFunction {
+                        name: Rc::from("println"),
+                        arity: None,
+                        func: |args| {
+                            for arg in args {
+                                print!("{}", arg); // need Display impl for Value
+                            }
+                            println!(); // newline at end
+                            Ok(Value::Null)
                         }
-                        println!(); // newline at end
-                        Ok(Value::Null)
-                    },
-                },
+                    })
+                ),
                 false,
             )
             .unwrap();
@@ -42,18 +45,18 @@ impl Interpreter {
 
     pub fn interpret(&mut self, program: Program) -> Result<Value, RuntimeError> {
         let mut last_value: Value = Value::Null;
-        for declaration in program.declarations {
+        for declaration in program.declarations.iter() {
             last_value = self.execute_declaration(declaration)?;
         }
         Ok(last_value)
     }
 
-    fn execute_declaration(&mut self, declaration: Declaration) -> Result<Value, RuntimeError> {
-        match declaration.kind {
+    fn execute_declaration(&mut self, declaration: &Declaration) -> Result<Value, RuntimeError> {
+        match &declaration.kind {
             DeclarationKind::Let { name, initializer } => {
-                let value = self.evaluate_expression(initializer)?;
+                let value = self.evaluate_expression(&initializer)?;
                 self.env
-                    .define(name, value, false)
+                    .define(name.as_str(), value, false)
                     .map(|()| Value::Null)
                     .map_err(|msg| RuntimeError {
                         line: declaration.line,
@@ -61,9 +64,9 @@ impl Interpreter {
                     })
             }
             DeclarationKind::Var { name, initializer } => {
-                let value = self.evaluate_expression(initializer)?;
+                let value = self.evaluate_expression(&initializer)?;
                 self.env
-                    .define(name, value, true)
+                    .define(name.as_str(), value, true)
                     .map(|()| Value::Null)
                     .map_err(|msg| RuntimeError {
                         line: declaration.line,
@@ -71,38 +74,42 @@ impl Interpreter {
                     })
             }
             DeclarationKind::Fn { name, params, body } => {
-                let function = Value::Fn(name.clone(), params, body);
+                let function = Value::Fn(Rc::from(Function {
+                    name: Rc::from(name.as_str()),
+                    params: params.iter().map(|p| Rc::<str>::from(p.as_str())).collect(),
+                    body: Rc::new(body.clone()),
+                }));
                 self.env
-                    .define(name, function, false)
+                    .define(name.as_str(), function, false)
                     .map(|()| Value::Null)
                     .map_err(|msg| RuntimeError {
                         line: declaration.line,
                         message: msg,
                     })
             }
-            DeclarationKind::ExprStmt(expr) => self.evaluate_expression(expr),
+            DeclarationKind::ExprStmt(expr) => self.evaluate_expression(&expr),
         }
     }
 
-    fn evaluate_expression(&mut self, expression: Expr) -> Result<Value, RuntimeError> {
-        match expression.kind {
+    fn evaluate_expression(&mut self, expression: &Expr) -> Result<Value, RuntimeError> {
+        match &expression.kind {
             // primary
-            ExprKind::Number(n) => Ok(Value::Num(n)),
-            ExprKind::Str(s) => Ok(Value::Str(s)),
-            ExprKind::Bool(b) => Ok(Value::Bool(b)),
+            ExprKind::Number(n) => Ok(Value::Num(*n)),
+            ExprKind::Str(s) => Ok(Value::Str(Rc::<str>::from(s.as_str()))),
+            ExprKind::Bool(b) => Ok(Value::Bool(*b)),
             ExprKind::Null => Ok(Value::Null),
-            ExprKind::Identifier(id) => self.env.get(&id).map_err(|msg| RuntimeError {
+            ExprKind::Identifier(id) => self.env.get(id).map_err(|msg| RuntimeError {
                 line: expression.line,
                 message: msg,
             }),
 
             // assignment
             ExprKind::Assign { target, value } => {
-                let value = self.evaluate_expression(*value)?;
-                match (*target).kind {
+                let value = self.evaluate_expression(&*value)?;
+                match &target.kind {
                     ExprKind::Identifier(id) => self
                         .env
-                        .assign(&id, value)
+                        .assign(id.as_str(), value)
                         .map(|()| Value::Null)
                         .map_err(|msg| RuntimeError {
                             line: expression.line,
@@ -120,8 +127,8 @@ impl Interpreter {
 
             // unary
             ExprKind::Unary { operator, operand } => {
-                let operand_value = self.evaluate_expression(*operand)?;
-                match (operator.token_type, operand_value) {
+                let operand_value = self.evaluate_expression(&*operand)?;
+                match (&operator.token_type, operand_value) {
                     (TokenType::Bang, Value::Bool(b)) => Ok(Value::Bool(!b)),
                     (TokenType::Minus, Value::Num(n)) => Ok(Value::Num(-n)),
                     (op_type, v) => Err(RuntimeError {
@@ -140,14 +147,14 @@ impl Interpreter {
                 operator,
                 right,
             } => {
-                let left_value = self.evaluate_expression(*left)?;
+                let left_value = self.evaluate_expression(&*left)?;
 
                 match (&operator.token_type, &left_value) {
                     // handle the short-circuit
                     (TokenType::And, Value::Bool(false)) => Ok(left_value),
                     (TokenType::Or, Value::Bool(true)) => Ok(left_value),
                     (TokenType::And | TokenType::Or, Value::Bool(_)) => {
-                        let right_value = self.evaluate_expression(*right)?;
+                        let right_value = self.evaluate_expression(&*right)?;
                         match right_value {
                             Value::Bool(_) => Ok(right_value),
                             _ => Err(RuntimeError {
@@ -167,8 +174,8 @@ impl Interpreter {
                         ),
                     }),
                     _ => {
-                        let right_value = self.evaluate_expression(*right)?;
-                        match (operator.token_type, left_value, right_value) {
+                        let right_value = self.evaluate_expression(&*right)?;
+                        match (&operator.token_type, left_value, right_value) {
                             // arithmetic
                             (TokenType::Plus, Value::Num(n1), Value::Num(n2)) => {
                                 Ok(Value::Num(n1 + n2))
@@ -185,7 +192,10 @@ impl Interpreter {
 
                             // weird String concat
                             (TokenType::Plus, Value::Str(s1), Value::Str(s2)) => {
-                                Ok(Value::Str(s1 + &s2))
+                                let mut s = String::with_capacity(s1.len() + s2.len());
+                                s.push_str(s1.as_ref());
+                                s.push_str(s2.as_ref());
+                                Ok(Value::Str(Rc::from(s)))
                             }
 
                             // comparison
@@ -233,7 +243,7 @@ impl Interpreter {
                         self.execute_declaration(declaration)?;
                     }
                     match expr {
-                        Some(e) => self.evaluate_expression(*e),
+                        Some(e) => self.evaluate_expression(e.as_ref()),
                         None => Ok(Value::Null),
                     }
                 })();
@@ -247,11 +257,11 @@ impl Interpreter {
                 then_branch,
                 else_branch,
             } => {
-                let condition = self.evaluate_expression(*condition)?;
+                let condition = self.evaluate_expression(condition.as_ref())?;
                 match condition {
-                    Value::Bool(true) => self.evaluate_expression(*then_branch),
+                    Value::Bool(true) => self.evaluate_expression(then_branch.as_ref()),
                     Value::Bool(false) => match else_branch {
-                        Some(else_expr) => self.evaluate_expression(*else_expr),
+                        Some(else_expr) => self.evaluate_expression(else_expr.as_ref()),
                         None => Ok(Value::Null),
                     },
                     _ => Err(RuntimeError {
@@ -266,10 +276,10 @@ impl Interpreter {
 
             ExprKind::While { condition, body } => {
                 loop {
-                    let cond_value = self.evaluate_expression((*condition).clone())?;
+                    let cond_value = self.evaluate_expression(condition.as_ref())?;
                     match cond_value {
                         Value::Bool(true) => {
-                            self.evaluate_expression((*body).clone())?;
+                            self.evaluate_expression(body.as_ref())?;
                         }
                         Value::Bool(false) => break,
                         _ => {
@@ -287,8 +297,8 @@ impl Interpreter {
             }
 
             ExprKind::Range { start, end } => {
-                let start_val = self.evaluate_expression(*start)?;
-                let end_val = self.evaluate_expression(*end)?;
+                let start_val = self.evaluate_expression(&*start)?;
+                let end_val = self.evaluate_expression(&*end)?;
                 match (&start_val, &end_val) {
                     (Value::Num(n1), Value::Num(n2)) => {
                         if n1.fract() != 0.0 || n2.fract() != 0.0 {
@@ -318,7 +328,7 @@ impl Interpreter {
                 iterable,
                 body,
             } => {
-                let iterable = self.evaluate_expression(*iterable)?;
+                let iterable = self.evaluate_expression(&*iterable)?;
                 match iterable {
                     Value::Range(start, end) => {
                         self.env.push_scope();
@@ -330,13 +340,13 @@ impl Interpreter {
                                     message: msg,
                                 })?;
                             for i in (start as i64)..(end as i64) {
-                                self.env.assign(&variable, Value::Num(i as f64)).map_err(
+                                self.env.assign(variable.as_str(), Value::Num(i as f64)).map_err(
                                     |msg| RuntimeError {
                                         line: expression.line,
                                         message: msg,
                                     },
                                 )?;
-                                self.evaluate_expression((*body).clone())?;
+                                self.evaluate_expression(body.as_ref())?;
                             }
                             Ok(Value::Null)
                         })();
@@ -351,43 +361,43 @@ impl Interpreter {
             }
 
             ExprKind::Call { callee, arguments } => {
-                let callee_value = self.evaluate_expression(*callee)?;
+                let callee_value = self.evaluate_expression(&*callee)?;
 
                 let argument_values = arguments
-                    .into_iter()
+                    .iter()
                     .map(|expr| self.evaluate_expression(expr))
                     .collect::<Result<Vec<_>, _>>()?;
 
                 match callee_value {
-                    Value::Fn(name, params, body) => {
-                        if params.len() != argument_values.len() {
+                    Value::Fn(fun) => {
+                        if fun.params.len() != argument_values.len() {
                             return Err(RuntimeError {
                                 line: expression.line,
                                 message: format!(
                                     "function '{}' expects {} arguments, but got {}",
-                                    name,
-                                    params.len(),
+                                    fun.name.as_ref(),
+                                    fun.params.len(),
                                     argument_values.len()
                                 ),
                             });
                         };
                         self.env.push_scope();
                         let result = (|| {
-                            for (param, arg) in params.into_iter().zip(argument_values) {
+                            for (param, arg) in fun.params.iter().zip(argument_values) {
                                 self.env
-                                    .define(param, arg, false)
+                                    .define(param.as_ref(), arg, false)
                                     .map_err(|msg| RuntimeError {
                                         line: expression.line,
                                         message: msg,
                                     })?;
                             }
-                            self.evaluate_expression(body)
+                            self.evaluate_expression(fun.body.as_ref())
                         })();
                         self.env.pop_scope();
                         result
                     }
-                    Value::NativeFn { name, arity, func } => {
-                        func(argument_values).map_err(|msg| RuntimeError {
+                    Value::NativeFn(native_fun) => {
+                        (native_fun.func)(&argument_values).map_err(|msg| RuntimeError {
                             line: expression.line,
                             message: msg,
                         })
