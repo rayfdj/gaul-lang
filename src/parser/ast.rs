@@ -76,7 +76,7 @@ pub enum ExprKind {
     },
 
     // Primary Expressions
-    Number(f64),
+    Num(f64),
     Str(String),
     Bool(bool),
     Null,

@@ -1,6 +1,6 @@
 use crate::parser::ast::DeclarationKind::{ExprStmt, Fn, Let, Var};
 use crate::parser::ast::ExprKind::{
-    Assign, Binary, Block, Bool, Call, For, Get, Identifier, If, Null, Number, Pipe, Range, Return,
+    Assign, Binary, Block, Bool, Call, For, Get, Identifier, If, Null, Num, Pipe, Range, Return,
     Str, Unary, While,
 };
 use crate::parser::ast::Program;
@@ -598,7 +598,7 @@ impl Parser {
                 let value = *n;
                 self.advance();
                 Ok(Expr {
-                    kind: Number(value),
+                    kind: Num(value),
                     line,
                 })
             }

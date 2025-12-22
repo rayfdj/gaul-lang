@@ -4,6 +4,9 @@ use crate::interpreter::value::{Function, NativeFunction, Value};
 use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
 use crate::scanner::token::TokenType;
 use std::rc::Rc;
+use crate::interpreter::native_function;
+use crate::interpreter::native_function::all_native_functions;
+use crate::interpreter::native_method::call_native_method;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeError {
@@ -23,21 +26,9 @@ impl Interpreter {
     }
 
     fn define_native_functions(&mut self) {
-        self.env
-            .define(
-                Value::NativeFn(Rc::from(NativeFunction {
-                    name: Rc::from("println"),
-                    arity: None,
-                    func: |args| {
-                        for arg in args {
-                            print!("{}", arg); // need Display impl for Value
-                        }
-                        println!(); // newline at end
-                        Ok(Value::Null)
-                    },
-                })),
-                false,
-            );
+        for (name, native_function) in all_native_functions() {
+            self.env.define(native_function, false);
+        }
     }
 
     pub fn interpret(&mut self, program: Program) -> Result<Value, RuntimeError> {
@@ -93,7 +84,7 @@ impl Interpreter {
     fn evaluate_expression(&mut self, expression: &Expr) -> Result<Value, RuntimeError> {
         match &expression.kind {
             // primary
-            ExprKind::Number(n) => Ok(Value::Num(*n)),
+            ExprKind::Num(n) => Ok(Value::Num(*n)),
             ExprKind::Str(s) => Ok(Value::Str(Rc::<str>::from(s.as_str()))),
             ExprKind::Bool(b) => Ok(Value::Bool(*b)),
             ExprKind::Null => Ok(Value::Null),
@@ -189,7 +180,16 @@ impl Interpreter {
                                 Ok(Value::Num(n1 - n2))
                             }
                             (TokenType::Slash, Value::Num(n1), Value::Num(n2)) => {
-                                Ok(Value::Num(n1 / n2))
+                                if n2 == 0.0 {
+                                    Err(RuntimeError {
+                                        line: expression.line,
+                                        message: format!(
+                                            "cannot divide '{}' by '{}'", n1, n2
+                                        ),
+                                    })
+                                } else {
+                                    Ok(Value::Num(n1 / n2))
+                                }
                             }
                             (TokenType::Star, Value::Num(n1), Value::Num(n2)) => {
                                 Ok(Value::Num(n1 * n2))
@@ -359,13 +359,20 @@ impl Interpreter {
             }
 
             ExprKind::Call { callee, arguments } => {
-                let callee_value = self.evaluate_expression(&*callee)?;
-
                 let argument_values = arguments
                     .iter()
                     .map(|expr| self.evaluate_expression(expr))
                     .collect::<Result<Vec<_>, _>>()?;
 
+                if let ExprKind::Get { object, name } = &callee.kind {
+                    let receiver = self.evaluate_expression(object)?;
+                    return call_native_method(&receiver, name, &argument_values).map_err(|message| RuntimeError {
+                        line: expression.line,
+                        message,
+                    });
+                }
+
+                let callee_value = self.evaluate_expression(&*callee)?;
                 match callee_value {
                     Value::Fn(fun) => {
                         if fun.params.len() != argument_values.len() {

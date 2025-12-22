@@ -34,17 +34,22 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let keywords = load_keywords(cli.keywords.as_deref())?;
+    let mut resolver = Resolver::new();
     let mut interpreter = Interpreter::new(Environment::new());
 
     match cli.script {
-        None => run_prompt(&keywords, &mut interpreter)?,
-        Some(path) => run_file(&path, &keywords, &mut interpreter)?,
+        None => run_prompt(&keywords, &mut resolver, &mut interpreter)?,
+        Some(path) => run_file(&path, &keywords, &mut resolver, &mut interpreter)?,
     }
 
     Ok(())
 }
 
-fn run_prompt(keywords: &HashMap<String, TokenType>, interpreter: &mut Interpreter) -> Result<()> {
+fn run_prompt(
+    keywords: &HashMap<String, TokenType>,
+    resolver: &mut Resolver,
+    interpreter: &mut Interpreter,
+) -> Result<()> {
     let stdin = io::stdin();
     let mut reader = BufReader::new(stdin.lock());
     let mut buffer = String::new();
@@ -70,7 +75,7 @@ fn run_prompt(keywords: &HashMap<String, TokenType>, interpreter: &mut Interpret
         // Check if the current buffer has balanced braces/parens
         if is_complete(&buffer) {
             if !buffer.trim().is_empty() {
-                if let Err(e) = run(&buffer, keywords, interpreter) {
+                if let Err(e) = run(&buffer, keywords, resolver, interpreter) {
                     eprintln!("Execution error: {}", e);
                 }
             }
@@ -126,16 +131,18 @@ fn is_complete(code: &str) -> bool {
 fn run_file(
     path: &str,
     keywords: &HashMap<String, TokenType>,
+    resolver: &mut Resolver,
     interpreter: &mut Interpreter,
 ) -> Result<()> {
     let contents = fs::read_to_string(path)?;
-    run(&contents, keywords, interpreter)?;
+    run(&contents, keywords, resolver, interpreter)?;
     Ok(())
 }
 
 fn run(
     source: &str,
     keywords: &HashMap<String, TokenType>,
+    resolver: &mut Resolver,
     interpreter: &mut Interpreter,
 ) -> Result<()> {
     let scanner = Scanner::new(source, keywords);
@@ -147,13 +154,12 @@ fn run(
             let parser = Parser::new(tokens);
             match parser.parse() {
                 Ok(mut program) => {
-                    let mut resolver = Resolver::new();
                     match resolver.resolve(&mut program) {
                         Ok(()) => {}
                         Err(e) => {
                             eprintln!("Resolver error: {:?}", e);
                             return Ok(());
-                        },
+                        }
                     }
 
                     // println!("Parsed: {:?}", program);

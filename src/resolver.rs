@@ -22,7 +22,9 @@ impl Resolver {
     }
 
     fn define_native_functions(&mut self) {
-        self.define("println", 0).unwrap();
+        for (name, native_function) in crate::interpreter::native_function::all_native_functions() {
+            self.define(name, 0).unwrap();
+        }
     }
 
     fn define(&mut self, name: &str, line: usize) -> Result<(), ResolutionError> {
