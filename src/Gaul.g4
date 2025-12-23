@@ -176,10 +176,10 @@ whileExpr
 
 // For expression - returns Null, executed for side effects
 // Examples:
-//   For(I in 1..10) { Print(I) }
-//   For(Item in My List) { Process(Item) }
+//   For(I : 1..10) { Print(I) }
+//   For(Item : My Array) { Process(Item) }
 forExpr
-    : FOR LPAREN IDENTIFIER IN expression RPAREN block
+    : FOR LPAREN IDENTIFIER COLON expression RPAREN block
     ;
 
 // Return expression - exits function early, returns Null as expression value
@@ -277,6 +277,7 @@ primary
     | IDENTIFIER
     | LPAREN expression RPAREN
     | block
+    | array
     ;
 
 
@@ -298,6 +299,21 @@ block
 
 
 /* ============================================================================
+ * ARRAYS
+ * ============================================================================
+ * Arrays are expressions that create, er, arrays. They are sandwiched by
+ * square brackets, just like in many other languages.
+ *
+ * Examples:
+ *   [ 1, 2, 3 ]                        // array of number 1, 2, 3
+ *   [ Func 1, Func 2, Func 3 ]         // array of functions
+ */
+
+array
+    : LBRACKET (expression (COMMA expression)*)? RBRACKET
+    ;
+
+/* ============================================================================
  * TOKEN DECLARATIONS (Documentation Only)
  * ============================================================================
  * These tokens are defined in src/scanner/token.rs and handled by the
@@ -315,6 +331,7 @@ block
  *   GREATER '>'   GREATER_EQUAL '>='
  *   LESS '<'      LESS_EQUAL '<='
  *   PIPE '|>'     APPROX_EQUAL '~='   RANGE '..'
+ *   LBRACKET '['  RBRACKET ']'  COLON ':'
  *
  * LITERALS:
  *   NUMBER      - integers, floats, hex (0x), binary (0b), octal (0o)

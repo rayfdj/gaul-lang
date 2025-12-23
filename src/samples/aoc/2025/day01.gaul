@@ -1,0 +1,24 @@
+let Sample Rotations = ["L68", "L30", "R48", "L5", "R60", "L55", "L1", "L99", "R14", "L82"]
+
+let Actual Rotations = read_file("src/samples/aoc/2025/day01.txt").lines()
+
+fn Count Dial At 0(Starting Point, Rotations) {
+    var Current Point = Starting Point
+    var Dial At 0 Counter = 0
+    for(Rotation : Rotations) {
+        let Direction = Rotation.char_at(0)
+        let Distance = Rotation.substring(1).to_num()
+        if(Direction == "L") {
+            Current Point = (Current Point - Distance).mod(100)
+        } else {
+            Current Point = (Current Point + Distance).mod(100)
+        }
+        if(Current Point == 0.0) {
+            Dial At 0 Counter = Dial At 0 Counter + 1
+        }
+    }
+    Dial At 0 Counter
+}
+
+println(Count Dial At 0(50, Sample Rotations) == 3)
+println(Count Dial At 0(50, Actual Rotations))

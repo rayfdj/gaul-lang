@@ -10,6 +10,7 @@ pub enum Value {
     Bool(bool),
     Null,
     Range(f64, f64),
+    Array(Rc<RefCell<Vec<Value>>>),
     Fn(Rc<Function>),
     NativeFn(Rc<NativeFunction>),
 }
@@ -37,6 +38,9 @@ impl PartialEq for Value {
             (Self::Bool(b1), Self::Bool(b2)) => b1 == b2,
             (Self::Null, Self::Null) => true,
             (Self::Range(s1, s2), Self::Range(s3, s4)) => (s1 == s3) && (s2 == s4),
+            (Self::Array(a1), Self::Array(a2)) => {
+                *a1.borrow() == *a2.borrow()
+            }
             (Self::Fn(_), Self::Fn(_)) => panic!("Cannot compare two functions"),
             (Self::NativeFn { .. }, Self::NativeFn { .. }) => {
                 panic!("Cannot compare two functions")
@@ -54,6 +58,16 @@ impl std::fmt::Display for Value {
             Value::Bool(b) => write!(f, "{}", b),
             Value::Null => write!(f, "null"),
             Value::Range(a, b) => write!(f, "[{}..{})", *a as i64, *b as i64),
+            Value::Array(elements) => {
+                write!(f, "[")?;
+                for (i, val) in elements.borrow().iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", val)?;
+                }
+                write!(f, "]")
+            },
             Value::Fn(fun) => write!(f, "<fn {}>", fun.name.as_ref()),
             Value::NativeFn(native_fun) => write!(f, "<native fn {}>", native_fun.name.as_ref()),
         }

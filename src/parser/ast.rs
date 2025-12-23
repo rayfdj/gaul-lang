@@ -90,4 +90,9 @@ pub enum ExprKind {
         declarations: Vec<Declaration>,
         expr: Option<Box<Expr>>,
     },
+
+    // Arrays
+    Array {
+        elements: Vec<Expr>,
+    }
 }

@@ -23,11 +23,13 @@ pub enum TokenType {
     RightParen,     // )
     LeftBrace,      // {
     RightBrace,     // }
+    LeftBracket,    // [
+    RightBracket,   // ]
     Comma,          // ,
     Dot,            // .
     Minus,          // -
     Plus,           // +
-    Semicolon,      // ;
+    Colon,          // :
     Slash,          // /
     Star,           // *
 
@@ -58,7 +60,6 @@ pub enum TokenType {
     False,          // false
     Function,       // fn
     For,            // for
-    In,             // in
     If,             // if
     Null,           // null
     Or,             // or

@@ -6,6 +6,7 @@ mod scanner;
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::interpreter::Interpreter;
+use crate::interpreter::value::Value;
 use crate::keywords::load_keywords;
 use crate::parser::parser::Parser;
 use crate::resolver::Resolver;
@@ -164,6 +165,7 @@ fn run(
 
                     // println!("Parsed: {:?}", program);
                     match interpreter.interpret(program) {
+                        Ok(Value::Null) => {}
                         Ok(value) => println!("Value: {:?}", value),
                         Err(e) => eprintln!("Runtime error: {:?}", e),
                     }

@@ -22,7 +22,7 @@ impl Resolver {
     }
 
     fn define_native_functions(&mut self) {
-        for (name, native_function) in crate::interpreter::native_function::all_native_functions() {
+        for (name, _native_function) in crate::interpreter::native_function::all_native_functions() {
             self.define(name, 0).unwrap();
         }
     }
@@ -114,7 +114,7 @@ impl Resolver {
                 self.resolve_expression(value)?;
                 Ok(())
             }
-            ExprKind::Unary { operator, operand } => {
+            ExprKind::Unary { operand, .. } => {
                 self.resolve_expression(operand)?;
                 Ok(())
             }
@@ -138,6 +138,12 @@ impl Resolver {
 
                 self.pop_scope();
                 result
+            }
+            ExprKind::Array { elements } => {
+                for element in elements {
+                    self.resolve_expression(element)?;
+                }
+                Ok(())
             }
             ExprKind::If {
                 condition,
@@ -178,6 +184,10 @@ impl Resolver {
                 for arg in arguments {
                     self.resolve_expression(arg)?;
                 }
+                Ok(())
+            }
+            ExprKind::Get { object, .. } => {
+                self.resolve_expression(object)?;
                 Ok(())
             }
             _ => Ok(()),

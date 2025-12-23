@@ -3,7 +3,7 @@ use crate::parser::ast::ExprKind::{
     Assign, Binary, Block, Bool, Call, For, Get, Identifier, If, Null, Num, Pipe, Range, Return,
     Str, Unary, While,
 };
-use crate::parser::ast::Program;
+use crate::parser::ast::{ExprKind, Program};
 use crate::parser::ast::{Declaration, Expr};
 use crate::scanner::token::{Token, TokenType};
 
@@ -300,7 +300,7 @@ impl Parser {
             .consume(TokenType::Identifier, "identifier")?
             .lexeme
             .clone();
-        self.consume(TokenType::In, "in")?;
+        self.consume(TokenType::Colon, ":")?;
         let iterable = Box::new(self.expression()?);
         self.consume(TokenType::RightParen, ")")?;
         let body = Box::new(self.block()?);
@@ -646,11 +646,48 @@ impl Parser {
                 Ok(expr)
             }
             TokenType::LeftBrace => self.block(),
+            TokenType::LeftBracket => self.array(),
             _ => Err(ParseError {
                 line,
                 message: format!("Unexpected token: {:?}", token.token_type),
             }),
         }
+    }
+
+    fn array(&mut self) -> Result<Expr, ParseError> {
+        let line = self.peek().line;
+        self.consume(TokenType::LeftBracket, "[")?;
+
+        let mut elements = Vec::new();
+
+        while !self.check(TokenType::RightBracket) && !self.is_at_end() {
+            while self.check(TokenType::Newline) {
+                self.advance();
+            }
+
+            if self.check(TokenType::RightBracket) {
+                break;
+            }
+
+            elements.push(self.expression()?);
+
+            while self.check(TokenType::Newline) {
+                self.advance();
+            }
+
+            if !self.check(TokenType::RightBracket) {
+                self.consume(TokenType::Comma, ",")?;
+            }
+        }
+
+        self.consume(TokenType::RightBracket, "]")?;
+
+        Ok(Expr {
+            kind: ExprKind::Array {
+                elements,
+            },
+            line,
+        })
     }
 
     fn block(&mut self) -> Result<Expr, ParseError> {

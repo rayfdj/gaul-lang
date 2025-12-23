@@ -1,12 +1,11 @@
-use std::cell::RefCell;
 use crate::interpreter::environment::Environment;
-use crate::interpreter::value::{Function, NativeFunction, Value};
-use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
-use crate::scanner::token::TokenType;
-use std::rc::Rc;
-use crate::interpreter::native_function;
 use crate::interpreter::native_function::all_native_functions;
 use crate::interpreter::native_method::call_native_method;
+use crate::interpreter::value::{Function, Value};
+use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
+use crate::scanner::token::TokenType;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeError {
@@ -257,6 +256,14 @@ impl Interpreter {
                 result
             }
 
+            ExprKind::Array { elements } => {
+                let mut array = Vec::with_capacity(elements.len());
+                for element in elements {
+                    array.push(self.evaluate_expression(element)?);
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(array))))
+            }
+
             ExprKind::If {
                 condition,
                 then_branch,
@@ -337,23 +344,33 @@ impl Interpreter {
                 match iterable {
                     Value::Range(start, end) => {
                         self.env.push_scope();
-                        self.env.define(Value::Num(0.0), true);  // slot 0
+                        self.env.define(Value::Num(0.0), false);  // slot 0
                         let result = (|| {
                             for i in (start as i64)..(end as i64) {
-                                self.env.assign_at(0, 0, Value::Num(i as f64)).map_err(|msg| RuntimeError {
-                                    line: expression.line,
-                                    message: msg,
-                                })?;
+                                self.env.set_at(0, 0, Value::Num(i as f64));
                                 self.evaluate_expression(body.as_ref())?;
                             }
                             Ok(Value::Null)
                         })();
                         self.env.pop_scope();
                         result
-                    }
+                    },
+                    Value::Array(elements) => {
+                        self.env.push_scope();
+                        self.env.define(Value::Null, false);  // slot 0
+                        let result = (|| {
+                            for element in elements.borrow().iter() {
+                                self.env.set_at(0, 0, element.clone());
+                                self.evaluate_expression(body.as_ref())?;
+                            }
+                            Ok(Value::Null)
+                        })();
+                        self.env.pop_scope();
+                        result
+                    },
                     _ => Err(RuntimeError {
                         line: expression.line,
-                        message: format!("iterable: '{:?}' must be a range", iterable),
+                        message: format!("iterable: '{:?}' must be a range or an array", iterable),
                     }),
                 }
             }
