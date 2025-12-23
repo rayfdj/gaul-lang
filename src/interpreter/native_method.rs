@@ -112,6 +112,19 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
 
             Ok(Value::Num(n.rem_euclid(divisor)))
         }
+        (Value::Num(n), "floor_div") => {
+            let divisor = match args.get(0) {
+                Some(Value::Num(d)) => *d,
+                _ => return Err("floor_div expects a number".into()),
+            };
+
+            // Safety Check: Avoid NaN
+            if divisor == 0.0 {
+                return Err("floor division by zero".into());
+            }
+
+            Ok(Value::Num(n.div_euclid(divisor)))
+        }
 
         // Bool? Not much to do...
         (Value::Bool(b), "to_str") => Ok(Value::Str(b.to_string().into())),

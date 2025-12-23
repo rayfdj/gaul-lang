@@ -1,19 +1,13 @@
-mod interpreter;
-mod keywords;
-mod parser;
-mod resolver;
-mod scanner;
-
-use crate::interpreter::environment::Environment;
-use crate::interpreter::interpreter::Interpreter;
-use crate::interpreter::value::Value;
-use crate::keywords::load_keywords;
-use crate::parser::parser::Parser;
-use crate::resolver::Resolver;
-use crate::scanner::scanner::Scanner;
-use crate::scanner::token::TokenType;
 use anyhow::Result;
 use clap::Parser as ClapParser;
+use gaul_lang::interpreter::environment::Environment;
+use gaul_lang::interpreter::interpreter::Interpreter;
+use gaul_lang::interpreter::value::Value;
+use gaul_lang::keywords::load_keywords;
+use gaul_lang::parser::parser::Parser;
+use gaul_lang::resolver::Resolver;
+use gaul_lang::scanner::scanner::Scanner;
+use gaul_lang::scanner::token::TokenType;
 use std::collections::HashMap;
 use std::fs;
 use std::io;

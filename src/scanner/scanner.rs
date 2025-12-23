@@ -9,6 +9,8 @@ pub struct Scanner {
     current: usize,
     line: usize,
     keywords: HashMap<String, TokenType>,
+    paren_depth: usize,
+    bracket_depth: usize,
 }
 
 impl Scanner {
@@ -21,6 +23,8 @@ impl Scanner {
             current: 0,
             line: 1,
             keywords: keywords.clone(),
+            paren_depth: 0,
+            bracket_depth: 0,
         }
     }
 
@@ -45,12 +49,26 @@ impl Scanner {
     fn scan_token(&mut self) {
         let c = self.advance();
         match c {
-            '(' => self.add_token(TokenType::LeftParen),
-            ')' => self.add_token(TokenType::RightParen),
+            '(' => {
+                self.paren_depth += 1;
+                self.add_token(TokenType::LeftParen)
+            },
+            ')' => {
+                if self.paren_depth > 0 { self.paren_depth -= 1; }
+                else { self.errors.push(format!("Unmatched '{} at line {}", c, self.line)); }
+                self.add_token(TokenType::RightParen)
+            },
             '{' => self.add_token(TokenType::LeftBrace),
             '}' => self.add_token(TokenType::RightBrace),
-            '[' => self.add_token(TokenType::LeftBracket),
-            ']' => self.add_token(TokenType::RightBracket),
+            '[' => {
+                self.bracket_depth += 1;
+                self.add_token(TokenType::LeftBracket)
+            },
+            ']' => {
+                if self.bracket_depth > 0 { self.bracket_depth -= 1; }
+                else { self.errors.push(format!("Unmatched '{}' at line {}", c, self.line)); }
+                self.add_token(TokenType::RightBracket)
+            },
             ',' => self.add_token(TokenType::Comma),
             '-' => self.add_token(TokenType::Minus),
             '+' => self.add_token(TokenType::Plus),
@@ -139,6 +157,11 @@ impl Scanner {
             // Newlines - significant in Gaul Lang!
             '\n' => {
                 self.line += 1;
+
+                if self.paren_depth > 0 || self.bracket_depth > 0 {
+                    return;
+                }
+
                 // Only emit if last token wasn't already a Newline (collapse consecutive)
                 let should_emit = self
                     .tokens

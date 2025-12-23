@@ -48,7 +48,7 @@ impl Parser {
 
     fn check(&self, token_type: TokenType) -> bool {
         if self.is_at_end() {
-            return false;
+            return token_type == TokenType::Eof;
         }
         self.peek().token_type == token_type
     }
@@ -97,9 +97,7 @@ impl Parser {
 
         while !self.is_at_end() {
             // Skip newlines between declarations
-            while self.check(TokenType::Newline) {
-                self.advance();
-            }
+            self.skip_newlines();
 
             if self.is_at_end() {
                 break;
@@ -177,7 +175,9 @@ impl Parser {
             .clone();
         self.consume(TokenType::Assign, "=")?;
         let initializer = self.expression()?;
-        self.consume(TokenType::Newline, "newline")?;
+        if !self.match_any(&[TokenType::Newline, TokenType::Eof]) {
+            return Err(self.error_expected("newline or eof"));
+        }
 
         let kind = if is_mutable {
             Var { name, initializer }
@@ -228,7 +228,9 @@ impl Parser {
     fn expr_stmt(&mut self) -> Result<Declaration, ParseError> {
         let line = self.peek().line;
         let expr = self.expression()?;
-        self.consume(TokenType::Newline, "newline")?;
+        if !self.match_any(&[TokenType::Newline, TokenType::Eof]) {
+            return Err(self.error_expected("newline or eof"));
+        }
 
         Ok(Declaration {
             kind: ExprStmt(expr),
@@ -253,12 +255,23 @@ impl Parser {
     fn if_expr(&mut self) -> Result<Expr, ParseError> {
         let line = self.peek().line;
         self.advance(); // consume if
+
         self.consume(TokenType::LeftParen, "(")?;
         let condition = Box::new(self.expression()?);
         self.consume(TokenType::RightParen, ")")?;
+
         let then_branch = Box::new(self.block()?);
-        let else_branch = if self.check(TokenType::Else) {
+
+        let mut lookahead = self.current;
+        while lookahead < self.tokens.len() && self.tokens[lookahead].token_type == TokenType::Newline {
+            lookahead += 1;
+        }
+
+        let else_branch = if lookahead < self.tokens.len() && self.tokens[lookahead].token_type == TokenType::Else {
+            self.skip_newlines(); // NOW it is safe to eat them
             self.advance(); // consume else
+            self.skip_newlines(); // allow newlines after else
+
             if self.check(TokenType::If) {
                 Some(Box::new(self.if_expr()?))
             } else {
@@ -336,7 +349,7 @@ impl Parser {
         if self.check(TokenType::Assign) {
             let line = self.peek().line;
             self.advance();
-            let value = Box::new(self.assignment()?); // right-associative
+            let value = Box::new(self.expression()?); // right-associative
 
             match &expr.kind {
                 Identifier { .. } | Get { .. } => Ok(Expr {
@@ -661,20 +674,10 @@ impl Parser {
         let mut elements = Vec::new();
 
         while !self.check(TokenType::RightBracket) && !self.is_at_end() {
-            while self.check(TokenType::Newline) {
-                self.advance();
-            }
-
             if self.check(TokenType::RightBracket) {
                 break;
             }
-
             elements.push(self.expression()?);
-
-            while self.check(TokenType::Newline) {
-                self.advance();
-            }
-
             if !self.check(TokenType::RightBracket) {
                 self.consume(TokenType::Comma, ",")?;
             }
@@ -699,9 +702,7 @@ impl Parser {
 
         while !self.check(TokenType::RightBrace) && !self.is_at_end() {
             // Skip any leading/extra newlines
-            while self.check(TokenType::Newline) {
-                self.advance();
-            }
+            self.skip_newlines();
 
             // After skipping newlines, we might be at }
             if self.check(TokenType::RightBrace) {
@@ -720,9 +721,7 @@ impl Parser {
                 if self.check(TokenType::Newline) {
                     self.advance();
                     // skip any extra newlines
-                    while self.check(TokenType::Newline) {
-                        self.advance();
-                    }
+                    self.skip_newlines();
                     let expr_line = expr.line;
                     if self.check(TokenType::RightBrace) {
                         final_expr = Some(Box::new(expr));
@@ -747,5 +746,11 @@ impl Parser {
             },
             line,
         })
+    }
+
+    fn skip_newlines(&mut self) {
+        while self.check(TokenType::Newline) {
+            self.advance();
+        }
     }
 }

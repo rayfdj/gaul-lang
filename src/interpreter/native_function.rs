@@ -31,7 +31,16 @@ fn read_file() -> Value {
                 Value::Str(path) => {
                     std::fs::read_to_string(path.as_ref())
                         .map(|s| Value::Str(s.into()))
-                        .map_err(|e| format!("could not read file: {}", e))
+                        .map_err(|e| {
+                            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("unknown"));
+                            let absolute_path = cwd.join(path.as_ref());
+                            format!(
+                                "Error reading '{}'\n  -> Resolved to: '{}'\n  -> System Error: {}",
+                                path,
+                                absolute_path.display(),
+                                e
+                            )
+                        })
                 }
                 _ => Err("read_file expects a string".into()),
             }
