@@ -732,6 +732,8 @@ impl Parser {
                     }
                 } else if self.check(TokenType::RightBrace) {
                     final_expr = Some(Box::new(expr));
+                } else {
+                    return Err(self.error_expected("newline or '}' after expression"));
                 }
             }
         }
