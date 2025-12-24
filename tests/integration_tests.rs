@@ -5,7 +5,6 @@ use gaul_lang::keywords::load_keywords;
 use gaul_lang::parser::parser::Parser;
 use gaul_lang::resolver::Resolver;
 use gaul_lang::scanner::scanner::Scanner;
-use gaul_lang::scanner::token::TokenType;
 
 // Mimic what the Gaul interpreter is doing
 fn eval(source: &str) -> Result<Value, String> {
@@ -248,5 +247,116 @@ fn test_unterminated_multiline_comment() {
     match result {
         Err(msg) => assert!(msg.contains("Unterminated multi-line comment")),
         _ => panic!("Expected error for unterminated comment"),
+    }
+}
+
+#[test]
+fn test_multiline_expressions_trailing_ops() {
+    // Scenario: Splitting a long expression across lines.
+    // Convention: The operator must be at the END of the line (trailing).
+    let code = r#"
+    let result = 10 +
+                 20 *
+                 3
+
+    let logic = true and
+                false or
+                true
+
+    if (result == 70 and
+        logic == true) {
+        1
+    } else {
+        0
+    }
+    "#;
+
+    // Math: 10 + (20 * 3) = 10 + 60 = 70
+    // Logic: (true and false) or true -> false or true -> true
+    // If (70 == 70 and true == true) -> Returns 1
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 1.0),
+        _ => panic!("Expected multiline expression to parse and evaluate to 1, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_binary_precedence_basic() {
+    // Multiplication (*) is tighter than Addition (+)
+    // 1 + 2 * 3 should be 1 + (2 * 3) = 7
+    // NOT (1 + 2) * 3 = 9
+    let code = "1 + 2 * 3";
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 7.0),
+        _ => panic!("Precedence failed: 1 + 2 * 3 should be 7.0, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_binary_precedence_mixed() {
+    // Division (/) tighter than Subtraction (-)
+    // 10 - 8 / 2 should be 10 - (8 / 2) = 6
+    // NOT (10 - 8) / 2 = 1
+    let code = "10 - 8 / 2";
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 6.0),
+        _ => panic!("Precedence failed: 10 - 8 / 2 should be 6.0, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_binary_associativity_left() {
+    // Subtraction is Left-Associative
+    // 10 - 5 - 2 should be (10 - 5) - 2 = 3
+    // NOT 10 - (5 - 2) = 7
+    let code = "10 - 5 - 2";
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Associativity failed: 10 - 5 - 2 should be 3.0, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_binary_grouping_overrides_precedence() {
+    // Parentheses should override precedence
+    // (1 + 2) * 3 = 9
+    let code = "(1 + 2) * 3";
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 9.0),
+        _ => panic!("Grouping failed: (1 + 2) * 3 should be 9.0, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_logic_precedence() {
+    // 'and' is tighter than 'or'
+    // true or false and false
+    // Should be: true or (false and false) -> true or false -> true
+    // NOT: (true or false) and false -> true and false -> false
+    let code = "true or false and false";
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(b)) => assert_eq!(b, true),
+        _ => panic!("Logic precedence failed: expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_comparison_precedence() {
+    // Comparisons (<) are tighter than Equality (==)
+    // 1 < 2 == true
+    // Should be: (1 < 2) == true -> true == true -> true
+    // NOT: 1 < (2 == true) -> Runtime Error or logic fail
+    let code = "1 < 2 == true";
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(b)) => assert_eq!(b, true),
+        _ => panic!("Comparison precedence failed: expected true, got {:?}", result),
     }
 }

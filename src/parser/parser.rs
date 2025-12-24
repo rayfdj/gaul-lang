@@ -1,10 +1,10 @@
 use crate::parser::ast::DeclarationKind::{ExprStmt, Fn, Let, Var};
 use crate::parser::ast::ExprKind::{
-    Assign, Binary, Block, Bool, Call, For, Get, Identifier, If, Null, Num, Pipe, Range, Return,
+    Assign, Block, Bool, Call, For, Get, Identifier, If, Null, Num, Pipe, Range, Return,
     Str, Unary, While,
 };
-use crate::parser::ast::{ExprKind, Program};
 use crate::parser::ast::{Declaration, Expr};
+use crate::parser::ast::{ExprKind, Program};
 use crate::scanner::token::{Token, TokenType};
 
 #[derive(Debug, Clone)]
@@ -388,15 +388,32 @@ impl Parser {
         Ok(left)
     }
 
-    fn logic_or(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.logic_and()?;
+    // This method is created because pretty much all binary
+    fn binary_expression<F>(
+        &mut self,
+        tokens: &[TokenType],
+        mut next_precedence: F, // We pass a closure here
+    ) -> Result<Expr, ParseError>
+    where
+        F: FnMut(&mut Self) -> Result<Expr, ParseError>,
+    {
+        // Parse the left side (e.g., the first number) -- remember we are left associative
+        let mut left = next_precedence(self)?;
 
-        while self.check(TokenType::Or) {
-            let operator = self.advance().clone();
+        // Loop as long as we see one of our operators
+        while self.match_any(tokens) {
+            let operator = self.previous().clone();
             let line = operator.line;
-            let right = self.logic_and()?;
+
+            // Skip newlines after the operator
+            self.skip_newlines();
+
+            // Parse the right side using the SAME precedence level
+            let right = next_precedence(self)?;
+
+            // Build the new tree node and reassign 'left' (Accumulate)
             left = Expr {
-                kind: Binary {
+                kind: ExprKind::Binary { 
                     left: Box::new(left),
                     operator,
                     right: Box::new(right),
@@ -406,75 +423,33 @@ impl Parser {
         }
 
         Ok(left)
+    }
+
+    fn logic_or(&mut self) -> Result<Expr, ParseError> {
+        self.binary_expression(&[TokenType::Or], |p| p.logic_and())
     }
 
     fn logic_and(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.equality()?;
-
-        while self.check(TokenType::And) {
-            let operator = self.advance().clone();
-            let line = operator.line;
-            let right = self.equality()?;
-            left = Expr {
-                kind: Binary {
-                    left: Box::new(left),
-                    operator,
-                    right: Box::new(right),
-                },
-                line,
-            };
-        }
-
-        Ok(left)
+        self.binary_expression(&[TokenType::And], |p| p.equality())
     }
 
     fn equality(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.comparison()?;
-
-        while self.match_any(&[
-            TokenType::Equal,
-            TokenType::NotEqual,
-            TokenType::ApproxEqual,
-        ]) {
-            let operator = self.previous().clone();
-            let line = operator.line;
-            let right = self.comparison()?;
-            left = Expr {
-                kind: Binary {
-                    left: Box::new(left),
-                    operator,
-                    right: Box::new(right),
-                },
-                line,
-            };
-        }
-
-        Ok(left)
+        self.binary_expression(
+            &[TokenType::Equal, TokenType::NotEqual, TokenType::ApproxEqual],
+            |p| p.comparison(),
+        )
     }
 
     fn comparison(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.range()?;
-
-        while self.match_any(&[
-            TokenType::Less,
-            TokenType::LessEqual,
-            TokenType::Greater,
-            TokenType::GreaterEqual,
-        ]) {
-            let operator = self.previous().clone();
-            let line = operator.line;
-            let right = self.range()?;
-            left = Expr {
-                kind: Binary {
-                    left: Box::new(left),
-                    operator,
-                    right: Box::new(right),
-                },
-                line,
-            };
-        }
-
-        Ok(left)
+        self.binary_expression(
+            &[
+                TokenType::Less,
+                TokenType::LessEqual,
+                TokenType::Greater,
+                TokenType::GreaterEqual,
+            ],
+            |p| p.range(), // Calls the custom range method
+        )
     }
 
     fn range(&mut self) -> Result<Expr, ParseError> {
@@ -497,43 +472,17 @@ impl Parser {
     }
 
     fn term(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.factor()?;
-
-        while self.match_any(&[TokenType::Plus, TokenType::Minus]) {
-            let operator = self.previous().clone();
-            let line = operator.line;
-            let right = self.factor()?;
-            left = Expr {
-                kind: Binary {
-                    left: Box::new(left),
-                    operator,
-                    right: Box::new(right),
-                },
-                line,
-            };
-        }
-
-        Ok(left)
+        self.binary_expression(
+            &[TokenType::Plus, TokenType::Minus],
+            |p| p.factor()
+        )
     }
 
     fn factor(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.unary()?;
-
-        while self.match_any(&[TokenType::Star, TokenType::Slash]) {
-            let operator = self.previous().clone();
-            let line = operator.line;
-            let right = self.unary()?;
-            left = Expr {
-                kind: Binary {
-                    left: Box::new(left),
-                    operator,
-                    right: Box::new(right),
-                },
-                line,
-            };
-        }
-
-        Ok(left)
+        self.binary_expression(
+            &[TokenType::Star, TokenType::Slash],
+            |p| p.unary()
+        )
     }
 
     fn unary(&mut self) -> Result<Expr, ParseError> {

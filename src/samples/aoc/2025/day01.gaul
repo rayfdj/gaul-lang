@@ -1,24 +1,41 @@
+// the test case
 let Sample Rotations = ["L68", "L30", "R48", "L5", "R60", "L55", "L1", "L99", "R14", "L82"]
-
+// the actual input
 let Actual Rotations = read_file("src/samples/aoc/2025/day01.txt").lines()
 
-fn Count Dial At 0(Starting Point, Rotations) {
+fn Count Dial At 0(Starting Point, Rotations, Max Dial, Include Dial Passing 0) {
+    let Dial Size = Max Dial + 1
     var Current Point = Starting Point
-    var Dial At 0 Counter = 0
+    var Counter = 0
     for(Rotation : Rotations) {
-        let Direction = Rotation.char_at(0)
+        let Sign = if(Rotation.char_at(0) == "L") { -1 } else { 1 }
         let Distance = Rotation.substring(1).to_num()
-        if(Direction == "L") {
-            Current Point = (Current Point - Distance).mod(100)
-        } else {
-            Current Point = (Current Point + Distance).mod(100)
+        let Movement = Sign * Distance
+
+        let Unwrapped Ending Point = Current Point + Movement
+        let Ending Point = Unwrapped Ending Point.mod(Dial Size)
+
+        let Landed At 0 = if(Ending Point == 0) { 1 } else { 0 }
+
+        var Bracket Movement = 0
+        if(Include Dial Passing 0) {
+            Bracket Movement = Unwrapped Ending Point.floor_div(Dial Size).abs()
+            // Check if we started on 0 (going left) or ended on 0 (going right)
+            let Is Edge Case = (Sign == -1 and Current Point == 0) or
+                               (Sign == 1 and Ending Point == 0)
+
+            // Subtract 1 if it's an edge case, otherwise subtract 0
+            let Adjustment = if(Is Edge Case) { 1 } else { 0 }
+            Bracket Movement = Bracket Movement - Adjustment
         }
-        if(Current Point == 0.0) {
-            Dial At 0 Counter = Dial At 0 Counter + 1
-        }
+
+        Counter = Counter + Landed At 0 + Bracket Movement
+        Current Point = Ending Point
     }
-    Dial At 0 Counter
+    Counter
 }
 
-println(Count Dial At 0(50, Sample Rotations) == 3)
-println(Count Dial At 0(50, Actual Rotations))
+println(Count Dial At 0(50, Sample Rotations, 99, false))
+println(Count Dial At 0(50, Actual Rotations, 99, false))
+println(Count Dial At 0(50, Sample Rotations, 99, true))
+println(Count Dial At 0(50, Actual Rotations, 99, true))
