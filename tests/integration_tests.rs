@@ -169,3 +169,84 @@ fn test_trailing_spaces_before_newline() {
     let result = eval(code);
     assert!(result.is_err(), "Newline after identifier (even with spaces) should break assignment");
 }
+
+#[test]
+fn test_newlines_inside_parens_and_braces() {
+    // BUG: "Recursive Nesting Logic"
+    // Scenario: An if-expression wrapped in parentheses.
+    // The outer parens (...) normally suppress newlines (like for function args).
+    // BUT, the block { ... } inside the if MUST allow newlines for statements.
+
+    let code = r#"
+    let val = (if(true) {
+        let inner = 10
+        inner
+    } else {
+        0
+    })
+    val
+    "#;
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 10.0),
+        // Without the fix, this will fail with "Expected newline... got Identifier"
+        _ => panic!("Expected block inside parens to handle newlines correctly, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_multiline_comment_is_ignored() {
+    // Scenario: A comment spanning multiple lines shouldn't affect the code around it.
+    let code = r#"
+    let x = 10
+    /* This is a comment
+       that spans lines
+    */
+    x
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 10.0),
+        _ => panic!("Expected multiline comment to be ignored, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_multiline_comment_counts_lines_correctly() {
+    // Scenario: If we have an error AFTER a multiline comment,
+    // the line number must be correct (meaning the scanner tracked \n inside the comment).
+    let code = r#"
+    /* Line 2
+       Line 3
+    */
+    @ // This is invalid syntax on Line 5 (assuming file starts at 1)
+    "#;
+
+    // Note: The 'r#' raw string starts the content on the NEXT line.
+    // Line 1 is empty. Line 2 is '/*', Line 3 is 'Line 2', Line 4 is 'Line 3', Line 5 is '*/', Line 6 is '@'.
+    // Expect the error message to contain "Line 5".
+
+    let result = eval(code);
+
+    match result {
+        Err(msg) => {
+            // We check if the error message reports the correct line number.
+            
+            assert!(msg.contains("Line 5"), "Expected error on Line 6, but got: {}", msg);
+        }
+        _ => panic!("Expected scanner error for invalid character"),
+    }
+}
+
+#[test]
+fn test_unterminated_multiline_comment() {
+    // Scenario: File ends while inside a comment.
+    let code = "/* This comment never ends...";
+    let result = eval(code);
+
+    match result {
+        Err(msg) => assert!(msg.contains("Unterminated multi-line comment")),
+        _ => panic!("Expected error for unterminated comment"),
+    }
+}

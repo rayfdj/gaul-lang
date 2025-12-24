@@ -1,6 +1,13 @@
 use crate::scanner::token::{Token, TokenType};
 use std::collections::HashMap;
 
+#[derive(Debug, Clone, PartialEq)]
+enum Nesting {
+    Paren,   // (...) - Suppresses newlines
+    Brace,   // {...} - Allows newlines (statements)
+    Bracket, // [...] - Suppresses newlines
+}
+
 pub struct Scanner {
     source: Vec<char>,
     tokens: Vec<Token>,
@@ -9,8 +16,7 @@ pub struct Scanner {
     current: usize,
     line: usize,
     keywords: HashMap<String, TokenType>,
-    paren_depth: usize,
-    bracket_depth: usize,
+    nesting: Vec<Nesting>, // turn out we need to track nesting... not only depths
 }
 
 impl Scanner {
@@ -23,8 +29,7 @@ impl Scanner {
             current: 0,
             line: 1,
             keywords: keywords.clone(),
-            paren_depth: 0,
-            bracket_depth: 0,
+            nesting: Vec::new(),
         }
     }
 
@@ -50,23 +55,38 @@ impl Scanner {
         let c = self.advance();
         match c {
             '(' => {
-                self.paren_depth += 1;
+                self.nesting.push(Nesting::Paren);
                 self.add_token(TokenType::LeftParen)
             },
             ')' => {
-                if self.paren_depth > 0 { self.paren_depth -= 1; }
-                else { self.errors.push(format!("Unmatched '{} at line {}", c, self.line)); }
+                if let Some(Nesting::Paren) = self.nesting.last() {
+                    self.nesting.pop();
+                } else {
+                    self.errors.push(format!("Unmatched ')' at line {}", self.line));
+                }
                 self.add_token(TokenType::RightParen)
             },
-            '{' => self.add_token(TokenType::LeftBrace),
-            '}' => self.add_token(TokenType::RightBrace),
+            '{' => {
+                self.nesting.push(Nesting::Brace); // Pushing Brace allows newlines again!
+                self.add_token(TokenType::LeftBrace)
+            },
+            '}' => {
+                if let Some(Nesting::Brace) = self.nesting.last() {
+                    self.nesting.pop();
+                }
+                // We don't error here to be lenient (hmmm or should we? TBD)
+                self.add_token(TokenType::RightBrace)
+            },
             '[' => {
-                self.bracket_depth += 1;
+                self.nesting.push(Nesting::Bracket);
                 self.add_token(TokenType::LeftBracket)
             },
             ']' => {
-                if self.bracket_depth > 0 { self.bracket_depth -= 1; }
-                else { self.errors.push(format!("Unmatched '{}' at line {}", c, self.line)); }
+                if let Some(Nesting::Bracket) = self.nesting.last() {
+                    self.nesting.pop();
+                } else {
+                    self.errors.push(format!("Unmatched ']' at line {}", self.line));
+                }
                 self.add_token(TokenType::RightBracket)
             },
             ',' => self.add_token(TokenType::Comma),
@@ -146,6 +166,26 @@ impl Scanner {
                     while self.peek() != Some('\n') && !self.is_at_end() {
                         self.advance();
                     }
+                } else if self.match_char('*') {
+                    // Multi-line comment
+                    loop {
+                        if self.is_at_end() {
+                            self.report_error("Unterminated multi-line comment");
+                            break;
+                        }
+
+                        if self.peek() == Some('\n') {
+                            self.line += 1;
+                        }
+
+                        if self.peek() == Some('*') && self.peek_next() == Some('/') {
+                            self.advance(); // consume '*'
+                            self.advance(); // consume '/'
+                            break;
+                        }
+
+                        self.advance();
+                    }
                 } else {
                     self.add_token(TokenType::Slash);
                 }
@@ -158,16 +198,18 @@ impl Scanner {
             '\n' => {
                 self.line += 1;
 
-                if self.paren_depth > 0 || self.bracket_depth > 0 {
+                // Only suppress if the TOP of the stack is Paren or Bracket.
+                // If top is Brace (or stack empty), we emit newline.
+                let should_suppress = match self.nesting.last() {
+                    Some(Nesting::Paren) | Some(Nesting::Bracket) => true,
+                    _ => false,
+                };
+
+                if should_suppress {
                     return;
                 }
 
-                // Only emit if last token wasn't already a Newline (collapse consecutive)
-                let should_emit = self
-                    .tokens
-                    .last()
-                    .map(|t| t.token_type != TokenType::Newline)
-                    .unwrap_or(true);
+                let should_emit = self.tokens.last().map(|t| t.token_type != TokenType::Newline).unwrap_or(true);
                 if should_emit {
                     self.add_token(TokenType::Newline);
                 }
