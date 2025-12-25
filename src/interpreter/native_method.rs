@@ -148,6 +148,68 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         (Value::Array(elements), "last") => {
             Ok(elements.borrow().last().cloned().unwrap_or(Value::Null))
         }
+        (Value::Array(elements), "push") => {
+            let val = args.get(0).ok_or("push expects a value")?.clone();
+            elements.borrow_mut().push(val);
+            Ok(Value::Null) // Returns null (like Rust/Python).
+        },
+        (Value::Array(elements), "pop") => {
+            // Returns the popped value, or Null if empty
+            Ok(elements.borrow_mut().pop().unwrap_or(Value::Null))
+        },
+        (Value::Array(elements), "set") => {
+            let idx = match args.get(0) {
+                Some(Value::Num(n)) => *n as usize,
+                _ => return Err("set expects index as number".into()),
+            };
+            let val = args.get(1).ok_or("set expects a value")?.clone();
+
+            let mut arr = elements.borrow_mut();
+            if idx < arr.len() {
+                arr[idx] = val; // Replaces the value at index
+                Ok(Value::Null)
+            } else {
+                Err(format!("index {} out of bounds", idx).into())
+            }
+        },
+        (Value::Array(elements), "remove") => {
+            let idx = match args.get(0) {
+                Some(Value::Num(n)) => *n as usize,
+                _ => return Err("remove expects index as number".into()),
+            };
+
+            let mut arr = elements.borrow_mut();
+            if idx < arr.len() {
+                Ok(arr.remove(idx)) // Shifts everything after it to the left
+            } else {
+                Err(format!("index {} out of bounds", idx).into())
+            }
+        },
+        (Value::Array(elements), "contains") => {
+            let search_item = args.get(0).ok_or("contains expects a value")?;
+            let arr = elements.borrow();
+            // Values must implement PartialEq for this to work.
+            let found = arr.contains(search_item);
+            Ok(Value::Bool(found))
+        },
+        (Value::Array(elements), "is_empty") => {
+            Ok(Value::Bool(elements.borrow().is_empty()))
+        },
+        (Value::Array(elements), "join") => {
+            let separator = match args.get(0) {
+                Some(Value::Str(s)) => s.clone(),
+                Some(_) => return Err("join expects a string separator".into()),
+                None => "".into(), // Default to no separator
+            };
+
+            let arr = elements.borrow();
+            let strings: Vec<String> = arr.iter().map(|v| v.to_string()).collect();
+            Ok(Value::Str(strings.join(&separator).into()))
+        }
+
+        // Range
+        (Value::Range(from, until), "from") => Ok(Value::Num(*from)),
+        (Value::Range(from, until), "until") => Ok(Value::Num(*until)),
 
         _ => Err(format!("'{}' is not a valid method for object '{}'", name, receiver).into()),
     }

@@ -64,7 +64,12 @@ impl std::fmt::Display for Value {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", val)?;
+                    match val {
+                        // If the element is a string, print it with quotes (and escapes)
+                        Value::Str(s) => write!(f, "{:?}", s)?,
+                        // Otherwise, print normally
+                        _ => write!(f, "{}", val)?,
+                    }
                 }
                 write!(f, "]")
             },
