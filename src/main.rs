@@ -1,16 +1,16 @@
 use anyhow::Result;
 use clap::Parser as ClapParser;
 use gaul_lang::interpreter::environment::Environment;
-use gaul_lang::interpreter::interpreter::Interpreter;
 use gaul_lang::interpreter::value::Value;
+use gaul_lang::interpreter::Interpreter;
 use gaul_lang::keywords::load_keywords;
-use gaul_lang::parser::parser::Parser;
+use gaul_lang::parser::Parser;
 use gaul_lang::resolver::Resolver;
-use gaul_lang::scanner::scanner::Scanner;
 use gaul_lang::scanner::token::TokenType;
+use gaul_lang::scanner::Scanner;
+use rustyline::DefaultEditor;
 use std::collections::HashMap;
 use std::fs;
-use rustyline::DefaultEditor;
 
 #[derive(ClapParser)]
 #[command(name = "gaul")]

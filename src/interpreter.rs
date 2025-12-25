@@ -1,3 +1,8 @@
+pub mod value;
+pub mod environment;
+pub mod native_function;
+pub mod native_method;
+
 use crate::interpreter::environment::Environment;
 use crate::interpreter::native_function::all_native_functions;
 use crate::interpreter::native_method::call_native_method;
@@ -470,12 +475,12 @@ impl Interpreter {
                         let saved_env = std::mem::replace(&mut self.env, fun.closure.borrow().clone());
 
                         self.env.push_scope();
-                        let result = (|| {
+                        let result = {
                             for (_param, arg) in fun.params.iter().zip(argument_values.into_iter()) {
                                 self.env.define(arg, false);
                             }
                             self.evaluate_expression(fun.body.as_ref())
-                        })();
+                        };
                         self.env.pop_scope();
 
                         self.env = saved_env;

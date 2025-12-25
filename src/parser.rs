@@ -1,3 +1,5 @@
+pub mod ast;
+
 use crate::parser::ast::DeclarationKind::{ExprStmt, Fn, Let, Var};
 use crate::parser::ast::ExprKind::{
     Assign, Block, Bool, Call, For, Get, Identifier, If, Null, Num, Pipe, Range, Return, Str,

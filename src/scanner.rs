@@ -1,3 +1,5 @@
+pub mod token;
+
 use crate::scanner::token::{Token, TokenType};
 use std::collections::HashMap;
 

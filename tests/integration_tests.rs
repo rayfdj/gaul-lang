@@ -1,10 +1,10 @@
 use gaul_lang::interpreter::environment::Environment;
-use gaul_lang::interpreter::interpreter::Interpreter;
+use gaul_lang::interpreter::Interpreter;
 use gaul_lang::interpreter::value::Value;
 use gaul_lang::keywords::load_keywords;
-use gaul_lang::parser::parser::Parser;
+use gaul_lang::parser::Parser;
 use gaul_lang::resolver::Resolver;
-use gaul_lang::scanner::scanner::Scanner;
+use gaul_lang::scanner::Scanner;
 
 // Mimic what the Gaul interpreter is doing
 fn eval(source: &str) -> Result<Value, String> {
