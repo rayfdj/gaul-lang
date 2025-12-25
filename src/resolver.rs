@@ -3,31 +3,36 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 #[derive(Debug, Clone)]
-pub struct ResolutionError {
+pub struct ResolveError {
     pub line: usize,
     pub message: String,
 }
 
 pub struct Resolver {
     scopes: Vec<HashMap<String, usize>>,
+    loop_depth: usize,
+    function_depth: usize,
 }
 
 impl Resolver {
     pub fn new() -> Self {
         let mut resolver = Self {
             scopes: vec![HashMap::new()],
+            loop_depth: 0,
+            function_depth: 0,
         };
         resolver.define_native_functions();
         resolver
     }
 
     fn define_native_functions(&mut self) {
-        for (name, _native_function) in crate::interpreter::native_function::all_native_functions() {
+        for (name, _native_function) in crate::interpreter::native_function::all_native_functions()
+        {
             self.define(name, 0).unwrap();
         }
     }
 
-    fn define(&mut self, name: &str, line: usize) -> Result<(), ResolutionError> {
+    fn define(&mut self, name: &str, line: usize) -> Result<(), ResolveError> {
         let current_scope = self.scopes.last_mut().expect("scopes is empty");
         let slot_index = current_scope.len();
 
@@ -36,7 +41,7 @@ impl Resolver {
                 e.insert(slot_index);
                 Ok(())
             }
-            Entry::Occupied(e) => Err(ResolutionError {
+            Entry::Occupied(e) => Err(ResolveError {
                 line,
                 message: format!("Variable '{}' already defined in this scope", e.key(),),
             }),
@@ -61,17 +66,14 @@ impl Resolver {
         self.scopes.pop();
     }
 
-    pub fn resolve(&mut self, program: &mut Program) -> Result<(), ResolutionError> {
+    pub fn resolve(&mut self, program: &mut Program) -> Result<(), ResolveError> {
         for declaration in program.declarations.iter_mut() {
             self.resolve_declaration(declaration)?;
         }
         Ok(())
     }
 
-    fn resolve_declaration(
-        &mut self,
-        declaration: &mut Declaration,
-    ) -> Result<(), ResolutionError> {
+    fn resolve_declaration(&mut self, declaration: &mut Declaration) -> Result<(), ResolveError> {
         let line = declaration.line;
         match &mut declaration.kind {
             // we're merging these two together because mutability will be checked by the
@@ -82,20 +84,27 @@ impl Resolver {
                 self.define(name, line)?;
             }
             DeclarationKind::Fn { name, params, body } => {
-                self.define(name, line)?; // fn name goes in current scope
-                self.push_scope(); // new scope for function body
-                for param in params {
-                    self.define(param, line)?; // params go in function scope
-                }
-                self.resolve_expression(body)?; // resolve the body
+                self.define(name, line)?;
+                self.push_scope();
+                self.function_depth += 1;
+
+                let result = (|| {
+                    for param in params {
+                        self.define(param, line)?;
+                    }
+                    self.resolve_expression(body)
+                })();
+
+                self.function_depth -= 1;
                 self.pop_scope();
+                result?; // propagate error after cleanup
             }
             DeclarationKind::ExprStmt(expr) => self.resolve_expression(expr)?,
         }
         Ok(())
     }
 
-    fn resolve_expression(&mut self, expression: &mut Expr) -> Result<(), ResolutionError> {
+    fn resolve_expression(&mut self, expression: &mut Expr) -> Result<(), ResolveError> {
         let line = expression.line;
         match &mut expression.kind {
             ExprKind::Identifier { name, resolved } => {
@@ -103,7 +112,7 @@ impl Resolver {
                     *resolved = Some(resolution);
                     Ok(())
                 } else {
-                    Err(ResolutionError {
+                    Err(ResolveError {
                         line,
                         message: format!("Undefined variable '{}'", name),
                     })
@@ -159,8 +168,10 @@ impl Resolver {
             }
             ExprKind::While { condition, body } => {
                 self.resolve_expression(condition)?;
-                self.resolve_expression(body)?;
-                Ok(())
+                self.loop_depth += 1;
+                let result = self.resolve_expression(body);
+                self.loop_depth -= 1;
+                result
             }
             ExprKind::Range { start, end } => {
                 self.resolve_expression(start)?;
@@ -172,12 +183,18 @@ impl Resolver {
                 iterable,
                 body,
             } => {
-                self.resolve_expression(iterable)?;  // resolve iterable first (outside the loop scope)
-                self.push_scope();                    // new scope for loop variable
-                self.define(variable, line)?;         // define loop variable
-                self.resolve_expression(body)?;       // resolve body (can access loop variable)
+                self.resolve_expression(iterable)?;
+                self.push_scope();
+                self.loop_depth += 1;
+
+                let result = (|| {
+                    self.define(variable, line)?;
+                    self.resolve_expression(body)
+                })();
+
+                self.loop_depth -= 1;
                 self.pop_scope();
-                Ok(())
+                result
             }
             ExprKind::Call { callee, arguments } => {
                 self.resolve_expression(callee)?;
@@ -190,7 +207,43 @@ impl Resolver {
                 self.resolve_expression(object)?;
                 Ok(())
             }
-            _ => Ok(()),
+            ExprKind::Break => {
+                if self.loop_depth == 0 {
+                    Err(ResolveError {
+                        line,
+                        message: "'break' outside of loop".into(),
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+            ExprKind::Continue => {
+                if self.loop_depth == 0 {
+                    Err(ResolveError {
+                        line,
+                        message: "'continue' outside of loop".into(),
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+            ExprKind::Return(value) => {
+                if self.function_depth == 0 {
+                    Err(ResolveError {
+                        line,
+                        message: "'return' outside of function".into(),
+                    })
+                } else {
+                    if let Some(expr) = value {
+                        self.resolve_expression(expr)?;
+                    }
+                    Ok(())
+                }
+            }
+            ExprKind::Num(_) | ExprKind::Str(_) | ExprKind::Bool(_) | ExprKind::Null => Ok(()),
+            ExprKind::Pipe { .. } => {
+                todo!("pipe operator not yet implemented in resolver")
+            }
         }
     }
 }

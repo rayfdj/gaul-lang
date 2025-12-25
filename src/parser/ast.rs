@@ -42,6 +42,8 @@ pub enum ExprKind {
         iterable: Box<Expr>,
         body: Box<Expr>,
     },
+    Break,
+    Continue,
     Return(Option<Box<Expr>>),
 
     // Operator Expressions

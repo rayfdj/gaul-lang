@@ -360,3 +360,323 @@ fn test_comparison_precedence() {
         _ => panic!("Comparison precedence failed: expected true, got {:?}", result),
     }
 }
+
+#[test]
+fn test_break_in_while_loop() {
+    // Scenario: Loop from 0 to 10, but break at 5.
+    // Result should be 0+1+2+3+4 = 10.
+    let code = r#"
+    var i = 0
+    var sum = 0
+    while (i < 10) {
+        if (i == 5) {
+            break
+        }
+        sum = sum + i
+        i = i + 1
+    }
+    sum
+    "#;
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 10.0),
+        _ => panic!("Expected loop to break at 5 (sum=10), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_continue_in_for_loop() {
+    // Scenario: Loop array [1, 2, 3, 4, 5].
+    // Skip even numbers (2, 4).
+    // Sum: 1 + 3 + 5 = 9.
+    let code = r#"
+    var sum = 0
+    let list = [1, 2, 3, 4, 5]
+
+    for (n : list) {
+        if (n.mod(2) == 0) {
+            continue
+        }
+        sum = sum + n
+    }
+    sum
+    "#;
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 9.0),
+        _ => panic!("Expected loop to skip evens (sum=9), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_nested_loop_break() {
+    // Scenario: Break should only exit the INNER loop.
+    // Outer loop runs 3 times (i=0, 1, 2).
+    // Inner loop runs until j=2, then breaks.
+    // Inner loop adds j=0, j=1 (Total +1 per inner run).
+    // Total sum = 1 + 1 + 1 = 3.
+    let code = r#"
+    var sum = 0
+    var i = 0
+    while (i < 3) {
+        var j = 0
+        while (j < 5) {
+            if (j == 2) {
+                break
+            }
+            sum = sum + 1
+            j = j + 1
+        }
+        i = i + 1
+    }
+    sum
+    "#;
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 6.0), // 0,1 for each i(0,1,2) -> 2*3 = 6
+        _ => panic!("Expected nested break to work correctly, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_return_early() {
+    // Scenario: Return immediately stops execution.
+    // The "unreachable" assignment should never happen.
+    let code = r#"
+    fn check(n) {
+        if (n < 5) {
+            return "low"
+        }
+        return "high"
+
+        // This should never run
+        return "unreachable"
+    }
+
+    check(3)
+    "#;
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "low"),
+        _ => panic!("Expected early return 'low', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_return_inside_loop() {
+    // Scenario: Return inside a loop should kill the loop AND the function.
+    let code = r#"
+    fn find_first_even(list) {
+        for (n : list) {
+            if (n.mod(2) == 0) {
+                return n
+            }
+        }
+        return -1
+    }
+
+    find_first_even([1, 3, 4, 5])
+    "#;
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 4.0),
+        _ => panic!("Expected return from loop to give 4, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_void_return() {
+    // Scenario: 'return' without value should return Null.
+    let code = r#"
+    fn do_nothing() {
+        return
+    }
+    do_nothing()
+    "#;
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Null) => {}, // Pass
+        _ => panic!("Expected void return to be Null, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_control_flow_as_expression() {
+    // Scenario: Using 'break' as the branch of an 'if' expression.
+    // logic: x is assigned the result of the if.
+    // If true, we break (so x is never assigned, loop ends).
+    // If false, x becomes 10.
+    let code = r#"
+    var result = 0
+    var i = 0
+    while (i < 2) {
+        let x = if (i == 1) {
+            break
+        } else {
+            10
+        }
+        result = result + x
+        i = i + 1
+    }
+    result
+    "#;
+
+    // Iteration 0: i=0. if(false). x = 10. result = 10.
+    // Iteration 1: i=1. if(true). break. Loop ends.
+    // Final result should be 10.
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 10.0),
+        _ => panic!("Expected break in expression to halt loop safely, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_return_without_newline_at_block_end() {
+    // Scenario: 'return' is the very last thing in the block.
+    // There is no newline between 'return' and '}'.
+    // The parser must realize '}' ends the statement and the block.
+    let code = r#"
+    fn nothing() { return }
+    nothing()
+    "#;
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Null) => {}, // Success! It parsed and returned Null.
+        Err(e) => panic!("Parser failed to handle 'return }}': {:?}", e),
+        _ => panic!("Expected Null, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_return_eof_edge_case() {
+    let code = "return";
+    let result = eval(code);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("outside of function"));
+}
+
+#[test]
+fn test_break_outside_loop_rejected() {
+    let code = "break";
+    let result = eval(code);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("outside of loop"));
+}
+
+#[test]
+fn test_continue_outside_loop_rejected() {
+    let code = "continue";
+    let result = eval(code);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("outside of loop"));
+}
+
+#[test]
+fn test_return_outside_function_rejected() {
+    let code = "return 5";
+    let result = eval(code);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("outside of function"));
+}
+
+#[test]
+fn test_break_in_function_outside_loop_rejected() {
+    let code = r#"
+    fn bad() {
+        break
+    }
+    "#;
+    let result = eval(code);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("outside of loop"));
+}
+
+#[test]
+fn test_continue_in_while_loop() {
+    let code = r#"
+    var sum = 0
+    var i = 0
+    while (i < 5) {
+        i = i + 1
+        if (i == 3) {
+            continue
+        }
+        sum = sum + i
+    }
+    sum
+    "#;
+    // i goes 1,2,3,4,5. Skip when i==3.
+    // sum = 1 + 2 + 4 + 5 = 12
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 12.0),
+        _ => panic!("Expected 12, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_break_in_for_loop() {
+    let code = r#"
+    var sum = 0
+    for (i : 0..10) {
+        if (i == 5) {
+            break
+        }
+        sum = sum + i
+    }
+    sum
+    "#;
+    // 0+1+2+3+4 = 10
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 10.0),
+        _ => panic!("Expected 10, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_nested_loop_continue() {
+    let code = r#"
+    var sum = 0
+    for (i : 0..3) {
+        for (j : 0..3) {
+            if (j == 1) {
+                continue
+            }
+            sum = sum + 1
+        }
+    }
+    sum
+    "#;
+    // Inner loop: j=0,1,2. Skip j==1. So 2 adds per outer iteration.
+    // Outer loop: 3 iterations. Total = 3 * 2 = 6
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 6.0),
+        _ => panic!("Expected 6, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_return_with_expression() {
+    let code = r#"
+    fn double(x) {
+        return x * 2
+    }
+    double(21)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 42.0),
+        _ => panic!("Expected 42, got {:?}", result),
+    }
+}

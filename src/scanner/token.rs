@@ -70,6 +70,8 @@ pub enum TokenType {
     Let,            // let (immutable binding)
     Var,            // var (mutable binding)
     While,          // while
+    Break,          // break
+    Continue,       // continue
 
     // Control
     Newline,        // significant for ending identifier

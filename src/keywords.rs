@@ -24,6 +24,10 @@ pub fn load_keywords(path: Option<&str>) -> Result<HashMap<String, TokenType>> {
 }
 
 fn default_keywords() -> HashMap<String, String> {
+    // The default mapping, from "concept words" to "keywords"
+    // For example, "function" is a concept, but by default the keyword we're using in Gaul is "fn"
+    // If you're customizing the keywords, say you want to use "fungsi", then you'll map
+    // "function" to "fungsi" in the keywords file.
     HashMap::from([
         ("and".into(), "and".into()),
         ("or".into(), "or".into()),
@@ -41,10 +45,14 @@ fn default_keywords() -> HashMap<String, String> {
         ("class".into(), "class".into()),
         ("this".into(), "this".into()),
         ("super".into(), "super".into()),
+        ("break".into(), "break".into()),
+        ("continue".into(), "continue".into()),
     ])
 }
 
 fn str_to_token_type(s: &str) -> Option<TokenType> {
+    // this is where the concept words (not the actual keywords, those are mapped above) are mapped
+    // to Token Type.
     match s {
         "and" => Some(TokenType::And),
         "or" => Some(TokenType::Or),
@@ -62,6 +70,8 @@ fn str_to_token_type(s: &str) -> Option<TokenType> {
         "class" => Some(TokenType::Class),
         "this" => Some(TokenType::This),
         "super" => Some(TokenType::Super),
+        "break" => Some(TokenType::Break),
+        "continue" => Some(TokenType::Continue),
         _ => None,
     }
 }

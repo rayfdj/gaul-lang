@@ -1,7 +1,7 @@
 use crate::parser::ast::DeclarationKind::{ExprStmt, Fn, Let, Var};
 use crate::parser::ast::ExprKind::{
-    Assign, Block, Bool, Call, For, Get, Identifier, If, Null, Num, Pipe, Range, Return,
-    Str, Unary, While,
+    Assign, Block, Bool, Call, For, Get, Identifier, If, Null, Num, Pipe, Range, Return, Str,
+    Unary, While,
 };
 use crate::parser::ast::{Declaration, Expr};
 use crate::parser::ast::{ExprKind, Program};
@@ -20,10 +20,7 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self {
-            tokens,
-            current: 0,
-        }
+        Self { tokens, current: 0 }
     }
 
     // utility methods
@@ -263,11 +260,15 @@ impl Parser {
         let then_branch = Box::new(self.block()?);
 
         let mut lookahead = self.current;
-        while lookahead < self.tokens.len() && self.tokens[lookahead].token_type == TokenType::Newline {
+        while lookahead < self.tokens.len()
+            && self.tokens[lookahead].token_type == TokenType::Newline
+        {
             lookahead += 1;
         }
 
-        let else_branch = if lookahead < self.tokens.len() && self.tokens[lookahead].token_type == TokenType::Else {
+        let else_branch = if lookahead < self.tokens.len()
+            && self.tokens[lookahead].token_type == TokenType::Else
+        {
             self.skip_newlines(); // NOW it is safe to eat them
             self.advance(); // consume else
             self.skip_newlines(); // allow newlines after else
@@ -331,7 +332,10 @@ impl Parser {
     fn return_expr(&mut self) -> Result<Expr, ParseError> {
         let line = self.peek().line;
         self.advance(); // consume return
-        let returnee = if self.check(TokenType::Newline) {
+        let returnee = if self.check(TokenType::Newline)
+            || self.check(TokenType::RightBrace)
+            || self.check(TokenType::Eof)
+        {
             None
         } else {
             Some(Box::new(self.expression()?))
@@ -413,7 +417,8 @@ impl Parser {
 
             // Build the new tree node and reassign 'left' (Accumulate)
             left = Expr {
-                kind: ExprKind::Binary { 
+                kind: ExprKind::Binary {
+                    
                     left: Box::new(left),
                     operator,
                     right: Box::new(right),
@@ -435,7 +440,11 @@ impl Parser {
 
     fn equality(&mut self) -> Result<Expr, ParseError> {
         self.binary_expression(
-            &[TokenType::Equal, TokenType::NotEqual, TokenType::ApproxEqual],
+            &[
+                TokenType::Equal,
+                TokenType::NotEqual,
+                TokenType::ApproxEqual,
+            ],
             |p| p.comparison(),
         )
     }
@@ -472,17 +481,11 @@ impl Parser {
     }
 
     fn term(&mut self) -> Result<Expr, ParseError> {
-        self.binary_expression(
-            &[TokenType::Plus, TokenType::Minus],
-            |p| p.factor()
-        )
+        self.binary_expression(&[TokenType::Plus, TokenType::Minus], |p| p.factor())
     }
 
     fn factor(&mut self) -> Result<Expr, ParseError> {
-        self.binary_expression(
-            &[TokenType::Star, TokenType::Slash],
-            |p| p.unary()
-        )
+        self.binary_expression(&[TokenType::Star, TokenType::Slash], |p| p.unary())
     }
 
     fn unary(&mut self) -> Result<Expr, ParseError> {
@@ -609,6 +612,14 @@ impl Parser {
             }
             TokenType::LeftBrace => self.block(),
             TokenType::LeftBracket => self.array(),
+            TokenType::Break => {
+                self.advance();
+                Ok(Expr { kind: ExprKind::Break, line })
+            }
+            TokenType::Continue => {
+                self.advance();
+                Ok(Expr { kind: ExprKind::Continue, line })
+            }
             _ => Err(ParseError {
                 line,
                 message: format!("Unexpected token: {:?}", token.token_type),
@@ -635,9 +646,7 @@ impl Parser {
         self.consume(TokenType::RightBracket, "]")?;
 
         Ok(Expr {
-            kind: ExprKind::Array {
-                elements,
-            },
+            kind: ExprKind::Array { elements },
             line,
         })
     }
@@ -676,7 +685,10 @@ impl Parser {
                         final_expr = Some(Box::new(expr));
                     } else {
                         // there's more stuff, so this was a statement
-                        declarations.push(Declaration { kind: ExprStmt(expr), line: expr_line });
+                        declarations.push(Declaration {
+                            kind: ExprStmt(expr),
+                            line: expr_line,
+                        });
                     }
                 } else if self.check(TokenType::RightBrace) {
                     final_expr = Some(Box::new(expr));
