@@ -200,10 +200,7 @@ impl Scanner {
 
                 // Only suppress if the TOP of the stack is Paren or Bracket.
                 // If top is Brace (or stack empty), we emit newline.
-                let should_suppress = match self.nesting.last() {
-                    Some(Nesting::Paren) | Some(Nesting::Bracket) => true,
-                    _ => false,
-                };
+                let should_suppress = matches!(self.nesting.last(), Some(Nesting::Paren) | Some(Nesting::Bracket));
 
                 if should_suppress {
                     return;

@@ -14,8 +14,8 @@ pub struct Resolver {
     function_depth: usize,
 }
 
-impl Resolver {
-    pub fn new() -> Self {
+impl Default for Resolver {
+    fn default() -> Self {
         let mut resolver = Self {
             scopes: vec![HashMap::new()],
             loop_depth: 0,
@@ -23,6 +23,12 @@ impl Resolver {
         };
         resolver.define_native_functions();
         resolver
+    }
+}
+
+impl Resolver {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     fn define_native_functions(&mut self) {

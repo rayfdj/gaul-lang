@@ -11,11 +11,17 @@ pub struct Environment {
     scopes: Vec<Vec<Binding>>,
 }
 
-impl Environment {
-    pub fn new() -> Environment {
-        Environment {
-            scopes: vec![Vec::new()],
+impl Default for Environment {
+    fn default() -> Self {
+        Self {
+            scopes: vec![Vec::new()]
         }
+    }
+}
+
+impl Environment {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn define(&mut self, value: Value, is_mutable: bool) {

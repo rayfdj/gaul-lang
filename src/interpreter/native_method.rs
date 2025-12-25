@@ -7,17 +7,17 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         // String methods!
         (Value::Str(s), "len") => Ok(Value::Num(s.chars().count() as f64)),
         (Value::Str(s), "char_at") => {
-            let idx = match args.get(0) {
+            let idx = match args.first() {
                 Some(Value::Num(n)) => *n as usize,
                 _ => return Err("char_at expects a number".into()),
             };
             match s.chars().nth(idx) {
                 Some(c) => Ok(Value::Str(c.to_string().into())),
-                None => Err(format!("index {} out of bounds", idx).into()),
+                None => Err(format!("index {} out of bounds", idx)),
             }
         }
         (Value::Str(s), "substring") => {
-            let start = match args.get(0) {
+            let start = match args.first() {
                 Some(Value::Num(n)) => *n as usize,
                 _ => return Err("substring expects a start index".into()),
             };
@@ -43,7 +43,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             Ok(Value::Str(result.into()))
         }
         (Value::Str(s), "split") => {
-            let delimiter = match args.get(0) {
+            let delimiter = match args.first() {
                 Some(Value::Str(d)) => &d[..],
                 _ => return Err("split expects a string delimiter".into()),
             };
@@ -68,7 +68,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         }
         (Value::Str(s), "trim") => Ok(Value::Str(s[..].trim().to_string().into())),
         (Value::Str(s), "contains") => {
-            let sub = match args.get(0) {
+            let sub = match args.first() {
                 Some(Value::Str(s)) => &s[..],
                 _ => return Err("contains expects a string".into()),
             };
@@ -86,7 +86,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         (Value::Num(n), "ceil") => Ok(Value::Num(n.ceil())),
         (Value::Num(n), "round") => Ok(Value::Num(n.round())),
         (Value::Num(n), "pow") => {
-            let exponent = match args.get(0) {
+            let exponent = match args.first() {
                 Some(Value::Num(n)) => *n,
                 _ => return Err("pow expects an exponent".into()),
             };
@@ -100,7 +100,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             }
         }
         (Value::Num(n), "mod") => {
-            let divisor = match args.get(0) {
+            let divisor = match args.first() {
                 Some(Value::Num(d)) => *d,
                 _ => return Err("mod expects a number".into()),
             };
@@ -113,7 +113,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             Ok(Value::Num(n.rem_euclid(divisor)))
         }
         (Value::Num(n), "floor_div") => {
-            let divisor = match args.get(0) {
+            let divisor = match args.first() {
                 Some(Value::Num(d)) => *d,
                 _ => return Err("floor_div expects a number".into()),
             };
@@ -132,7 +132,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         // Array!
         (Value::Array(elements), "len") => Ok(Value::Num(elements.borrow().len() as f64)),
         (Value::Array(elements), "get") => {
-            let idx = match args.get(0) {
+            let idx = match args.first() {
                 Some(Value::Num(n)) => *n as usize,
                 _ => return Err("get expects a number".into()),
             };
@@ -140,7 +140,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
                 .borrow()
                 .get(idx)
                 .cloned()
-                .ok_or_else(|| format!("index {} out of bounds", idx).into())
+                .ok_or_else(|| format!("index {} out of bounds", idx))
         }
         (Value::Array(elements), "first") => {
             Ok(elements.borrow().first().cloned().unwrap_or(Value::Null))
@@ -149,7 +149,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             Ok(elements.borrow().last().cloned().unwrap_or(Value::Null))
         }
         (Value::Array(elements), "push") => {
-            let val = args.get(0).ok_or("push expects a value")?.clone();
+            let val = args.first().ok_or("push expects a value")?.clone();
             elements.borrow_mut().push(val);
             Ok(Value::Null) // Returns null (like Rust/Python).
         },
@@ -158,7 +158,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             Ok(elements.borrow_mut().pop().unwrap_or(Value::Null))
         },
         (Value::Array(elements), "set") => {
-            let idx = match args.get(0) {
+            let idx = match args.first() {
                 Some(Value::Num(n)) => *n as usize,
                 _ => return Err("set expects index as number".into()),
             };
@@ -169,11 +169,11 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
                 arr[idx] = val; // Replaces the value at index
                 Ok(Value::Null)
             } else {
-                Err(format!("index {} out of bounds", idx).into())
+                Err(format!("index {} out of bounds", idx))
             }
         },
         (Value::Array(elements), "remove") => {
-            let idx = match args.get(0) {
+            let idx = match args.first() {
                 Some(Value::Num(n)) => *n as usize,
                 _ => return Err("remove expects index as number".into()),
             };
@@ -182,11 +182,11 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             if idx < arr.len() {
                 Ok(arr.remove(idx)) // Shifts everything after it to the left
             } else {
-                Err(format!("index {} out of bounds", idx).into())
+                Err(format!("index {} out of bounds", idx))
             }
         },
         (Value::Array(elements), "contains") => {
-            let search_item = args.get(0).ok_or("contains expects a value")?;
+            let search_item = args.first().ok_or("contains expects a value")?;
             let arr = elements.borrow();
             // Values must implement PartialEq for this to work.
             let found = arr.contains(search_item);
@@ -196,7 +196,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             Ok(Value::Bool(elements.borrow().is_empty()))
         },
         (Value::Array(elements), "join") => {
-            let separator = match args.get(0) {
+            let separator = match args.first() {
                 Some(Value::Str(s)) => s.clone(),
                 Some(_) => return Err("join expects a string separator".into()),
                 None => "".into(), // Default to no separator
@@ -211,6 +211,6 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         (Value::Range(from, _until), "from") => Ok(Value::Num(*from)),
         (Value::Range(_from, until), "until") => Ok(Value::Num(*until)),
 
-        _ => Err(format!("'{}' is not a valid method for object '{}'", name, receiver).into()),
+        _ => Err(format!("'{}' is not a valid method for object '{}'", name, receiver)),
     }
 }

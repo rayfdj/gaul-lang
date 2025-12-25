@@ -88,12 +88,12 @@ impl Interpreter {
     fn execute_declaration(&mut self, declaration: &Declaration) -> Result<ControlFlow, RuntimeError> {
         match &declaration.kind {
             DeclarationKind::Let { name: _name, initializer } => {
-                let value = prop_val!(self.evaluate_expression(&initializer));
+                let value = prop_val!(self.evaluate_expression(initializer));
                 self.env.define(value, false);
                 Ok(Value::Null.into())
             }
             DeclarationKind::Var { name: _name, initializer } => {
-                let value = prop_val!(self.evaluate_expression(&initializer));
+                let value = prop_val!(self.evaluate_expression(initializer));
                 self.env.define(value, true);
                 Ok(Value::Null.into())
             }
@@ -123,7 +123,7 @@ impl Interpreter {
 
                 Ok(Value::Null.into())
             }
-            DeclarationKind::ExprStmt(expr) => self.evaluate_expression(&expr),
+            DeclarationKind::ExprStmt(expr) => self.evaluate_expression(expr),
         }
     }
 
@@ -143,7 +143,7 @@ impl Interpreter {
 
             // assignment
             ExprKind::Assign { target, value } => {
-                let value = prop_val!(self.evaluate_expression(&*value));
+                let value = prop_val!(self.evaluate_expression(value));
                 match &target.kind {
                     ExprKind::Identifier { name, resolved } => {
                         match resolved {
@@ -169,7 +169,7 @@ impl Interpreter {
 
             // unary
             ExprKind::Unary { operator, operand } => {
-                let operand_value = prop_val!(self.evaluate_expression(&*operand));
+                let operand_value = prop_val!(self.evaluate_expression(operand));
                 match (&operator.token_type, operand_value) {
                     (TokenType::Bang, Value::Bool(b)) => Ok(Value::Bool(!b).into()),
                     (TokenType::Minus, Value::Num(n)) => Ok(Value::Num(-n).into()),
@@ -189,14 +189,14 @@ impl Interpreter {
                 operator,
                 right,
             } => {
-                let left_value = prop_val!(self.evaluate_expression(&*left));
+                let left_value = prop_val!(self.evaluate_expression(left));
 
                 match (&operator.token_type, &left_value) {
                     // handle the short-circuit
                     (TokenType::And, Value::Bool(false)) => Ok(left_value.into()),
                     (TokenType::Or, Value::Bool(true)) => Ok(left_value.into()),
                     (TokenType::And | TokenType::Or, Value::Bool(_)) => {
-                        let right_value = prop_val!(self.evaluate_expression(&*right));
+                        let right_value = prop_val!(self.evaluate_expression(right));
                         match right_value {
                             Value::Bool(_) => Ok(right_value.into()),
                             _ => Err(RuntimeError {
@@ -216,7 +216,7 @@ impl Interpreter {
                         ),
                     }),
                     _ => {
-                        let right_value = prop_val!(self.evaluate_expression(&*right));
+                        let right_value = prop_val!(self.evaluate_expression(right));
                         match (&operator.token_type, left_value, right_value) {
                             // arithmetic
                             (TokenType::Plus, Value::Num(n1), Value::Num(n2)) => {
@@ -391,7 +391,7 @@ impl Interpreter {
                 iterable,
                 body,
             } => {
-                let iterable = prop_val!(self.evaluate_expression(&*iterable));
+                let iterable = prop_val!(self.evaluate_expression(iterable));
                 match iterable {
                     Value::Range(start, end) => {
                         self.env.push_scope();
@@ -452,7 +452,7 @@ impl Interpreter {
                         });
                 }
 
-                let callee_value = prop_val!(self.evaluate_expression(&*callee));
+                let callee_value = prop_val!(self.evaluate_expression(callee));
                 match callee_value {
                     Value::Fn(fun) => {
                         if fun.params.len() != argument_values.len() {
