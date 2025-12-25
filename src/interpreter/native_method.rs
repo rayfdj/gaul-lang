@@ -208,8 +208,8 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         }
 
         // Range
-        (Value::Range(from, until), "from") => Ok(Value::Num(*from)),
-        (Value::Range(from, until), "until") => Ok(Value::Num(*until)),
+        (Value::Range(from, _until), "from") => Ok(Value::Num(*from)),
+        (Value::Range(_from, until), "until") => Ok(Value::Num(*until)),
 
         _ => Err(format!("'{}' is not a valid method for object '{}'", name, receiver).into()),
     }

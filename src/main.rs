@@ -10,8 +10,7 @@ use gaul_lang::scanner::scanner::Scanner;
 use gaul_lang::scanner::token::TokenType;
 use std::collections::HashMap;
 use std::fs;
-use std::io;
-use std::io::{BufRead, BufReader, Write};
+use rustyline::DefaultEditor;
 
 #[derive(ClapParser)]
 #[command(name = "gaul")]
@@ -45,38 +44,48 @@ fn run_prompt(
     resolver: &mut Resolver,
     interpreter: &mut Interpreter,
 ) -> Result<()> {
-    let stdin = io::stdin();
-    let mut reader = BufReader::new(stdin.lock());
+    let mut rl = DefaultEditor::new()?;
     let mut buffer = String::new();
 
+    let history_path = dirs::home_dir().map(|p| p.join(".gaul_history"));
+    if let Some(ref path) = history_path {
+        let _ = rl.load_history(path);
+    }
+
     loop {
-        // Change prompt if we are in the middle of a multi-line block
-        if buffer.is_empty() {
-            print!("> ");
-        } else {
-            print!("| ");
-        }
-        io::stdout().flush()?;
+        let prompt = if buffer.is_empty() { "> " } else { "| " };
 
-        let mut line = String::new();
-        let bytes_read = reader.read_line(&mut line)?;
+        match rl.readline(prompt) {
+            Ok(line) => {
+                buffer.push_str(&line);
+                buffer.push('\n');
 
-        if bytes_read == 0 {
-            break;
-        } // Ctrl+D
-
-        buffer.push_str(&line);
-
-        // Check if the current buffer has balanced braces/parens
-        if is_complete(&buffer) {
-            if !buffer.trim().is_empty() {
-                if let Err(e) = run(&buffer, keywords, resolver, interpreter) {
-                    eprintln!("Execution error: {}", e);
+                if is_complete(&buffer) {
+                    if !buffer.trim().is_empty() {
+                        let _ = rl.add_history_entry(buffer.trim());
+                        if let Err(e) = run(&buffer, keywords, resolver, interpreter) {
+                            eprintln!("Execution error: {}", e);
+                        }
+                    }
+                    buffer.clear();
                 }
             }
-            buffer.clear();
+            Err(rustyline::error::ReadlineError::Eof) => break,
+            Err(rustyline::error::ReadlineError::Interrupted) => {
+                buffer.clear();
+                println!("^C");
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                break;
+            }
         }
     }
+
+    if let Some(ref path) = history_path {
+        let _ = rl.save_history(path);
+    }
+
     Ok(())
 }
 

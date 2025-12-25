@@ -63,7 +63,7 @@ impl Interpreter {
     }
 
     fn define_native_functions(&mut self) {
-        for (name, native_function) in all_native_functions() {
+        for (_name, native_function) in all_native_functions() {
             self.env.define(native_function, false);
         }
     }
@@ -87,12 +87,12 @@ impl Interpreter {
 
     fn execute_declaration(&mut self, declaration: &Declaration) -> Result<ControlFlow, RuntimeError> {
         match &declaration.kind {
-            DeclarationKind::Let { name, initializer } => {
+            DeclarationKind::Let { name: _name, initializer } => {
                 let value = prop_val!(self.evaluate_expression(&initializer));
                 self.env.define(value, false);
                 Ok(Value::Null.into())
             }
-            DeclarationKind::Var { name, initializer } => {
+            DeclarationKind::Var { name: _name, initializer } => {
                 let value = prop_val!(self.evaluate_expression(&initializer));
                 self.env.define(value, true);
                 Ok(Value::Null.into())
@@ -387,7 +387,7 @@ impl Interpreter {
             }
 
             ExprKind::For {
-                variable,
+                variable: _variable,
                 iterable,
                 body,
             } => {
@@ -471,7 +471,7 @@ impl Interpreter {
 
                         self.env.push_scope();
                         let result = (|| {
-                            for (param, arg) in fun.params.iter().zip(argument_values.into_iter()) {
+                            for (_param, arg) in fun.params.iter().zip(argument_values.into_iter()) {
                                 self.env.define(arg, false);
                             }
                             self.evaluate_expression(fun.body.as_ref())
