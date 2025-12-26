@@ -1,0 +1,60 @@
+let Example Product IDs String = "11-22,95-115,998-1012,1188511880-1188511890,222220-222224,1698522-1698528,446443-446449,38593856-38593862,565653-565659,824824821-824824827,2121212118-2121212124"
+let Actual Product IDs String = read_file("src/samples/aoc/2025/day02.txt")
+
+fn Parse Ranges(Input) {
+    let Ranges = []
+    for(Range : Input.split(",")) {
+        let Bounds = Range.split("-")
+        Ranges.push(Bounds.get(0).trim().to_num()..Bounds.get(1).trim().to_num() + 1)
+    }
+    Ranges
+}
+
+fn Is Repeating Pattern(S, Exactly Twice Only) {
+    let Len = S.len()
+    if(Len < 2) {
+        return false
+    } else {
+        if(Exactly Twice Only) {
+            if(Len.mod(2) != 0) {
+                return false
+            } else {
+                let Half = Len.floor_div(2)
+                S.substring(0, Half) == S.substring(Half, Len)
+            }
+        } else {
+            for(Pattern Len : 1..(Len.floor_div(2) + 1)) {
+                if(Len.mod(Pattern Len) == 0) {
+                    let Pattern = S.substring(0, Pattern Len)
+                    var Matches = true
+                    for(i : 1..Len.floor_div(Pattern Len)) {
+                        if(S.substring(i * Pattern Len, (i + 1) * Pattern Len) != Pattern) {
+                            Matches = false
+                        }
+                    }
+                    if(Matches) {
+                        return true
+                    }
+                }
+            }
+            false
+        }
+    }
+}
+
+fn Add Up All Invalid IDs(Input, Exactly Twice Only) {
+    var Sum = 0
+    for(Range : Parse Ranges(Input)) {
+        for(Id : Range) {
+            if(Is Repeating Pattern(Id.to_str(), Exactly Twice Only)) {
+                Sum = Sum + Id
+            }
+        }
+    }
+    Sum
+}
+
+println(Add Up All Invalid IDs(Example Product IDs String, true))
+println(Add Up All Invalid IDs(Actual Product IDs String, true))
+println(Add Up All Invalid IDs(Example Product IDs String, false))
+println(Add Up All Invalid IDs(Actual Product IDs String, false))
