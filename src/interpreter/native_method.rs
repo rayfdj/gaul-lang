@@ -53,8 +53,6 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
                 .map(|part| Value::Str(part.to_string().into()))
                 .collect();
 
-            // You'll need to wrap this in your array container type
-            // Assuming: use std::rc::Rc; use std::cell::RefCell;
             Ok(Value::Array(Rc::new(RefCell::new(parts))))
         }
         (Value::Str(s), "lines") => {
@@ -74,10 +72,31 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             };
             Ok(Value::Bool(s[..].contains(sub)))
         }
+        (Value::Str(s), "starts_with") => {
+            let sub = match args.first() {
+                Some(Value::Str(s)) => &s[..],
+                _ => return Err("starts_with expects a string".into()),
+            };
+            Ok(Value::Bool(s[..].starts_with(sub)))
+        }
+        (Value::Str(s), "ends_with") => {
+            let sub = match args.first() {
+                Some(Value::Str(s)) => &s[..],
+                _ => return Err("ends_with expects a string".into()),
+            };
+            Ok(Value::Bool(s[..].ends_with(sub)))
+        }
         (Value::Str(s), "to_num") => Ok(s
             .parse::<f64>()
             .map(Value::Num)
             .map_err(|err| err.to_string())?),
+        (Value::Str(s), "chars") => {
+            let chars: Vec<Value> = s
+                .chars()
+                .map(|c| Value::Str(c.to_string().into()))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(chars))))
+        }
 
         // Number methods!
         (Value::Num(n), "to_str") => Ok(Value::Str(n.to_string().into())),
@@ -192,6 +211,11 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             let found = arr.contains(search_item);
             Ok(Value::Bool(found))
         }
+        (Value::Array(elements), "reverse") => {
+            let mut reversed = elements.borrow().clone();
+            reversed.reverse();
+            Ok(Value::Array(Rc::new(RefCell::new(reversed))))
+        }
         (Value::Array(elements), "is_empty") => Ok(Value::Bool(elements.borrow().is_empty())),
         (Value::Array(elements), "join") => {
             let separator = match args.first() {
@@ -203,6 +227,82 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             let arr = elements.borrow();
             let strings: Vec<String> = arr.iter().map(|v| v.to_string()).collect();
             Ok(Value::Str(strings.join(&separator).into()))
+        }
+        (Value::Array(elements), "sum") => {
+            let arr = elements.borrow();
+            let mut total = 0.0;
+            for val in arr.iter() {
+                match val {
+                    Value::Num(n) => total += n,
+                    _ => return Err("sum expects all elements to be numbers".into()),
+                }
+            }
+            Ok(Value::Num(total))
+        }
+        (Value::Array(elements), "min") => {
+            let arr = elements.borrow();
+            if arr.is_empty() {
+                return Ok(Value::Null)
+            }
+            let mut min_val = f64::INFINITY;
+            for val in arr.iter() {
+                match val {
+                    Value::Num(n) => if *n < min_val { min_val = *n },
+                    _ => return Err("min expects all elements to be numbers".into()),
+                }
+            }
+            Ok(Value::Num(min_val))
+        }
+        (Value::Array(elements), "max") => {
+            let arr = elements.borrow();
+            if arr.is_empty() {
+                return Ok(Value::Null)
+            }
+            let mut max_val = f64::NEG_INFINITY;
+            for val in arr.iter() {
+                match val {
+                    Value::Num(n) => if *n > max_val { max_val = *n },
+                    _ => return Err("max expects all elements to be numbers".into()),
+                }
+            }
+            Ok(Value::Num(max_val))
+        }
+        (Value::Array(elements), "sort") => {
+            let arr = elements.borrow();
+            if arr.is_empty() {
+                return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+            }
+
+            // Check first element to determine type
+            match arr.first() {
+                Some(Value::Num(_)) => {
+                    // Sort numbers
+                    let mut nums: Vec<f64> = vec![];
+                    for val in arr.iter() {
+                        match val {
+                            Value::Num(n) => nums.push(*n),
+                            _ => return Err("sort expects all elements to be the same type".into()),
+                        }
+                    }
+                    nums.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    let sorted: Vec<Value> = nums.into_iter().map(Value::Num).collect();
+                    Ok(Value::Array(Rc::new(RefCell::new(sorted))))
+                }
+                Some(Value::Str(_)) => {
+                    // Sort strings lexicographically
+                    let mut strs: Vec<Rc<str>> = vec![];
+                    for val in arr.iter() {
+                        match val {
+                            Value::Str(s) => strs.push(s.clone()),
+                            _ => return Err("sort expects all elements to be the same type".into()),
+                        }
+                    }
+                    strs.sort();
+                    let sorted: Vec<Value> = strs.into_iter().map(Value::Str).collect();
+                    Ok(Value::Array(Rc::new(RefCell::new(sorted))))
+                }
+                _ => Err("sort only supports arrays of numbers or strings".into()),
+            }
         }
 
         // Range

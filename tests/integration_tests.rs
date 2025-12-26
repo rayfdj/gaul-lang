@@ -732,3 +732,852 @@ fn test_return_with_expression() {
         _ => panic!("Expected 42, got {:?}", result),
     }
 }
+
+// ==================== NATIVE METHOD TESTS ====================
+
+// --- String Methods ---
+
+#[test]
+fn test_string_len() {
+    let result = eval(r#""hello".len()"#);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 5.0),
+        _ => panic!("Expected 5, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_len_unicode() {
+    let result = eval(r#""héllo".len()"#);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 5.0),
+        _ => panic!("Expected 5 (char count, not bytes), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_char_at() {
+    let result = eval(r#""hello".char_at(1)"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "e"),
+        _ => panic!("Expected 'e', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_char_at_out_of_bounds() {
+    let result = eval(r#""hello".char_at(10)"#);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_string_substring() {
+    let result = eval(r#""hello world".substring(0, 5)"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "hello"),
+        _ => panic!("Expected 'hello', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_substring_to_end() {
+    let result = eval(r#""hello world".substring(6)"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "world"),
+        _ => panic!("Expected 'world', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_split() {
+    let code = r#"
+    let parts = "a,b,c".split(",")
+    parts.len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Expected 3 parts, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_split_get_element() {
+    let code = r#"
+    let parts = "a,b,c".split(",")
+    parts.get(1)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "b"),
+        _ => panic!("Expected 'b', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_lines() {
+    let code = r#"
+    let text = "line1
+line2
+line3"
+    text.lines().len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Expected 3 lines, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_trim() {
+    let result = eval(r#""  hello  ".trim()"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "hello"),
+        _ => panic!("Expected 'hello', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_contains_true() {
+    let result = eval(r#""hello world".contains("world")"#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_contains_false() {
+    let result = eval(r#""hello world".contains("foo")"#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!("Expected false, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_starts_with_true() {
+    let result = eval(r#""hello world".starts_with("hello")"#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_starts_with_false() {
+    let result = eval(r#""hello world".starts_with("world")"#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!("Expected false, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_ends_with_true() {
+    let result = eval(r#""hello world".ends_with("world")"#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_ends_with_false() {
+    let result = eval(r#""hello world".ends_with("hello")"#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!("Expected false, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_to_num() {
+    let result = eval(r#""42".to_num()"#);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 42.0),
+        _ => panic!("Expected 42, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_to_num_float() {
+    let result = eval(r#""1.234".to_num()"#);
+    match result {
+        Ok(Value::Num(n)) => assert!((n - 1.234).abs() < 0.001),
+        _ => panic!("Expected 3.14, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_to_num_invalid() {
+    let result = eval(r#""not a number".to_num()"#);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_string_chars() {
+    let code = r#"
+    let chars = "hello".chars()
+    chars.len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 5.0),
+        _ => panic!("Expected 5, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_chars_iterate() {
+    let code = r#"
+    var result = ""
+    for(c : "abc".chars()) {
+        result = result + c + "-"
+    }
+    result
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "a-b-c-"),
+        _ => panic!("Expected 'a-b-c-', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_chars_get_element() {
+    let code = r#""hello".chars().get(1)"#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "e"),
+        _ => panic!("Expected 'e', got {:?}", result),
+    }
+}
+
+// --- Number Methods ---
+
+#[test]
+fn test_number_to_str() {
+    let result = eval("42.to_str()");
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "42"),
+        _ => panic!("Expected '42', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_number_abs_positive() {
+    let result = eval("42.abs()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 42.0),
+        _ => panic!("Expected 42, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_number_abs_negative() {
+    let code = "(-42).abs()";
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 42.0),
+        _ => panic!("Expected 42, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_number_floor() {
+    let result = eval("3.7.floor()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Expected 3, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_number_ceil() {
+    let result = eval("3.2.ceil()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 4.0),
+        _ => panic!("Expected 4, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_number_round() {
+    let result = eval("3.5.round()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 4.0),
+        _ => panic!("Expected 4, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_number_pow() {
+    let result = eval("2.pow(10)");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 1024.0),
+        _ => panic!("Expected 1024, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_number_sqrt() {
+    let result = eval("16.sqrt()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 4.0),
+        _ => panic!("Expected 4, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_number_sqrt_negative() {
+    let code = "(-1).sqrt()";
+    let result = eval(code);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_number_mod() {
+    let result = eval("17.mod(5)");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 2.0),
+        _ => panic!("Expected 2, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_number_mod_negative() {
+    let code = "(-7).mod(3)";
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 2.0), // rem_euclid gives positive result
+        _ => panic!("Expected 2, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_number_mod_by_zero() {
+    let result = eval("10.mod(0)");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_number_floor_div() {
+    let result = eval("17.floor_div(5)");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Expected 3, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_number_floor_div_negative() {
+    let code = "(-7).floor_div(3)";
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, -3.0), // div_euclid floors toward negative infinity
+        _ => panic!("Expected -3, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_number_floor_div_by_zero() {
+    let result = eval("10.floor_div(0)");
+    assert!(result.is_err());
+}
+
+// --- Bool Methods ---
+
+#[test]
+fn test_bool_to_str_true() {
+    let result = eval("true.to_str()");
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "true"),
+        _ => panic!("Expected 'true', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_bool_to_str_false() {
+    let result = eval("false.to_str()");
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "false"),
+        _ => panic!("Expected 'false', got {:?}", result),
+    }
+}
+
+// --- Array Methods ---
+
+#[test]
+fn test_array_len() {
+    let result = eval("[1, 2, 3, 4, 5].len()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 5.0),
+        _ => panic!("Expected 5, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_len_empty() {
+    let result = eval("[].len()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 0.0),
+        _ => panic!("Expected 0, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_get() {
+    let result = eval("[10, 20, 30].get(1)");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 20.0),
+        _ => panic!("Expected 20, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_get_out_of_bounds() {
+    let result = eval("[1, 2, 3].get(10)");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_array_first() {
+    let result = eval("[10, 20, 30].first()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 10.0),
+        _ => panic!("Expected 10, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_first_empty() {
+    let result = eval("[].first()");
+    match result {
+        Ok(Value::Null) => {}
+        _ => panic!("Expected Null, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_last() {
+    let result = eval("[10, 20, 30].last()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 30.0),
+        _ => panic!("Expected 30, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_last_empty() {
+    let result = eval("[].last()");
+    match result {
+        Ok(Value::Null) => {}
+        _ => panic!("Expected Null, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_push() {
+    let code = r#"
+    let arr = [1, 2]
+    arr.push(3)
+    arr.len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Expected 3, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_push_returns_null() {
+    let code = r#"
+    let arr = [1, 2]
+    arr.push(3)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Null) => {}
+        _ => panic!("Expected Null, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_pop() {
+    let code = r#"
+    let arr = [1, 2, 3]
+    arr.pop()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Expected 3, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_pop_modifies_array() {
+    let code = r#"
+    let arr = [1, 2, 3]
+    arr.pop()
+    arr.len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 2.0),
+        _ => panic!("Expected 2, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_pop_empty() {
+    let result = eval("[].pop()");
+    match result {
+        Ok(Value::Null) => {}
+        _ => panic!("Expected Null, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_set() {
+    let code = r#"
+    let arr = [1, 2, 3]
+    arr.set(1, 99)
+    arr.get(1)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 99.0),
+        _ => panic!("Expected 99, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_set_out_of_bounds() {
+    let code = r#"
+    let arr = [1, 2, 3]
+    arr.set(10, 99)
+    "#;
+    let result = eval(code);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_array_remove() {
+    let code = r#"
+    let arr = [1, 2, 3]
+    arr.remove(1)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 2.0),
+        _ => panic!("Expected 2, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_remove_shifts_elements() {
+    let code = r#"
+    let arr = [1, 2, 3]
+    arr.remove(0)
+    arr.get(0)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 2.0),
+        _ => panic!("Expected 2, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_remove_out_of_bounds() {
+    let code = r#"
+    let arr = [1, 2, 3]
+    arr.remove(10)
+    "#;
+    let result = eval(code);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_array_contains_true() {
+    let result = eval("[1, 2, 3].contains(2)");
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_contains_false() {
+    let result = eval("[1, 2, 3].contains(99)");
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!("Expected false, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_contains_string() {
+    let result = eval(r#"["a", "b", "c"].contains("b")"#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_reverse() {
+    let code = r#"
+    let arr = [1, 2, 3]
+    let rev = arr.reverse()
+    rev.get(0)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Expected 3, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_reverse_does_not_mutate() {
+    let code = r#"
+    let arr = [1, 2, 3]
+    arr.reverse()
+    arr.get(0)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 1.0),
+        _ => panic!("Expected 1 (original unchanged), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_is_empty_true() {
+    let result = eval("[].is_empty()");
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_is_empty_false() {
+    let result = eval("[1].is_empty()");
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!("Expected false, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_join() {
+    let result = eval(r#"["a", "b", "c"].join("-")"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "a-b-c"),
+        _ => panic!("Expected 'a-b-c', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_join_no_separator() {
+    let result = eval(r#"["a", "b", "c"].join()"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "abc"),
+        _ => panic!("Expected 'abc', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_join_numbers() {
+    let result = eval(r#"[1, 2, 3].join(", ")"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "1, 2, 3"),
+        _ => panic!("Expected '1, 2, 3', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_sum() {
+    let result = eval("[1, 2, 3, 4, 5].sum()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 15.0),
+        _ => panic!("Expected 15, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_sum_empty() {
+    let result = eval("[].sum()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 0.0),
+        _ => panic!("Expected 0, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_sum_non_numbers() {
+    let result = eval(r#"[1, "two", 3].sum()"#);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_array_min() {
+    let result = eval("[3, 1, 4, 1, 5].min()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 1.0),
+        _ => panic!("Expected 1, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_min_empty() {
+    let result = eval("[].min()");
+    match result {
+        Ok(Value::Null) => {}
+        _ => panic!("Expected Null, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_min_non_numbers() {
+    let result = eval(r#"[1, "two", 3].min()"#);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_array_max() {
+    let result = eval("[3, 1, 4, 1, 5].max()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 5.0),
+        _ => panic!("Expected 5, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_max_empty() {
+    let result = eval("[].max()");
+    match result {
+        Ok(Value::Null) => {}
+        _ => panic!("Expected Null, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_max_non_numbers() {
+    let result = eval(r#"[1, "two", 3].max()"#);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_array_max_negative() {
+    let result = eval("[-5, -2, -10].max()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, -2.0),
+        _ => panic!("Expected -2, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_sort_numbers() {
+    let code = "[3, 1, 4, 1, 5, 9, 2, 6].sort()";
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(arr)) => {
+            let nums: Vec<f64> = arr.borrow().iter().map(|v| {
+                match v { Value::Num(n) => *n, _ => panic!("Expected number") }
+            }).collect();
+            assert_eq!(nums, vec![1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 9.0]);
+        }
+        _ => panic!("Expected sorted array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_sort_strings() {
+    let code = r#"["banana", "apple", "cherry"].sort()"#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(arr)) => {
+            let strs: Vec<String> = arr.borrow().iter().map(|v| {
+                match v { Value::Str(s) => s.to_string(), _ => panic!("Expected string") }
+            }).collect();
+            assert_eq!(strs, vec!["apple", "banana", "cherry"]);
+        }
+        _ => panic!("Expected sorted array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_sort_empty() {
+    let result = eval("[].sort()");
+    match result {
+        Ok(Value::Array(arr)) => assert!(arr.borrow().is_empty()),
+        _ => panic!("Expected empty array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_sort_mixed_types_error() {
+    let result = eval(r#"[1, "two", 3].sort()"#);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_array_sort_does_not_mutate() {
+    let code = r#"
+    let arr = [3, 1, 2]
+    arr.sort()
+    arr.get(0)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0), // Original unchanged
+        _ => panic!("Expected 3, got {:?}", result),
+    }
+}
+
+// --- Range Methods ---
+
+#[test]
+fn test_range_from() {
+    let result = eval("(5..10).from()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 5.0),
+        _ => panic!("Expected 5, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_range_until() {
+    let result = eval("(5..10).until()");
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 10.0),
+        _ => panic!("Expected 10, got {:?}", result),
+    }
+}
+
+// --- Invalid Method Tests ---
+
+#[test]
+fn test_invalid_method_on_string() {
+    let result = eval(r#""hello".foo()"#);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_invalid_method_on_number() {
+    let result = eval("42.foo()");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_invalid_method_on_array() {
+    let result = eval("[1, 2, 3].foo()");
+    assert!(result.is_err());
+}

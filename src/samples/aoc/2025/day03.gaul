@@ -1,0 +1,51 @@
+let Example Banks = [
+"987654321111111",
+"811111111111119",
+"234234234234278",
+"818181911112111",
+]
+let Actual Banks = read_file("src/samples/aoc/2025/day03.txt").lines()
+
+fn Max Joltage For Bank(Bank, Num Batteries) {
+    let Chars = Bank.chars()
+    let Len = Chars.len()
+
+    var Result = 0
+    var Start = 0
+
+    for(b : 0..Num Batteries) {
+        let Remaining = Num Batteries - b - 1
+        let End = Len - Remaining  // Last valid position for this pick
+
+        // Find max digit in range [Start, End)
+        var Max Digit = 0
+        var Max Pos = Start
+        for(i : Start..End) {
+            let D = Chars.get(i).to_num()
+            if(D > Max Digit) {
+                Max Digit = D
+                Max Pos = i
+            }
+        }
+
+        Result = Result * 10 + Max Digit
+        Start = Max Pos + 1
+    }
+    Result
+}
+
+fn Total Joltage(Input, Num Batteries) {
+    var Total = 0
+    for(Line : Input) {
+        let Line Trimmed = Line.trim()
+        if(Line Trimmed.len() > 0) {
+            Total = Total + Max Joltage For Bank(Line Trimmed, Num Batteries)
+        }
+    }
+    Total
+}
+
+println(Total Joltage(Example Banks, 2))  // 357
+println(Total Joltage(Actual Banks, 2))
+println(Total Joltage(Example Banks, 12))
+println(Total Joltage(Actual Banks, 12))
