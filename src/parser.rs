@@ -616,11 +616,17 @@ impl Parser {
             TokenType::LeftBracket => self.array(),
             TokenType::Break => {
                 self.advance();
-                Ok(Expr { kind: ExprKind::Break, line })
+                Ok(Expr {
+                    kind: ExprKind::Break,
+                    line,
+                })
             }
             TokenType::Continue => {
                 self.advance();
-                Ok(Expr { kind: ExprKind::Continue, line })
+                Ok(Expr {
+                    kind: ExprKind::Continue,
+                    line,
+                })
             }
             _ => Err(ParseError {
                 line,

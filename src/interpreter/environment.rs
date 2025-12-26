@@ -14,7 +14,7 @@ pub struct Environment {
 impl Default for Environment {
     fn default() -> Self {
         Self {
-            scopes: vec![Vec::new()]
+            scopes: vec![Vec::new()],
         }
     }
 }
@@ -25,7 +25,10 @@ impl Environment {
     }
 
     pub fn define(&mut self, value: Value, is_mutable: bool) {
-        self.scopes.last_mut().unwrap().push(Binding { value, is_mutable });
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .push(Binding { value, is_mutable });
     }
 
     pub fn get_at(&self, depth: usize, slot: usize) -> Value {

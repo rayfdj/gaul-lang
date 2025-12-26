@@ -1,7 +1,7 @@
-pub mod value;
 pub mod environment;
 pub mod native_function;
 pub mod native_method;
+pub mod value;
 
 use crate::interpreter::environment::Environment;
 use crate::interpreter::native_function::all_native_functions;
@@ -90,22 +90,31 @@ impl Interpreter {
         Ok(last)
     }
 
-    fn execute_declaration(&mut self, declaration: &Declaration) -> Result<ControlFlow, RuntimeError> {
+    fn execute_declaration(
+        &mut self,
+        declaration: &Declaration,
+    ) -> Result<ControlFlow, RuntimeError> {
         match &declaration.kind {
-            DeclarationKind::Let { name: _name, initializer } => {
+            DeclarationKind::Let {
+                name: _name,
+                initializer,
+            } => {
                 let value = prop_val!(self.evaluate_expression(initializer));
                 self.env.define(value, false);
                 Ok(Value::Null.into())
             }
-            DeclarationKind::Var { name: _name, initializer } => {
+            DeclarationKind::Var {
+                name: _name,
+                initializer,
+            } => {
                 let value = prop_val!(self.evaluate_expression(initializer));
                 self.env.define(value, true);
                 Ok(Value::Null.into())
             }
             DeclarationKind::Fn { name, params, body } => {
                 // 1) Reserve slot in current env
-                let slot = self.env.current_scope_len(); 
-                self.env.define(Value::Null, false);      // placeholder so slot exists
+                let slot = self.env.current_scope_len();
+                self.env.define(Value::Null, false); // placeholder so slot exists
 
                 // 2) Capture closure AFTER reserving slot
                 let closure = Rc::new(RefCell::new(self.env.clone()));
@@ -142,7 +151,7 @@ impl Interpreter {
             ExprKind::Identifier { name, resolved } => {
                 match resolved {
                     Some((depth, slot)) => Ok(self.env.get_at(*depth, *slot).into()),
-                    None => panic!("Unresolved variable '{}'", name),  // should never happen
+                    None => panic!("Unresolved variable '{}'", name), // should never happen
                 }
             }
 
@@ -153,13 +162,15 @@ impl Interpreter {
                     ExprKind::Identifier { name, resolved } => {
                         match resolved {
                             Some((depth, slot)) => {
-                                self.env.assign_at(*depth, *slot, value).map_err(|msg| RuntimeError {
-                                    line: expression.line,
-                                    message: msg,
+                                self.env.assign_at(*depth, *slot, value).map_err(|msg| {
+                                    RuntimeError {
+                                        line: expression.line,
+                                        message: msg,
+                                    }
                                 })?;
                                 Ok(Value::Null.into())
-                            },
-                            None => panic!("Unresolved variable '{}'", name),  // should never happen
+                            }
+                            None => panic!("Unresolved variable '{}'", name), // should never happen
                         }
                     }
                     other => Err(RuntimeError {
@@ -234,9 +245,7 @@ impl Interpreter {
                                 if n2 == 0.0 {
                                     Err(RuntimeError {
                                         line: expression.line,
-                                        message: format!(
-                                            "cannot divide '{}' by '{}'", n1, n2
-                                        ),
+                                        message: format!("cannot divide '{}' by '{}'", n1, n2),
                                     })
                                 } else {
                                     Ok(Value::Num(n1 / n2).into())
@@ -256,7 +265,9 @@ impl Interpreter {
 
                             // comparison
                             (TokenType::Equal, val1, val2) => Ok(Value::Bool(val1 == val2).into()),
-                            (TokenType::NotEqual, val1, val2) => Ok(Value::Bool(val1 != val2).into()),
+                            (TokenType::NotEqual, val1, val2) => {
+                                Ok(Value::Bool(val1 != val2).into())
+                            }
                             (TokenType::Greater, Value::Num(n1), Value::Num(n2)) => {
                                 Ok(Value::Bool(n1 > n2).into())
                             }
@@ -342,13 +353,12 @@ impl Interpreter {
                 loop {
                     let cond_value = prop_val!(self.evaluate_expression(condition.as_ref()));
                     match cond_value {
-                        Value::Bool(true) => {
-                            match self.evaluate_expression(body.as_ref())? {
-                                ControlFlow::Value(_) => {}
-                                ControlFlow::Continue => continue,
-                                ControlFlow::Break => break,
-                                ControlFlow::Return(v) => return Ok(ControlFlow::Return(v)),
-                            }                        }
+                        Value::Bool(true) => match self.evaluate_expression(body.as_ref())? {
+                            ControlFlow::Value(_) => {}
+                            ControlFlow::Continue => continue,
+                            ControlFlow::Break => break,
+                            ControlFlow::Return(v) => return Ok(ControlFlow::Return(v)),
+                        },
                         Value::Bool(false) => break,
                         _ => {
                             return Err(RuntimeError {
@@ -412,13 +422,14 @@ impl Interpreter {
                                 }
                             }
                             Ok(Value::Null.into())
-                        })();
+                        })(
+                        );
                         self.env.pop_scope();
                         result
-                    },
+                    }
                     Value::Array(elements) => {
                         self.env.push_scope();
-                        self.env.define(Value::Null, false);  // slot 0
+                        self.env.define(Value::Null, false); // slot 0
                         let result: Result<ControlFlow, RuntimeError> = (|| {
                             for element in elements.borrow().iter() {
                                 self.env.set_at(0, 0, element.clone());
@@ -430,10 +441,11 @@ impl Interpreter {
                                 }
                             }
                             Ok(Value::Null.into())
-                        })();
+                        })(
+                        );
                         self.env.pop_scope();
                         result
-                    },
+                    }
                     _ => Err(RuntimeError {
                         line: expression.line,
                         message: format!("iterable: '{:?}' must be a range or an array", iterable),
@@ -472,11 +484,13 @@ impl Interpreter {
                             });
                         };
                         // Save current env, switch to closure's env
-                        let saved_env = std::mem::replace(&mut self.env, fun.closure.borrow().clone());
+                        let saved_env =
+                            std::mem::replace(&mut self.env, fun.closure.borrow().clone());
 
                         self.env.push_scope();
                         let result = {
-                            for (_param, arg) in fun.params.iter().zip(argument_values.into_iter()) {
+                            for (_param, arg) in fun.params.iter().zip(argument_values.into_iter())
+                            {
                                 self.env.define(arg, false);
                             }
                             self.evaluate_expression(fun.body.as_ref())
@@ -488,23 +502,19 @@ impl Interpreter {
                         // Unwrap Return at function boundary
                         match result? {
                             ControlFlow::Return(v) => Ok(v.into()),
-                            ControlFlow::Break | ControlFlow::Continue => {
-                                Err(RuntimeError {
-                                    line: expression.line,
-                                    message: "break/continue outside loop".into(),
-                                })
-                            }
+                            ControlFlow::Break | ControlFlow::Continue => Err(RuntimeError {
+                                line: expression.line,
+                                message: "break/continue outside loop".into(),
+                            }),
                             other => Ok(other),
                         }
                     }
-                    Value::NativeFn(native_fun) => {
-                        (native_fun.func)(&argument_values)
-                            .map(|v| v.into())
-                            .map_err(|msg| RuntimeError {
-                                line: expression.line,
-                                message: msg,
-                            })
-                    }
+                    Value::NativeFn(native_fun) => (native_fun.func)(&argument_values)
+                        .map(|v| v.into())
+                        .map_err(|msg| RuntimeError {
+                            line: expression.line,
+                            message: msg,
+                        }),
                     _ => Err(RuntimeError {
                         line: expression.line,
                         message: format!("value: '{:?}' is not a function", callee_value),
@@ -514,15 +524,13 @@ impl Interpreter {
 
             ExprKind::Break => Ok(ControlFlow::Break),
             ExprKind::Continue => Ok(ControlFlow::Continue),
-            ExprKind::Return(value) => {
-                match value {
-                    Some(expr) => {
-                        let v = prop_val!(self.evaluate_expression(expr));
-                        Ok(ControlFlow::Return(v))
-                    }
-                    None => Ok(ControlFlow::Return(Value::Null)),
+            ExprKind::Return(value) => match value {
+                Some(expr) => {
+                    let v = prop_val!(self.evaluate_expression(expr));
+                    Ok(ControlFlow::Return(v))
                 }
-            }
+                None => Ok(ControlFlow::Return(Value::Null)),
+            },
             ExprKind::Get { .. } => {
                 // Get is handled in Call for method calls
                 // Standalone property access not yet implemented

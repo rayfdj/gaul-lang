@@ -1,5 +1,5 @@
-use gaul_lang::interpreter::environment::Environment;
 use gaul_lang::interpreter::Interpreter;
+use gaul_lang::interpreter::environment::Environment;
 use gaul_lang::interpreter::value::Value;
 use gaul_lang::keywords::load_keywords;
 use gaul_lang::parser::Parser;
@@ -18,9 +18,13 @@ fn eval(source: &str) -> Result<Value, String> {
     let parser = Parser::new(tokens);
     let mut program = parser.parse().map_err(|e| format!("{:?}", e))?;
 
-    resolver.resolve(&mut program).map_err(|e| format!("{:?}", e))?;
+    resolver
+        .resolve(&mut program)
+        .map_err(|e| format!("{:?}", e))?;
 
-    interpreter.interpret(program).map_err(|e| format!("{:?}", e))
+    interpreter
+        .interpret(program)
+        .map_err(|e| format!("{:?}", e))
 }
 
 #[test]
@@ -65,7 +69,11 @@ fn test_let_decl_at_eof_no_newline() {
     
     
     // The important part is result.is_ok().
-    assert!(result.is_ok(), "Failed to parse let decl at EOF: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse let decl at EOF: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -76,7 +84,11 @@ fn test_if_no_else_at_eof() {
 
     let result = eval(code);
 
-    assert!(result.is_ok(), "Failed to parse if-no-else at EOF: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to parse if-no-else at EOF: {:?}",
+        result.err()
+    );
 }
 
 // --- EDGE CASE TESTS ---
@@ -93,7 +105,10 @@ fn test_identifier_keyword_overlap() {
     let result = eval(code);
     match result {
         Ok(Value::Num(n)) => assert_eq!(n, 10.0),
-        _ => panic!("Expected identifier containing keyword to work, got {:?}", result),
+        _ => panic!(
+            "Expected identifier containing keyword to work, got {:?}",
+            result
+        ),
     }
 }
 
@@ -104,7 +119,10 @@ fn test_identifier_starts_with_keyword_fails() {
     // Parser expects Identifier after 'let', gets 'If' token -> Error.
     let code = "let if var = 10";
     let result = eval(code);
-    assert!(result.is_err(), "Should strictly forbid identifiers starting with keywords");
+    assert!(
+        result.is_err(),
+        "Should strictly forbid identifiers starting with keywords"
+    );
 }
 
 #[test]
@@ -152,7 +170,10 @@ fn test_newline_breaks_function_call() {
     let result = eval(code);
     match result {
         Ok(Value::Num(n)) => assert_eq!(n, 10.0),
-        Err(e) => panic!("Newline should have separated call from args, but got error: {}", e),
+        Err(e) => panic!(
+            "Newline should have separated call from args, but got error: {}",
+            e
+        ),
         _ => panic!("Unexpected result: {:?}", result),
     }
 }
@@ -166,7 +187,10 @@ fn test_trailing_spaces_before_newline() {
     // "let x y   \n = 10" -> "x y" (ident), Newline, = (assign). -> Parse Error expected.
     let code = "let x y   \n = 10";
     let result = eval(code);
-    assert!(result.is_err(), "Newline after identifier (even with spaces) should break assignment");
+    assert!(
+        result.is_err(),
+        "Newline after identifier (even with spaces) should break assignment"
+    );
 }
 
 #[test]
@@ -190,7 +214,10 @@ fn test_newlines_inside_parens_and_braces() {
     match result {
         Ok(Value::Num(n)) => assert_eq!(n, 10.0),
         // Without the fix, this will fail with "Expected newline... got Identifier"
-        _ => panic!("Expected block inside parens to handle newlines correctly, got {:?}", result),
+        _ => panic!(
+            "Expected block inside parens to handle newlines correctly, got {:?}",
+            result
+        ),
     }
 }
 
@@ -232,7 +259,11 @@ fn test_multiline_comment_counts_lines_correctly() {
         Err(msg) => {
             // We check if the error message reports the correct line number.
             
-            assert!(msg.contains("Line 5"), "Expected error on Line 6, but got: {}", msg);
+            assert!(
+                msg.contains("Line 5"),
+                "Expected error on Line 6, but got: {}",
+                msg
+            );
         }
         _ => panic!("Expected scanner error for invalid character"),
     }
@@ -278,7 +309,10 @@ fn test_multiline_expressions_trailing_ops() {
     let result = eval(code);
     match result {
         Ok(Value::Num(n)) => assert_eq!(n, 1.0),
-        _ => panic!("Expected multiline expression to parse and evaluate to 1, got {:?}", result),
+        _ => panic!(
+            "Expected multiline expression to parse and evaluate to 1, got {:?}",
+            result
+        ),
     }
 }
 
@@ -291,7 +325,10 @@ fn test_binary_precedence_basic() {
     let result = eval(code);
     match result {
         Ok(Value::Num(n)) => assert_eq!(n, 7.0),
-        _ => panic!("Precedence failed: 1 + 2 * 3 should be 7.0, got {:?}", result),
+        _ => panic!(
+            "Precedence failed: 1 + 2 * 3 should be 7.0, got {:?}",
+            result
+        ),
     }
 }
 
@@ -304,7 +341,10 @@ fn test_binary_precedence_mixed() {
     let result = eval(code);
     match result {
         Ok(Value::Num(n)) => assert_eq!(n, 6.0),
-        _ => panic!("Precedence failed: 10 - 8 / 2 should be 6.0, got {:?}", result),
+        _ => panic!(
+            "Precedence failed: 10 - 8 / 2 should be 6.0, got {:?}",
+            result
+        ),
     }
 }
 
@@ -317,7 +357,10 @@ fn test_binary_associativity_left() {
     let result = eval(code);
     match result {
         Ok(Value::Num(n)) => assert_eq!(n, 3.0),
-        _ => panic!("Associativity failed: 10 - 5 - 2 should be 3.0, got {:?}", result),
+        _ => panic!(
+            "Associativity failed: 10 - 5 - 2 should be 3.0, got {:?}",
+            result
+        ),
     }
 }
 
@@ -329,7 +372,10 @@ fn test_binary_grouping_overrides_precedence() {
     let result = eval(code);
     match result {
         Ok(Value::Num(n)) => assert_eq!(n, 9.0),
-        _ => panic!("Grouping failed: (1 + 2) * 3 should be 9.0, got {:?}", result),
+        _ => panic!(
+            "Grouping failed: (1 + 2) * 3 should be 9.0, got {:?}",
+            result
+        ),
     }
 }
 
@@ -357,7 +403,10 @@ fn test_comparison_precedence() {
     let result = eval(code);
     match result {
         Ok(Value::Bool(b)) => assert_eq!(b, true),
-        _ => panic!("Comparison precedence failed: expected true, got {:?}", result),
+        _ => panic!(
+            "Comparison precedence failed: expected true, got {:?}",
+            result
+        ),
     }
 }
 
@@ -501,7 +550,7 @@ fn test_void_return() {
 
     let result = eval(code);
     match result {
-        Ok(Value::Null) => {}, // Pass
+        Ok(Value::Null) => {} // Pass
         _ => panic!("Expected void return to be Null, got {:?}", result),
     }
 }
@@ -534,7 +583,10 @@ fn test_control_flow_as_expression() {
     let result = eval(code);
     match result {
         Ok(Value::Num(n)) => assert_eq!(n, 10.0),
-        _ => panic!("Expected break in expression to halt loop safely, got {:?}", result),
+        _ => panic!(
+            "Expected break in expression to halt loop safely, got {:?}",
+            result
+        ),
     }
 }
 
@@ -550,7 +602,7 @@ fn test_return_without_newline_at_block_end() {
 
     let result = eval(code);
     match result {
-        Ok(Value::Null) => {}, // Success! It parsed and returned Null.
+        Ok(Value::Null) => {} // Success! It parsed and returned Null.
         Err(e) => panic!("Parser failed to handle 'return }}': {:?}", e),
         _ => panic!("Expected Null, got {:?}", result),
     }

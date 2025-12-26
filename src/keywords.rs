@@ -1,6 +1,6 @@
+use anyhow::Result;
 use std::collections::HashMap;
 use std::fs;
-use anyhow::Result;
 
 use crate::scanner::token::TokenType;
 

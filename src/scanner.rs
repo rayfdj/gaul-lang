@@ -59,38 +59,40 @@ impl Scanner {
             '(' => {
                 self.nesting.push(Nesting::Paren);
                 self.add_token(TokenType::LeftParen)
-            },
+            }
             ')' => {
                 if let Some(Nesting::Paren) = self.nesting.last() {
                     self.nesting.pop();
                 } else {
-                    self.errors.push(format!("Unmatched ')' at line {}", self.line));
+                    self.errors
+                        .push(format!("Unmatched ')' at line {}", self.line));
                 }
                 self.add_token(TokenType::RightParen)
-            },
+            }
             '{' => {
                 self.nesting.push(Nesting::Brace); // Pushing Brace allows newlines again!
                 self.add_token(TokenType::LeftBrace)
-            },
+            }
             '}' => {
                 if let Some(Nesting::Brace) = self.nesting.last() {
                     self.nesting.pop();
                 }
                 // We don't error here to be lenient (hmmm or should we? TBD)
                 self.add_token(TokenType::RightBrace)
-            },
+            }
             '[' => {
                 self.nesting.push(Nesting::Bracket);
                 self.add_token(TokenType::LeftBracket)
-            },
+            }
             ']' => {
                 if let Some(Nesting::Bracket) = self.nesting.last() {
                     self.nesting.pop();
                 } else {
-                    self.errors.push(format!("Unmatched ']' at line {}", self.line));
+                    self.errors
+                        .push(format!("Unmatched ']' at line {}", self.line));
                 }
                 self.add_token(TokenType::RightBracket)
-            },
+            }
             ',' => self.add_token(TokenType::Comma),
             '-' => self.add_token(TokenType::Minus),
             '+' => self.add_token(TokenType::Plus),
@@ -202,13 +204,20 @@ impl Scanner {
 
                 // Only suppress if the TOP of the stack is Paren or Bracket.
                 // If top is Brace (or stack empty), we emit newline.
-                let should_suppress = matches!(self.nesting.last(), Some(Nesting::Paren) | Some(Nesting::Bracket));
+                let should_suppress = matches!(
+                    self.nesting.last(),
+                    Some(Nesting::Paren) | Some(Nesting::Bracket)
+                );
 
                 if should_suppress {
                     return;
                 }
 
-                let should_emit = self.tokens.last().map(|t| t.token_type != TokenType::Newline).unwrap_or(true);
+                let should_emit = self
+                    .tokens
+                    .last()
+                    .map(|t| t.token_type != TokenType::Newline)
+                    .unwrap_or(true);
                 if should_emit {
                     self.add_token(TokenType::Newline);
                 }
@@ -442,7 +451,11 @@ impl Scanner {
             }
 
             // Space followed by alphabetic char? Continue the identifier!
-            if self.peek() == Some(' ') && self.peek_next().is_some_and(|c| c.is_alphanumeric() || c == '_') {
+            if self.peek() == Some(' ')
+                && self
+                    .peek_next()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_')
+            {
                 self.advance(); // consume the space
                 continue;
             }

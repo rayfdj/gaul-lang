@@ -152,11 +152,11 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             let val = args.first().ok_or("push expects a value")?.clone();
             elements.borrow_mut().push(val);
             Ok(Value::Null) // Returns null (like Rust/Python).
-        },
+        }
         (Value::Array(elements), "pop") => {
             // Returns the popped value, or Null if empty
             Ok(elements.borrow_mut().pop().unwrap_or(Value::Null))
-        },
+        }
         (Value::Array(elements), "set") => {
             let idx = match args.first() {
                 Some(Value::Num(n)) => *n as usize,
@@ -171,7 +171,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             } else {
                 Err(format!("index {} out of bounds", idx))
             }
-        },
+        }
         (Value::Array(elements), "remove") => {
             let idx = match args.first() {
                 Some(Value::Num(n)) => *n as usize,
@@ -184,17 +184,15 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             } else {
                 Err(format!("index {} out of bounds", idx))
             }
-        },
+        }
         (Value::Array(elements), "contains") => {
             let search_item = args.first().ok_or("contains expects a value")?;
             let arr = elements.borrow();
             // Values must implement PartialEq for this to work.
             let found = arr.contains(search_item);
             Ok(Value::Bool(found))
-        },
-        (Value::Array(elements), "is_empty") => {
-            Ok(Value::Bool(elements.borrow().is_empty()))
-        },
+        }
+        (Value::Array(elements), "is_empty") => Ok(Value::Bool(elements.borrow().is_empty())),
         (Value::Array(elements), "join") => {
             let separator = match args.first() {
                 Some(Value::Str(s)) => s.clone(),
@@ -211,6 +209,9 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         (Value::Range(from, _until), "from") => Ok(Value::Num(*from)),
         (Value::Range(_from, until), "until") => Ok(Value::Num(*until)),
 
-        _ => Err(format!("'{}' is not a valid method for object '{}'", name, receiver)),
+        _ => Err(format!(
+            "'{}' is not a valid method for object '{}'",
+            name, receiver
+        )),
     }
 }

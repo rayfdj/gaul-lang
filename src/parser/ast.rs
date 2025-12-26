@@ -13,9 +13,19 @@ pub struct Declaration {
 
 #[derive(Debug, Clone)]
 pub enum DeclarationKind {
-    Let { name: String, initializer: Expr },
-    Var { name: String, initializer: Expr },
-    Fn { name: String, params: Vec<String>, body: Expr },
+    Let {
+        name: String,
+        initializer: Expr,
+    },
+    Var {
+        name: String,
+        initializer: Expr,
+    },
+    Fn {
+        name: String,
+        params: Vec<String>,
+        body: Expr,
+    },
     ExprStmt(Expr),
 }
 
@@ -84,7 +94,7 @@ pub enum ExprKind {
     Null,
     Identifier {
         name: String,
-        resolved: Option<(usize, usize)>
+        resolved: Option<(usize, usize)>,
     },
 
     // Blocks
@@ -96,5 +106,5 @@ pub enum ExprKind {
     // Arrays
     Array {
         elements: Vec<Expr>,
-    }
+    },
 }

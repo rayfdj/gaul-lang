@@ -38,9 +38,7 @@ impl PartialEq for Value {
             (Self::Bool(b1), Self::Bool(b2)) => b1 == b2,
             (Self::Null, Self::Null) => true,
             (Self::Range(s1, s2), Self::Range(s3, s4)) => (s1 == s3) && (s2 == s4),
-            (Self::Array(a1), Self::Array(a2)) => {
-                *a1.borrow() == *a2.borrow()
-            }
+            (Self::Array(a1), Self::Array(a2)) => *a1.borrow() == *a2.borrow(),
             (Self::Fn(_), Self::Fn(_)) => panic!("Cannot compare two functions"),
             (Self::NativeFn { .. }, Self::NativeFn { .. }) => {
                 panic!("Cannot compare two functions")
@@ -72,7 +70,7 @@ impl std::fmt::Display for Value {
                     }
                 }
                 write!(f, "]")
-            },
+            }
             Value::Fn(fun) => write!(f, "<fn {}>", fun.name.as_ref()),
             Value::NativeFn(native_fun) => write!(f, "<native fn {}>", native_fun.name.as_ref()),
         }
