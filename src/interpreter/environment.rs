@@ -8,7 +8,7 @@ pub struct Binding {
     pub is_mutable: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Environment {
     // we used to maintain environment as a stack of bindings.
     // this created a problem when we start having to do stack arithmetic
@@ -23,10 +23,7 @@ pub struct Environment {
 
 impl Environment {
     pub fn new() -> Self {
-        Self {
-            enclosing: None,
-            values: RefCell::new(Vec::new()),
-        }
+        Self::default()
     }
 
     pub fn new_with_enclosing(enclosing: Rc<Environment>) -> Self {
