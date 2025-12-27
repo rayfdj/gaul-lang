@@ -20,7 +20,7 @@ pub struct Function {
     pub name: Rc<str>,
     pub params: Vec<Rc<str>>,
     pub body: Rc<Expr>,
-    pub closure: Rc<RefCell<Environment>>,
+    pub closure: Rc<Environment>,
 }
 
 #[derive(Debug)]

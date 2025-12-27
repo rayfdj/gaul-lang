@@ -1,0 +1,4 @@
+// Testing fib(40) to see how fast the interpreter can go
+// On my laptop it's about 55 secs
+fn fib(n) { if(n <= 1) { n } else { fib(n - 1) + fib(n - 2) } }
+println(fib(40))

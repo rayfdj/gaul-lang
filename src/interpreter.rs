@@ -37,7 +37,9 @@ pub struct RuntimeError {
 }
 
 pub struct Interpreter {
-    env: Environment,
+    // 3rd try for closure. So we're holding a pointer to the "head" environment, rather than
+    // mucking around with stack of scopes.
+    env: Rc<Environment>,
 }
 
 // Propagate control flow, discard value
@@ -62,7 +64,9 @@ macro_rules! prop_val {
 
 impl Interpreter {
     pub fn new(env: Environment) -> Self {
-        let mut interpreter = Self { env };
+        let mut interpreter = Self {
+            env: Rc::new(env),
+        };
         interpreter.define_native_functions();
         interpreter
     }
@@ -112,28 +116,26 @@ impl Interpreter {
                 Ok(Value::Null.into())
             }
             DeclarationKind::Fn { name, params, body } => {
-                // 1) Reserve slot in current env
+                // Reserve slot in current env
                 let slot = self.env.current_scope_len();
                 self.env.define(Value::Null, false); // placeholder so slot exists
 
-                // 2) Capture closure AFTER reserving slot
-                let closure = Rc::new(RefCell::new(self.env.clone()));
+                // Capture closure AFTER reserving slot
+                let closure = Rc::clone(&self.env);
 
-                // 3) Build function
+                // Build function
                 let fun_rc = Rc::new(Function {
                     name: Rc::from(name.as_str()),
                     params: params.iter().map(|p| Rc::<str>::from(p.as_str())).collect(),
                     body: Rc::new(body.clone()),
-                    closure: closure.clone(),
+                    closure,
                 });
 
                 let fun_val = Value::Fn(fun_rc);
 
-                // 4) Patch function into BOTH:
-                //   - current env
-                //   - closure env
+                // now we no longer need to patch the closure, since it's a reference to the same
+                // environment
                 self.env.set_at(0, slot, fun_val.clone());
-                closure.borrow_mut().set_at(0, slot, fun_val);
 
                 Ok(Value::Null.into())
             }
@@ -303,7 +305,10 @@ impl Interpreter {
             }
 
             ExprKind::Block { declarations, expr } => {
-                self.env.push_scope();
+                // we used to push_scope here. Now instead, we're gonna create a new scope that has
+                // the current scope as its parent
+                let previous = self.env.clone();
+                self.env = Rc::new(Environment::new_with_enclosing(previous.clone()));
 
                 let result = (|| {
                     for declaration in declarations {
@@ -315,7 +320,8 @@ impl Interpreter {
                     }
                 })();
 
-                self.env.pop_scope();
+                // no more pop_scope. We just restore the head
+                self.env = previous;
                 result
             }
 
@@ -409,7 +415,8 @@ impl Interpreter {
                 let iterable = prop_val!(self.evaluate_expression(iterable));
                 match iterable {
                     Value::Range(start, end) => {
-                        self.env.push_scope();
+                        let previous = self.env.clone();
+                        self.env = Rc::new(Environment::new_with_enclosing(previous.clone()));
                         self.env.define(Value::Num(0.0), false);
                         let result: Result<ControlFlow, RuntimeError> = (|| {
                             for i in (start as i64)..(end as i64) {
@@ -424,11 +431,12 @@ impl Interpreter {
                             Ok(Value::Null.into())
                         })(
                         );
-                        self.env.pop_scope();
+                        self.env = previous;
                         result
                     }
                     Value::Array(elements) => {
-                        self.env.push_scope();
+                        let previous = self.env.clone();
+                        self.env = Rc::new(Environment::new_with_enclosing(previous.clone()));
                         self.env.define(Value::Null, false); // slot 0
                         let result: Result<ControlFlow, RuntimeError> = (|| {
                             for element in elements.borrow().iter() {
@@ -443,7 +451,7 @@ impl Interpreter {
                             Ok(Value::Null.into())
                         })(
                         );
-                        self.env.pop_scope();
+                        self.env = previous;
                         result
                     }
                     _ => Err(RuntimeError {
@@ -483,21 +491,18 @@ impl Interpreter {
                                 ),
                             });
                         };
+
+                        // The parent of this new env is the CLOSURE, not the current interpreter env.
+                        let function_env = Rc::new(Environment::new_with_enclosing(fun.closure.clone()));
+                        for arg in argument_values {
+                            function_env.define(arg, false);
+                        }
+
                         // Save current env, switch to closure's env
-                        let saved_env =
-                            std::mem::replace(&mut self.env, fun.closure.borrow().clone());
-
-                        self.env.push_scope();
-                        let result = {
-                            for (_param, arg) in fun.params.iter().zip(argument_values.into_iter())
-                            {
-                                self.env.define(arg, false);
-                            }
-                            self.evaluate_expression(fun.body.as_ref())
-                        };
-                        self.env.pop_scope();
-
-                        self.env = saved_env;
+                        let previous = std::mem::replace(&mut self.env, function_env);
+                        let result = self.evaluate_expression(fun.body.as_ref());
+                        // Look ma, no more push/pop! Restore back environment
+                        self.env = previous;
 
                         // Unwrap Return at function boundary
                         match result? {

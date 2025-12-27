@@ -1,0 +1,13 @@
+// Testing closure. Now this works, finally
+fn makeCounter() {
+    var count = 0
+    fn increment() {
+        count = count + 1
+	println(count)
+    }
+    return increment
+}
+
+let counter = makeCounter()
+counter()
+counter()

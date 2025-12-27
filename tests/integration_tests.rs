@@ -1581,3 +1581,554 @@ fn test_invalid_method_on_array() {
     let result = eval("[1, 2, 3].foo()");
     assert!(result.is_err());
 }
+
+// ==================== CLOSURE TESTS ====================
+
+// --- Basic Closure Behavior ---
+
+#[test]
+fn test_closure_captures_variable() {
+    // Basic test: inner function captures outer variable
+    let code = r#"
+    fn outer() {
+        let x = 10
+        fn inner() {
+            return x
+        }
+        return inner()
+    }
+    outer()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 10.0),
+        _ => panic!("Expected 10, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_closure_captures_multiple_variables() {
+    let code = r#"
+    fn outer() {
+        let a = 1
+        let b = 2
+        let c = 3
+        fn inner() {
+            return a + b + c
+        }
+        return inner()
+    }
+    outer()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 6.0),
+        _ => panic!("Expected 6, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_closure_returns_function() {
+    // Return a function that closes over a variable
+    let code = r#"
+    fn makeAdder(x) {
+        fn add(y) {
+            return x + y
+        }
+        return add
+    }
+    let addFive = makeAdder(5)
+    addFive(3)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 8.0),
+        _ => panic!("Expected 8, got {:?}", result),
+    }
+}
+
+// --- Closure State Mutation (THE CRITICAL TEST) ---
+
+#[test]
+fn test_closure_mutates_captured_variable() {
+    // This is the counter example that was failing!
+    let code = r#"
+    fn makeCounter() {
+        var count = 0
+        fn increment() {
+            count = count + 1
+            return count
+        }
+        return increment
+    }
+    let counter = makeCounter()
+    let first = counter()
+    let second = counter()
+    first + second * 10
+    "#;
+    // first = 1, second = 2, result = 1 + 20 = 21
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 21.0),
+        _ => panic!("Expected 21 (first=1, second=2), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_closure_counter_multiple_calls() {
+    let code = r#"
+    fn makeCounter() {
+        var count = 0
+        fn increment() {
+            count = count + 1
+            return count
+        }
+        return increment
+    }
+    let counter = makeCounter()
+    counter()
+    counter()
+    counter()
+    counter()
+    counter()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 5.0),
+        _ => panic!("Expected 5, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_independent_closures_have_separate_state() {
+    // Two counters should have independent state
+    let code = r#"
+    fn makeCounter() {
+        var count = 0
+        fn increment() {
+            count = count + 1
+            return count
+        }
+        return increment
+    }
+    let counter1 = makeCounter()
+    let counter2 = makeCounter()
+    counter1()
+    counter1()
+    counter1()
+    counter2()
+    counter1() + counter2() * 10
+    "#;
+    // counter1: 1, 2, 3, 4
+    // counter2: 1, 2
+    // result = 4 + 2*10 = 24
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 24.0),
+        _ => panic!("Expected 24, got {:?}", result),
+    }
+}
+
+// --- Nested Closures ---
+
+#[test]
+fn test_deeply_nested_closure() {
+    let code = r#"
+    fn level1() {
+        let a = 1
+        fn level2() {
+            let b = 2
+            fn level3() {
+                let c = 3
+                fn level4() {
+                    return a + b + c
+                }
+                return level4
+            }
+            return level3
+        }
+        return level2
+    }
+    let l2 = level1()
+    let l3 = l2()
+    let l4 = l3()
+    l4()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 6.0),
+        _ => panic!("Expected 6, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_nested_closure_mutation() {
+    let code = r#"
+    fn outer() {
+        var x = 0
+        fn middle() {
+            fn inner() {
+                x = x + 1
+                return x
+            }
+            return inner
+        }
+        return middle()
+    }
+    let increment = outer()
+    let a = increment()
+    let b = increment()
+    let c = increment()
+    a + b * 10 + c * 100
+    "#;
+    // a=1, b=2, c=3 -> 1 + 20 + 300 = 321
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 321.0),
+        _ => panic!("Expected 321, got {:?}", result),
+    }
+}
+
+// --- Closure Over Loop Variables ---
+
+#[test]
+fn test_closure_captures_loop_variable_value() {
+    // Each closure should capture the value at the time of creation
+    let code = r#"
+    let funcs = []
+    for (i : 0..3) {
+        let captured = i
+        fn f() {
+            return captured
+        }
+        funcs.push(f)
+    }
+    let a = funcs.get(0)()
+    let b = funcs.get(1)()
+    let c = funcs.get(2)()
+    a + b * 10 + c * 100
+    "#;
+    // a=0, b=1, c=2 -> 0 + 10 + 200 = 210
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 210.0),
+        _ => panic!("Expected 210, got {:?}", result),
+    }
+}
+
+// --- Closure with Multiple Functions Sharing State ---
+
+#[test]
+fn test_multiple_closures_share_state() {
+    // Two functions that share and mutate the same variable
+    let code = r#"
+    fn makePair() {
+        var shared = 0
+        fn increment() {
+            shared = shared + 1
+            return shared
+        }
+        fn decrement() {
+            shared = shared - 1
+            return shared
+        }
+        return [increment, decrement]
+    }
+    let pair = makePair()
+    let inc = pair.get(0)
+    let dec = pair.get(1)
+    inc()
+    inc()
+    inc()
+    dec()
+    inc()
+    "#;
+    // shared: 0 -> 1 -> 2 -> 3 -> 2 -> 3
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Expected 3, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_closure_getter_setter() {
+    let code = r#"
+    fn makeCell(initial) {
+        var value = initial
+        fn get() {
+            return value
+        }
+        fn set(new value) {
+            value = new value
+        }
+        return [get, set]
+    }
+    let cell = makeCell(42)
+    let get = cell.get(0)
+    let set = cell.get(1)
+    let before = get()
+    set(100)
+    let after = get()
+    before + after * 10
+    "#;
+    // before=42, after=100 -> 42 + 1000 = 1042
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 1042.0),
+        _ => panic!("Expected 1042, got {:?}", result),
+    }
+}
+
+// --- Closure and Recursion ---
+
+#[test]
+fn test_recursive_function_in_closure() {
+    let code = r#"
+    fn makeFactorial() {
+        fn factorial(n) {
+            if (n <= 1) {
+                return 1
+            }
+            return n * factorial(n - 1)
+        }
+        return factorial
+    }
+    let fact = makeFactorial()
+    fact(5)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 120.0),
+        _ => panic!("Expected 120, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_closure_with_recursive_helper() {
+    let code = r#"
+    fn makeFibonacci() {
+        var calls = 0
+        fn fib(n) {
+            calls = calls + 1
+            if (n <= 1) {
+                return n
+            }
+            return fib(n - 1) + fib(n - 2)
+        }
+        fn get calls() {
+            return calls
+        }
+        return [fib, get calls]
+    }
+    let pair = makeFibonacci()
+    let fib = pair.get(0)
+    let get calls = pair.get(1)
+    let result = fib(6)
+    let total calls = get calls()
+    result + total calls * 1000
+    "#;
+    // fib(6) = 8, calls = 25 (for naive fib)
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 25008.0),
+        _ => panic!("Expected 25008, got {:?}", result),
+    }
+}
+
+// --- Edge Cases ---
+
+#[test]
+fn test_closure_captures_parameter() {
+    let code = r#"
+    fn outer(x) {
+        fn inner() {
+            return x * 2
+        }
+        return inner
+    }
+    let double five = outer(5)
+    double five()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 10.0),
+        _ => panic!("Expected 10, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_closure_shadows_outer_variable() {
+    let code = r#"
+    fn outer() {
+        let x = 10
+        fn inner() {
+            let x = 20
+            return x
+        }
+        return inner() + x
+    }
+    outer()
+    "#;
+    // inner returns 20, outer's x is still 10, so 20 + 10 = 30
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 30.0),
+        _ => panic!("Expected 30, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_closure_does_not_affect_outer_immutable() {
+    // Shadowing in closure doesn't affect outer scope
+    let code = r#"
+    fn test() {
+        let x = 5
+        fn inner() {
+            let x = 100
+            return x
+        }
+        let inner result = inner()
+        return x + inner result
+    }
+    test()
+    "#;
+    // x in outer is still 5, inner returns 100, so 5 + 100 = 105
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 105.0),
+        _ => panic!("Expected 105, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_closure_returned_from_if() {
+    let code = r#"
+    fn choose(condition) {
+        var x = 0
+        if (condition) {
+            fn yes() {
+                x = x + 1
+                return x
+            }
+            return yes
+        } else {
+            fn no() {
+                x = x - 1
+                return x
+            }
+            return no
+        }
+    }
+    let inc = choose(true)
+    let dec = choose(false)
+    let a = inc()
+    let b = inc()
+    let c = dec()
+    let d = dec()
+    a + b * 10 + c * 100 + d * 1000
+    "#;
+    // inc: 1, 2 (separate x from dec)
+    // dec: -1, -2
+    // 1 + 20 + (-100) + (-2000) = -2079
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, -2079.0),
+        _ => panic!("Expected -2079, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_immediate_closure_invocation() {
+    // Define and immediately call
+    let code = r#"
+    fn outer() {
+        let x = 42
+        fn inner() {
+            return x
+        }
+        return inner
+    }
+    outer()()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 42.0),
+        _ => panic!("Expected 42, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_closure_with_array_mutation() {
+    let code = r#"
+    fn makeAccumulator() {
+        let items = []
+        fn add(item) {
+            items.push(item)
+            return items.len()
+        }
+        fn get all() {
+            return items
+        }
+        return [add, get all]
+    }
+    let acc = makeAccumulator()
+    let add = acc.get(0)
+    let get all = acc.get(1)
+    add(1)
+    add(2)
+    add(3)
+    get all().sum()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 6.0),
+        _ => panic!("Expected 6, got {:?}", result),
+    }
+}
+
+// --- Stress Tests ---
+
+#[test]
+fn test_many_closures() {
+    let code = r#"
+    fn make adder(n) {
+        fn add(x) {
+            return x + n
+        }
+        return add
+    }
+    let add1 = make adder(1)
+    let add2 = make adder(2)
+    let add3 = make adder(3)
+    let add4 = make adder(4)
+    let add5 = make adder(5)
+    add1(0) + add2(0) + add3(0) + add4(0) + add5(0)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 15.0),
+        _ => panic!("Expected 15, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_closure_chain() {
+    let code = r#"
+    fn a(x) {
+        fn b(y) {
+            fn c(z) {
+                return x + y + z
+            }
+            return c
+        }
+        return b
+    }
+    a(1)(2)(3)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 6.0),
+        _ => panic!("Expected 6, got {:?}", result),
+    }
+}
