@@ -12,7 +12,6 @@ grammar Gaul;
  *   - Configurable keywords via JSON (supports internationalization)
  *   - Expression-based (everything returns a value)
  *   - Immutable by default (let/var)
- *   - Pipe operator for data flow (|>)
  *   - Jam karet operator for approximate equality (~=)
  *   - Number separators for readability (1_000_000)
  *
@@ -122,16 +121,15 @@ parameters
  *
  * Operator precedence (lowest to highest):
  *   1. Assignment (=)
- *   2. Pipe (|>)
- *   3. Logical OR (or)
- *   4. Logical AND (and)
- *   5. Equality (==, !=, ~=)
- *   6. Comparison (<, >, <=, >=)
- *   7. Range (..)
- *   8. Additive (+, -)
- *   9. Multiplicative (*, /)
- *  10. Unary (!, -)
- *  11. Call and access ((), .)
+ *   2. Logical OR (or)
+ *   3. Logical AND (and)
+ *   4. Equality (==, !=, ~=)
+ *   5. Comparison (<, >, <=, >=)
+ *   6. Range (..)
+ *   7. Additive (+, -)
+ *   8. Multiplicative (*, /)
+ *   9. Unary (!, -)
+ *  10. Call and access ((), .)
  */
 
 expression
@@ -198,13 +196,7 @@ returnExpr
 // Assignment is right-associative: a = b = c means a = (b = c)
 assignment
     : IDENTIFIER ASSIGN assignment
-    | pipe
-    ;
-
-// Pipe operator - chains function calls left-to-right
-// "A |> B(X)" becomes "B(A, X)"
-pipe
-    : logicOr (PIPE logicOr)*
+    | logicOr
     ;
 
 // Logical OR - short-circuit evaluation
@@ -326,12 +318,12 @@ array
  * OPERATORS:
  *   LPAREN '('    RPAREN ')'    LBRACE '{'    RBRACE '}'
  *   COMMA ','     DOT '.'       MINUS '-'     PLUS '+'
- *   SLASH '/'     STAR '*'      BANG '!'
+ *   SLASH '/'     STAR '*'      BANG '!'      RANGE '..'
  *   ASSIGN '='    EQUALS '=='   NOT_EQUAL '!='
  *   GREATER '>'   GREATER_EQUAL '>='
  *   LESS '<'      LESS_EQUAL '<='
- *   PIPE '|>'     APPROX_EQUAL '~='   RANGE '..'
  *   LBRACKET '['  RBRACKET ']'  COLON ':'
+ *   APPROX_EQUAL '~='
  *
  * LITERALS:
  *   NUMBER      - integers, floats, hex (0x), binary (0b), octal (0o)

@@ -43,7 +43,6 @@ pub enum TokenType {
     LessEqual,    // <=
 
     // Funky operators
-    Pipe,        // |>
     ApproxEqual, // ~= (jam karet!)
     Range,       // ..
 

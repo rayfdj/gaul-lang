@@ -543,9 +543,6 @@ impl Interpreter {
                     message: "standalone property access not yet implemented".into(),
                 })
             }
-            ExprKind::Pipe { .. } => {
-                todo!("pipe operator not yet implemented")
-            }
             ExprKind::Lambda { params, body } => {
                 // We capture the *current* environment. Because we use the Linked Chain
                 // architecture (Rc<Environment>), this is a cheap pointer clone that

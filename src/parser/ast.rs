@@ -61,10 +61,6 @@ pub enum ExprKind {
         target: Box<Expr>, // can be a variable, or a field
         value: Box<Expr>,
     },
-    Pipe {
-        left: Box<Expr>,
-        right: Box<Expr>,
-    },
     Binary {
         left: Box<Expr>,
         operator: Token,

@@ -108,15 +108,6 @@ impl Scanner {
                 }
             }
 
-            // Pipe operator
-            '|' => {
-                if self.match_char('>') {
-                    self.add_token(TokenType::Pipe)
-                } else {
-                    self.report_error("Expected '>' after '|' for pipe operator")
-                }
-            }
-
             // Approximate equality (jam karet!)
             '~' => {
                 if self.match_char('=') {

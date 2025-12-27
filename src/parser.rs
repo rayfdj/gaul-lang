@@ -2,8 +2,8 @@ pub mod ast;
 
 use crate::parser::ast::DeclarationKind::{ExprStmt, Fn, Let, Var};
 use crate::parser::ast::ExprKind::{
-    Assign, Block, Bool, Call, For, Get, Identifier, If, Null, Num, Pipe, Range, Return, Str,
-    Unary, While,
+    Assign, Block, Bool, Call, For, Get, Identifier, If, Null, Num, Range, Return, Str, Unary,
+    While,
 };
 use crate::parser::ast::{Declaration, Expr};
 use crate::parser::ast::{ExprKind, Program};
@@ -350,7 +350,7 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> Result<Expr, ParseError> {
-        let expr = self.pipe()?;
+        let expr = self.logic_or()?;
 
         if self.check(TokenType::Assign) {
             let line = self.peek().line;
@@ -373,25 +373,6 @@ impl Parser {
         } else {
             Ok(expr)
         }
-    }
-
-    fn pipe(&mut self) -> Result<Expr, ParseError> {
-        let mut left = self.logic_or()?;
-
-        while self.check(TokenType::Pipe) {
-            let line = self.peek().line;
-            self.advance();
-            let right = self.logic_or()?;
-            left = Expr {
-                kind: Pipe {
-                    left: Box::new(left),
-                    right: Box::new(right),
-                },
-                line,
-            };
-        }
-
-        Ok(left)
     }
 
     // This method is created because pretty much all binary

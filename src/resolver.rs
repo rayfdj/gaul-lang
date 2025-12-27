@@ -262,9 +262,6 @@ impl Resolver {
                 result // propagate error after cleanup
             }
             ExprKind::Num(_) | ExprKind::Str(_) | ExprKind::Bool(_) | ExprKind::Null => Ok(()),
-            ExprKind::Pipe { .. } => {
-                todo!("pipe operator not yet implemented in resolver")
-            }
         }
     }
 }
