@@ -242,12 +242,16 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         (Value::Array(elements), "min") => {
             let arr = elements.borrow();
             if arr.is_empty() {
-                return Ok(Value::Null)
+                return Ok(Value::Null);
             }
             let mut min_val = f64::INFINITY;
             for val in arr.iter() {
                 match val {
-                    Value::Num(n) => if *n < min_val { min_val = *n },
+                    Value::Num(n) => {
+                        if *n < min_val {
+                            min_val = *n
+                        }
+                    }
                     _ => return Err("min expects all elements to be numbers".into()),
                 }
             }
@@ -256,12 +260,16 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         (Value::Array(elements), "max") => {
             let arr = elements.borrow();
             if arr.is_empty() {
-                return Ok(Value::Null)
+                return Ok(Value::Null);
             }
             let mut max_val = f64::NEG_INFINITY;
             for val in arr.iter() {
                 match val {
-                    Value::Num(n) => if *n > max_val { max_val = *n },
+                    Value::Num(n) => {
+                        if *n > max_val {
+                            max_val = *n
+                        }
+                    }
                     _ => return Err("max expects all elements to be numbers".into()),
                 }
             }

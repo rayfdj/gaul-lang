@@ -64,9 +64,7 @@ macro_rules! prop_val {
 
 impl Interpreter {
     pub fn new(env: Environment) -> Self {
-        let mut interpreter = Self {
-            env: Rc::new(env),
-        };
+        let mut interpreter = Self { env: Rc::new(env) };
         interpreter.define_native_functions();
         interpreter
     }
@@ -493,7 +491,8 @@ impl Interpreter {
                         };
 
                         // The parent of this new env is the CLOSURE, not the current interpreter env.
-                        let function_env = Rc::new(Environment::new_with_enclosing(fun.closure.clone()));
+                        let function_env =
+                            Rc::new(Environment::new_with_enclosing(fun.closure.clone()));
                         for arg in argument_values {
                             function_env.define(arg, false);
                         }

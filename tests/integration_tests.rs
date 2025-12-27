@@ -1489,9 +1489,14 @@ fn test_array_sort_numbers() {
     let result = eval(code);
     match result {
         Ok(Value::Array(arr)) => {
-            let nums: Vec<f64> = arr.borrow().iter().map(|v| {
-                match v { Value::Num(n) => *n, _ => panic!("Expected number") }
-            }).collect();
+            let nums: Vec<f64> = arr
+                .borrow()
+                .iter()
+                .map(|v| match v {
+                    Value::Num(n) => *n,
+                    _ => panic!("Expected number"),
+                })
+                .collect();
             assert_eq!(nums, vec![1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 9.0]);
         }
         _ => panic!("Expected sorted array, got {:?}", result),
@@ -1504,9 +1509,14 @@ fn test_array_sort_strings() {
     let result = eval(code);
     match result {
         Ok(Value::Array(arr)) => {
-            let strs: Vec<String> = arr.borrow().iter().map(|v| {
-                match v { Value::Str(s) => s.to_string(), _ => panic!("Expected string") }
-            }).collect();
+            let strs: Vec<String> = arr
+                .borrow()
+                .iter()
+                .map(|v| match v {
+                    Value::Str(s) => s.to_string(),
+                    _ => panic!("Expected string"),
+                })
+                .collect();
             assert_eq!(strs, vec!["apple", "banana", "cherry"]);
         }
         _ => panic!("Expected sorted array, got {:?}", result),

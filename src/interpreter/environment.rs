@@ -1,6 +1,6 @@
+use crate::interpreter::value::Value;
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::interpreter::value::Value;
 
 #[derive(Clone, Debug)]
 pub struct Binding {
@@ -44,7 +44,10 @@ impl Environment {
     fn ancestor(&self, depth: usize) -> Option<&Environment> {
         let mut current = self;
         for _ in 0..depth {
-            current = current.enclosing.as_ref().expect("Resolved depth exceeds environment chain");
+            current = current
+                .enclosing
+                .as_ref()
+                .expect("Resolved depth exceeds environment chain");
         }
         Some(current)
     }
