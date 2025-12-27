@@ -660,6 +660,9 @@ impl Parser {
     }
 
     fn block(&mut self) -> Result<Expr, ParseError> {
+        // Skip newlines to support Allman style (braces on next line)
+        self.skip_newlines();
+
         let line = self.peek().line;
         self.consume(TokenType::LeftBrace, "{")?;
 

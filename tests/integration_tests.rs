@@ -2142,3 +2142,142 @@ fn test_closure_chain() {
         _ => panic!("Expected 6, got {:?}", result),
     }
 }
+
+// ==================== STYLE & FORMATTING TESTS ====================
+
+#[test]
+fn test_function_allman_style() {
+    // Scenario: Newline before function body brace
+    let code = r#"
+    fn add(a, b)
+    {
+        return a + b
+    }
+    add(10, 5)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 15.0),
+        _ => panic!("Expected 15, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_if_allman_style() {
+    // Scenario: Newline before 'if' block brace
+    let code = r#"
+    let x = if (true)
+    {
+        100
+    } else {
+        0
+    }
+    x
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 100.0),
+        _ => panic!("Expected 100, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_else_allman_style() {
+    // Scenario: Newline before 'else' block brace
+    // (And mixed style: 'if' is K&R, 'else' is Allman)
+    let code = r#"
+    let x = if (false) {
+        0
+    } else
+    {
+        200
+    }
+    x
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 200.0),
+        _ => panic!("Expected 200, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_while_allman_style() {
+    // Scenario: Newline before 'while' body brace
+    let code = r#"
+    var i = 0
+    while (i < 3)
+    {
+        i = i + 1
+    }
+    i
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Expected 3, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_for_allman_style() {
+    // Scenario: Newline before 'for' body brace
+    let code = r#"
+    var sum = 0
+    for (i : 0..3)
+    {
+        sum = sum + i
+    }
+    sum
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0), // 0+1+2
+        _ => panic!("Expected 3, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_nested_allman_style() {
+    // Scenario: Nested structures with excessive newlines
+    let code = r#"
+    fn check(n)
+
+    {
+        if (n > 0)
+
+        {
+            return true
+        }
+
+        return false
+    }
+    check(5)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_if_else_full_allman_style() {
+    let code = r#"
+    let result = if (false)
+    {
+        10
+    }
+    else
+    {
+        20
+    }
+    result
+    "#;
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 20.0),
+        _ => panic!("Expected 20, got {:?}", result),
+    }
+}
