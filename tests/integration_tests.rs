@@ -66,8 +66,6 @@ fn test_let_decl_at_eof_no_newline() {
 
     let result = eval(code);
 
-    
-    
     // The important part is result.is_ok().
     assert!(
         result.is_ok(),
@@ -199,7 +197,6 @@ fn test_newlines_inside_parens_and_braces() {
     // Scenario: An if-expression wrapped in parentheses.
     // The outer parens (...) normally suppress newlines (like for function args).
     // BUT, the block { ... } inside the if MUST allow newlines for statements.
-
     let code = r#"
     let val = (if(true) {
         let inner = 10
@@ -258,10 +255,9 @@ fn test_multiline_comment_counts_lines_correctly() {
     match result {
         Err(msg) => {
             // We check if the error message reports the correct line number.
-            
             assert!(
                 msg.contains("Line 5"),
-                "Expected error on Line 6, but got: {}",
+                "Expected error on Line 5, but got: {}",
                 msg
             );
         }

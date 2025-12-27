@@ -420,7 +420,6 @@ impl Parser {
             // Build the new tree node and reassign 'left' (Accumulate)
             left = Expr {
                 kind: ExprKind::Binary {
-                    
                     left: Box::new(left),
                     operator,
                     right: Box::new(right),
