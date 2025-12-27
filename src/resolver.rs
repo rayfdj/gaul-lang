@@ -246,6 +246,21 @@ impl Resolver {
                     Ok(())
                 }
             }
+            ExprKind::Lambda { params, body } => {
+                self.push_scope();
+                self.function_depth += 1;
+
+                let result = (|| {
+                    for param in params {
+                        self.define(param, line)?;
+                    }
+                    self.resolve_expression(body)
+                })();
+
+                self.function_depth -= 1;
+                self.pop_scope();
+                result // propagate error after cleanup
+            }
             ExprKind::Num(_) | ExprKind::Str(_) | ExprKind::Bool(_) | ExprKind::Null => Ok(()),
             ExprKind::Pipe { .. } => {
                 todo!("pipe operator not yet implemented in resolver")

@@ -107,4 +107,10 @@ pub enum ExprKind {
     Array {
         elements: Vec<Expr>,
     },
+
+    // Lambda
+    Lambda {
+        params: Vec<String>,
+        body: Box<Expr>,
+    },
 }

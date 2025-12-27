@@ -2281,3 +2281,145 @@ fn test_if_else_full_allman_style() {
         _ => panic!("Expected 20, got {:?}", result),
     }
 }
+
+// ==================== ANONYMOUS FUNCTION AMBIGUITY & EDGE CASES ====================
+
+#[test]
+fn test_anon_fn_in_expression_position() {
+    // 'fn' usually starts a declaration.
+    // Here it MUST be parsed as a primary expression because it's after '='.
+    let code = r#"
+    let adder = fn(a, b) {
+        return a + b
+    }
+    adder(2, 3)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 5.0),
+        _ => panic!("Expected 5, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_anon_fn_call_ambiguity() {
+    // Does the parser see 'fn' and think "Declaration"?
+    // It should parse 'fn(x){...}' as a value, then see '(' and parse a Call.
+    let code = r#"
+    let result = fn(x) { return x * 2 }(10)
+    result
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 20.0),
+        _ => panic!("Expected 20 (IIFE), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_anon_fn_natural_allman_style() {
+    // Scenario: 'fn(x)' is on one line, but the body '{' starts on the next.
+    // We do NOT support fn and then (x) on a newline, that's just too weird.
+    let code = r#"
+    let f = fn(x)
+    {
+        return x
+    }
+    f(10)
+    "#;
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 10.0),
+        _ => panic!("Expected 10, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_anon_fn_in_math_expression() {
+    // Ensure 'fn' doesn't break the expression parser precedence.
+    // (10 + <function>) should be valid (though adding a function to a number errors at runtime).
+    // We test returning a number to be safe.
+    let code = r#"
+    let res = 10 + (fn() { return 5 })()
+    res
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 15.0),
+        _ => panic!("Expected 15, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_anon_fn_trailing_newline_terminator() {
+    // The closing '}' of the function body acts as a delimiter.
+    // Does the parser realize the 'let' statement is over?
+    // Or does it mistakenly try to consume the next line as part of the function?
+    let code = r#"
+    let f = fn() { 1 }
+    f()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 1.0),
+        _ => panic!("Expected 1, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_anon_fn_vs_call_newline_separation() {
+    // We declare f.
+    // If the parser is correct, f is a function, and (10) is a separate statement.
+    // If the parser is greedy, f becomes the result of the call (10).
+    let code = r#"
+    let f = fn(x) { return x }
+    (10)
+    f
+    "#;
+
+    let result = eval(code);
+    match result {
+        Ok(Value::Fn(_)) => {} // Success! f is a function.
+        Ok(Value::Num(_)) => {
+            panic!("Ambiguity error: Parser greedily consumed (10) as an argument!")
+        }
+        _ => panic!("Unexpected result: {:?}", result),
+    }
+}
+
+#[test]
+fn test_anon_fn_nested_in_call_args() {
+    // Parsing nested structures
+    let code = r#"
+    fn apply(f, val) { return f(val) }
+
+    apply(fn(x) {
+        return x + 1
+    }, 10)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 11.0),
+        _ => panic!("Expected 11, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_anon_fn_missing_braces_fail() {
+    // Edge Case: Ensure we don't accidentally support implicit blocks like 'fn(x) x+1'
+    let code = "let f = fn(x) x + 1";
+    let result = eval(code);
+    assert!(result.is_err(), "Expected error for missing braces body");
+}
+
+#[test]
+fn test_anon_fn_missing_parens_fail() {
+    // Edge Case: Ensure 'fn { ... }' is rejected (params required even if empty)
+    let code = "let f = fn { return 1 }";
+    let result = eval(code);
+    assert!(
+        result.is_err(),
+        "Expected error for missing parameter parentheses"
+    );
+}

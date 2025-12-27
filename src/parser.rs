@@ -628,6 +628,40 @@ impl Parser {
                     line,
                 })
             }
+            // Remember that lambda (or anonymous function) is NOT a declaration, and not a call
+            // so that's why we're putting this in the primary expression handling.
+            // In other words, fn(x) {} is an expression that evaluates to a Function!
+            TokenType::Function => {
+                self.advance(); // consume fn
+                self.consume(TokenType::LeftParen, "(")?;
+                let mut arguments = Vec::new();
+                if !self.check(TokenType::RightParen) {
+                    arguments.push(
+                        self.consume(TokenType::Identifier, "identifier")?
+                            .lexeme
+                            .clone(),
+                    );
+                    while self.check(TokenType::Comma) {
+                        self.advance();
+                        arguments.push(
+                            self.consume(TokenType::Identifier, "identifier")?
+                                .lexeme
+                                .clone(),
+                        );
+                    }
+                }
+                self.consume(TokenType::RightParen, ")")?;
+
+                let body = self.block()?;
+
+                Ok(Expr {
+                    kind: ExprKind::Lambda {
+                        params: arguments,
+                        body: Box::new(body),
+                    },
+                    line,
+                })
+            }
             _ => Err(ParseError {
                 line,
                 message: format!("Unexpected token: {:?}", token.token_type),

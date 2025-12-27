@@ -546,6 +546,22 @@ impl Interpreter {
             ExprKind::Pipe { .. } => {
                 todo!("pipe operator not yet implemented")
             }
+            ExprKind::Lambda { params, body } => {
+                // We capture the *current* environment. Because we use the Linked Chain
+                // architecture (Rc<Environment>), this is a cheap pointer clone that
+                // keeps the parent scope alive.
+                let closure = Rc::clone(&self.env);
+
+                // Create the anonymous function object
+                let function = Function {
+                    name: Rc::from("<lambda>"), // We give it a dummy name for debugging
+                    params: params.iter().map(|p| Rc::from(p.as_str())).collect(),
+                    body: Rc::from(body.as_ref().clone()), // Clone the AST node (Expr)
+                    closure,
+                };
+
+                Ok(Value::Fn(Rc::new(function)).into())
+            }
         }
     }
 }
