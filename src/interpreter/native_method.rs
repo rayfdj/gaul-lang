@@ -316,6 +316,12 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         // Range
         (Value::Range(from, _until), "from") => Ok(Value::Num(*from)),
         (Value::Range(_from, until), "until") => Ok(Value::Num(*until)),
+        (Value::Range(from, until), "to_array") => {
+            let elements: Vec<Value> = ((*from as i64)..(*until as i64))
+                .map(|i| Value::Num(i as f64))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(elements))))
+        }
 
         _ => Err(format!(
             "'{}' is not a valid method for object '{}'",

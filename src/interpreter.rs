@@ -465,8 +465,104 @@ impl Interpreter {
                     argument_values.push(prop_val!(self.evaluate_expression(arg)));
                 }
 
+                // This feels a bit hacky, but basically we're doing this because unlike "normal"
+                // functions or native functions, the callee here is NOT a function.
+                //
+                // In normal functions, when we call fibonacci(10), fibonacci the callee resolves
+                // to a (Gaul) function, that we then call with the argument 10.
+                //
+                // But in "method calls", e.g.: arr.len(), the callee is an array (so obviously it
+                // does NOT resolve to a function). Rather, it gets resolved to an array, and
+                // then we call the Rust len() method implemented in native_methods.rs, passing the
+                // array as an argument to that function.
+                //
+                // Now, map() is a bit different, because it still takes the array as an argument,
+                // but they need to call a different function (in Gaul, not Rust) on each of the
+                // array's elements. So they again have to be handled a bit differently from
+                // the native methods like len().
                 if let ExprKind::Get { object, name } = &callee.kind {
                     let receiver = prop_val!(self.evaluate_expression(object));
+
+                    if let Value::Array(elements) = &receiver {
+                        match &name[..] {
+                            "map" => {
+                                let callable =
+                                    argument_values.first().ok_or_else(|| RuntimeError {
+                                        line: expression.line,
+                                        message: "map expects a function".into(),
+                                    })?;
+                                let result: Result<Vec<Value>, RuntimeError> = elements
+                                    .borrow()
+                                    .iter()
+                                    .map(|e| {
+                                        self.call_function(
+                                            callable,
+                                            std::slice::from_ref(e),
+                                            expression.line,
+                                        )
+                                    })
+                                    .collect();
+                                return Ok(Value::Array(Rc::new(RefCell::new(result?))).into());
+                            }
+                            "filter" => {
+                                let predicate =
+                                    argument_values.first().ok_or_else(|| RuntimeError {
+                                        line: expression.line,
+                                        message: "filter expects a predicate".into(),
+                                    })?;
+                                let arr = elements.borrow();
+                                let mut result = Vec::new();
+
+                                for item in arr.iter() {
+                                    let keep = self.call_function(
+                                        predicate,
+                                        std::slice::from_ref(item),
+                                        expression.line,
+                                    )?;
+                                    match keep {
+                                        Value::Bool(true) => result.push(item.clone()),
+                                        Value::Bool(false) => {}
+                                        _ => {
+                                            return Err(RuntimeError {
+                                                line: expression.line,
+                                                message: "filter predicate must return a boolean"
+                                                    .into(),
+                                            });
+                                        }
+                                    }
+                                }
+
+                                return Ok(Value::Array(Rc::new(RefCell::new(result))).into());
+                            }
+                            "reduce" => {
+                                let initial_value =
+                                    argument_values.first().ok_or_else(|| RuntimeError {
+                                        line: expression.line,
+                                        message: "reduce expects an initial value".into(),
+                                    })?;
+                                let callback =
+                                    argument_values.get(1).ok_or_else(|| RuntimeError {
+                                        line: expression.line,
+                                        message: "reduce expects a function".into(),
+                                    })?;
+
+                                let arr = elements.borrow();
+                                let mut acc = initial_value.clone();
+
+                                for item in arr.iter() {
+                                    acc = self.call_function(
+                                        callback,
+                                        &[acc, item.clone()],
+                                        expression.line,
+                                    )?;
+                                }
+
+                                return Ok(acc.into());
+                            }
+                            _ => {}
+                        }
+                    }
+
                     return call_native_method(&receiver, name, &argument_values)
                         .map(|v| v.into())
                         .map_err(|message| RuntimeError {
@@ -476,54 +572,9 @@ impl Interpreter {
                 }
 
                 let callee_value = prop_val!(self.evaluate_expression(callee));
-                match callee_value {
-                    Value::Fn(fun) => {
-                        if fun.params.len() != argument_values.len() {
-                            return Err(RuntimeError {
-                                line: expression.line,
-                                message: format!(
-                                    "function '{}' expects {} arguments, but got {}",
-                                    fun.name.as_ref(),
-                                    fun.params.len(),
-                                    argument_values.len()
-                                ),
-                            });
-                        };
-
-                        // The parent of this new env is the CLOSURE, not the current interpreter env.
-                        let function_env =
-                            Rc::new(Environment::new_with_enclosing(fun.closure.clone()));
-                        for arg in argument_values {
-                            function_env.define(arg, false);
-                        }
-
-                        // Save current env, switch to closure's env
-                        let previous = std::mem::replace(&mut self.env, function_env);
-                        let result = self.evaluate_expression(fun.body.as_ref());
-                        // Look ma, no more push/pop! Restore back environment
-                        self.env = previous;
-
-                        // Unwrap Return at function boundary
-                        match result? {
-                            ControlFlow::Return(v) => Ok(v.into()),
-                            ControlFlow::Break | ControlFlow::Continue => Err(RuntimeError {
-                                line: expression.line,
-                                message: "break/continue outside loop".into(),
-                            }),
-                            other => Ok(other),
-                        }
-                    }
-                    Value::NativeFn(native_fun) => (native_fun.func)(&argument_values)
-                        .map(|v| v.into())
-                        .map_err(|msg| RuntimeError {
-                            line: expression.line,
-                            message: msg,
-                        }),
-                    _ => Err(RuntimeError {
-                        line: expression.line,
-                        message: format!("value: '{:?}' is not a function", callee_value),
-                    }),
-                }
+                // refactored this whole thing out to call_function
+                self.call_function(&callee_value, &argument_values, expression.line)
+                    .map(|v| v.into())
             }
 
             ExprKind::Break => Ok(ControlFlow::Break),
@@ -559,6 +610,56 @@ impl Interpreter {
 
                 Ok(Value::Fn(Rc::new(function)).into())
             }
+        }
+    }
+
+    // Adding this because we will need to repeat the same code to call functions that will be
+    // passed to map/filter/reduce. Then it can be a lot cleaner
+    fn call_function(
+        &mut self,
+        callee: &Value,
+        args: &[Value],
+        line: usize,
+    ) -> Result<Value, RuntimeError> {
+        match callee {
+            Value::Fn(fun) => {
+                if fun.params.len() != args.len() {
+                    return Err(RuntimeError {
+                        line,
+                        message: format!(
+                            "function '{}' expects {} arguments, but got {}",
+                            fun.name,
+                            fun.params.len(),
+                            args.len()
+                        ),
+                    });
+                }
+
+                let function_env = Rc::new(Environment::new_with_enclosing(fun.closure.clone()));
+                for arg in args {
+                    function_env.define(arg.clone(), false);
+                }
+
+                let previous = std::mem::replace(&mut self.env, function_env);
+                let result = self.evaluate_expression(fun.body.as_ref());
+                self.env = previous;
+
+                match result? {
+                    ControlFlow::Return(v) => Ok(v),
+                    ControlFlow::Break | ControlFlow::Continue => Err(RuntimeError {
+                        line,
+                        message: "break/continue outside loop".into(),
+                    }),
+                    ControlFlow::Value(v) => Ok(v),
+                }
+            }
+            Value::NativeFn(native_fun) => {
+                (native_fun.func)(args).map_err(|msg| RuntimeError { line, message: msg })
+            }
+            _ => Err(RuntimeError {
+                line,
+                message: format!("'{}' is not callable", callee),
+            }),
         }
     }
 }

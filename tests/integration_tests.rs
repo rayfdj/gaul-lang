@@ -1568,6 +1568,89 @@ fn test_range_until() {
     }
 }
 
+#[test]
+fn test_range_to_array_basic() {
+    let code = r#"
+    let arr = (0..5).to_array()
+    arr
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr.len(), 5);
+            assert_eq!(arr[0], Value::Num(0.0));
+            assert_eq!(arr[4], Value::Num(4.0));
+        }
+        _ => panic!("Expected array [0,1,2,3,4], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_range_to_array_sum() {
+    // Convert range to array, then use array methods
+    let code = r#"
+    (1..6).to_array().sum()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 15.0), // 1+2+3+4+5
+        _ => panic!("Expected 15, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_range_to_array_chained() {
+    // Range -> array -> reverse -> join
+    let code = r#"
+    (0..3).to_array().reverse().join("-")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(&*s, "2-1-0"),
+        _ => panic!("Expected '2-1-0', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_range_to_array_empty() {
+    // Empty range (start == end)
+    let code = r#"
+    (5..5).to_array().len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 0.0),
+        _ => panic!("Expected 0, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_range_to_array_negative() {
+    // Range with negative numbers
+    let code = r#"
+    let arr = (-2..2).to_array()
+    arr.join(",")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(&*s, "-2,-1,0,1"),
+        _ => panic!("Expected '-2,-1,0,1', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_range_to_array_single_element() {
+    let code = r#"
+    (0..1).to_array().first()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 0.0),
+        _ => panic!("Expected 0, got {:?}", result),
+    }
+}
+
 // --- Invalid Method Tests ---
 
 #[test]
@@ -2417,5 +2500,757 @@ fn test_anon_fn_missing_parens_fail() {
     assert!(
         result.is_err(),
         "Expected error for missing parameter parentheses"
+    );
+}
+
+// ==================== MAP TESTS ====================
+
+#[test]
+fn test_map_basic() {
+    let code = r#"
+    let arr = [1, 2, 3]
+    arr.map(fn(x) { return x * 2 })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0], Value::Num(2.0));
+            assert_eq!(arr[1], Value::Num(4.0));
+            assert_eq!(arr[2], Value::Num(6.0));
+        }
+        _ => panic!("Expected [2,4,6], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_empty_array() {
+    let code = r#"
+    [].map(fn(x) { return x * 2 })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            assert_eq!(elements.borrow().len(), 0);
+        }
+        _ => panic!("Expected empty array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_with_named_function() {
+    let code = r#"
+    fn double(x) { return x * 2 }
+    [1, 2, 3].map(double)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr[0], Value::Num(2.0));
+            assert_eq!(arr[1], Value::Num(4.0));
+            assert_eq!(arr[2], Value::Num(6.0));
+        }
+        _ => panic!("Expected [2,4,6], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_with_multi_word_identifier() {
+    // Gaul spirit: spaces in identifiers
+    let code = r#"
+    fn times two(x) { return x * 2 }
+    let my numbers = [1, 2, 3]
+    my numbers.map(times two)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr[0], Value::Num(2.0));
+            assert_eq!(arr[1], Value::Num(4.0));
+            assert_eq!(arr[2], Value::Num(6.0));
+        }
+        _ => panic!("Expected [2,4,6], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_closure_captures_variable() {
+    let code = r#"
+    let multiplier = 10
+    [1, 2, 3].map(fn(x) { return x * multiplier })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr[0], Value::Num(10.0));
+            assert_eq!(arr[1], Value::Num(20.0));
+            assert_eq!(arr[2], Value::Num(30.0));
+        }
+        _ => panic!("Expected [10,20,30], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_chained() {
+    let code = r#"
+    [1, 2, 3].map(fn(x) { return x + 1 }).map(fn(x) { return x * 2 })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            // [1,2,3] -> [2,3,4] -> [4,6,8]
+            assert_eq!(arr[0], Value::Num(4.0));
+            assert_eq!(arr[1], Value::Num(6.0));
+            assert_eq!(arr[2], Value::Num(8.0));
+        }
+        _ => panic!("Expected [4,6,8], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_returns_different_type() {
+    // Map numbers to strings
+    let code = r#"
+    [1, 2, 3].map(fn(x) { return x.to_str() }).join("-")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(&*s, "1-2-3"),
+        _ => panic!("Expected '1-2-3', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_with_index_via_closure() {
+    // Simulate index by capturing a mutable variable
+    let code = r#"
+    var idx = 0
+    let result = ["a", "b", "c"].map(fn(x) {
+        let current = idx
+        idx = idx + 1
+        return current.to_str() + ":" + x
+    })
+    result.join(",")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(&*s, "0:a,1:b,2:c"),
+        _ => panic!("Expected '0:a,1:b,2:c', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_allman_style() {
+    let code = r#"
+    [1, 2, 3].map(fn(x)
+    {
+        return x * 2
+    })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr[0], Value::Num(2.0));
+        }
+        _ => panic!("Expected array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_multiline_trailing_op() {
+    let code = r#"
+    ([1, 2, 3].
+        map(fn(x) { return x * 2 }))
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr[0], Value::Num(2.0));
+        }
+        _ => panic!("Expected array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_nested_arrays() {
+    let code = r#"
+    [[1, 2], [3, 4]].map(fn(inner) { return inner.sum() })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr[0], Value::Num(3.0));
+            assert_eq!(arr[1], Value::Num(7.0));
+        }
+        _ => panic!("Expected [3,7], got {:?}", result),
+    }
+}
+
+// ==================== FILTER TESTS ====================
+
+#[test]
+fn test_filter_basic() {
+    let code = r#"
+    [1, 2, 3, 4, 5].filter(fn(x) { return x > 2 })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0], Value::Num(3.0));
+            assert_eq!(arr[1], Value::Num(4.0));
+            assert_eq!(arr[2], Value::Num(5.0));
+        }
+        _ => panic!("Expected [3,4,5], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_filter_empty_array() {
+    let code = r#"
+    [].filter(fn(x) { return x > 0 })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            assert_eq!(elements.borrow().len(), 0);
+        }
+        _ => panic!("Expected empty array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_filter_none_match() {
+    let code = r#"
+    [1, 2, 3].filter(fn(x) { return x > 100 })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            assert_eq!(elements.borrow().len(), 0);
+        }
+        _ => panic!("Expected empty array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_filter_all_match() {
+    let code = r#"
+    [1, 2, 3].filter(fn(x) { return x > 0 })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            assert_eq!(elements.borrow().len(), 3);
+        }
+        _ => panic!("Expected [1,2,3], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_filter_with_named_function() {
+    let code = r#"
+    fn is even(x) { return x.mod(2) == 0 }
+    [1, 2, 3, 4, 5, 6].filter(is even)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0], Value::Num(2.0));
+            assert_eq!(arr[1], Value::Num(4.0));
+            assert_eq!(arr[2], Value::Num(6.0));
+        }
+        _ => panic!("Expected [2,4,6], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_filter_closure_captures_variable() {
+    let code = r#"
+    let threshold = 3
+    [1, 2, 3, 4, 5].filter(fn(x) { return x >= threshold })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0], Value::Num(3.0));
+        }
+        _ => panic!("Expected [3,4,5], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_filter_strings() {
+    let code = r#"
+    ["apple", "banana", "apricot", "cherry"].filter(fn(s) {
+        return s.starts_with("a")
+    })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr.len(), 2);
+            assert_eq!(arr[0], Value::Str("apple".into()));
+            assert_eq!(arr[1], Value::Str("apricot".into()));
+        }
+        _ => panic!("Expected ['apple','apricot'], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_filter_must_return_bool() {
+    // Filter callback returns non-boolean - should error
+    let code = r#"
+    [1, 2, 3].filter(fn(x) { return x })
+    "#;
+    let result = eval(code);
+    assert!(
+        result.is_err(),
+        "Expected error for non-boolean filter callback, got {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_filter_chained_with_map() {
+    let code = r#"
+    ([1, 2, 3, 4, 5, 6]
+        .filter(fn(x) { return x.mod(2) == 0 })
+        .map(fn(x) { return x * 10 }))
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            // [2,4,6] -> [20,40,60]
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0], Value::Num(20.0));
+            assert_eq!(arr[1], Value::Num(40.0));
+            assert_eq!(arr[2], Value::Num(60.0));
+        }
+        _ => panic!("Expected [20,40,60], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_filter_allman_style() {
+    let code = r#"
+    [1, 2, 3, 4, 5].filter(fn(x)
+    {
+        return x > 2
+    })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            assert_eq!(elements.borrow().len(), 3);
+        }
+        _ => panic!("Expected array with 3 elements, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_filter_with_multi_word_identifier() {
+    let code = r#"
+    fn greater than two(x) { return x > 2 }
+    let my list = [1, 2, 3, 4, 5]
+    my list.filter(greater than two)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0], Value::Num(3.0));
+        }
+        _ => panic!("Expected [3,4,5], got {:?}", result),
+    }
+}
+
+// ==================== REDUCE TESTS ====================
+
+#[test]
+fn test_reduce_sum() {
+    let code = r#"
+    [1, 2, 3, 4, 5].reduce(0, fn(acc, x) { return acc + x })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 15.0),
+        _ => panic!("Expected 15, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_reduce_product() {
+    let code = r#"
+    [1, 2, 3, 4].reduce(1, fn(acc, x) { return acc * x })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 24.0),
+        _ => panic!("Expected 24, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_reduce_empty_array() {
+    // With empty array, should return initial value
+    let code = r#"
+    [].reduce(42, fn(acc, x) { return acc + x })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 42.0),
+        _ => panic!("Expected 42, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_reduce_single_element() {
+    let code = r#"
+    [10].reduce(5, fn(acc, x) { return acc + x })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 15.0),
+        _ => panic!("Expected 15, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_reduce_string_concat() {
+    let code = r#"
+    ["a", "b", "c"].reduce("", fn(acc, x) { return acc + x })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(&*s, "abc"),
+        _ => panic!("Expected 'abc', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_reduce_build_array() {
+    // Using reduce to build an array (doubling each element)
+    let code = r#"
+    [1, 2, 3].reduce([], fn(acc, x) {
+        acc.push(x * 2)
+        return acc
+    })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0], Value::Num(2.0));
+            assert_eq!(arr[1], Value::Num(4.0));
+            assert_eq!(arr[2], Value::Num(6.0));
+        }
+        _ => panic!("Expected [2,4,6], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_reduce_find_max() {
+    let code = r#"
+    [3, 1, 4, 1, 5, 9, 2, 6].reduce(0, fn(max, x) {
+        if (x > max) { return x }
+        return max
+    })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 9.0),
+        _ => panic!("Expected 9, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_reduce_with_named_function() {
+    let code = r#"
+    fn add(a, b) { return a + b }
+    [1, 2, 3, 4].reduce(0, add)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 10.0),
+        _ => panic!("Expected 10, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_reduce_with_multi_word_identifier() {
+    let code = r#"
+    fn add together(a, b) { return a + b }
+    let my numbers = [1, 2, 3, 4]
+    my numbers.reduce(0, add together)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 10.0),
+        _ => panic!("Expected 10, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_reduce_closure_captures_variable() {
+    let code = r#"
+    let multiplier = 2
+    [1, 2, 3].reduce(0, fn(acc, x) { return acc + (x * multiplier) })
+    "#;
+    let result = eval(code);
+    match result {
+        // (1*2) + (2*2) + (3*2) = 2 + 4 + 6 = 12
+        Ok(Value::Num(n)) => assert_eq!(n, 12.0),
+        _ => panic!("Expected 12, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_reduce_allman_style() {
+    let code = r#"
+    [1, 2, 3].reduce(0, fn(acc, x)
+    {
+        return acc + x
+    })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 6.0),
+        _ => panic!("Expected 6, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_reduce_multiline_trailing_op() {
+    let code = r#"
+    ([1, 2, 3, 4, 5].
+        filter(fn(x) { return x.mod(2) == 1 }).
+        reduce(0, fn(acc, x) { return acc + x }))
+    "#;
+    let result = eval(code);
+    match result {
+        // odd numbers: 1, 3, 5 -> sum = 9
+        Ok(Value::Num(n)) => assert_eq!(n, 9.0),
+        _ => panic!("Expected 9, got {:?}", result),
+    }
+}
+
+// ==================== COMBINED / PIPELINE TESTS ====================
+
+#[test]
+fn test_map_filter_reduce_pipeline() {
+    let code = r#"
+    ([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        .filter(fn(x) { return x.mod(2) == 0 })
+        .map(fn(x) { return x * x })
+        .reduce(0, fn(acc, x) { return acc + x }))
+    "#;
+    let result = eval(code);
+    match result {
+        // evens: 2,4,6,8,10 -> squares: 4,16,36,64,100 -> sum: 220
+        Ok(Value::Num(n)) => assert_eq!(n, 220.0),
+        _ => panic!("Expected 220, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_pipeline_with_multi_word_identifiers() {
+    let code = r#"
+    let is even = fn(x) { return x.mod(2) == 0 }
+    let square it = fn(x) { return x * x }
+    let add up = fn(acc, x) { return acc + x }
+
+    let my numbers = [1, 2, 3, 4, 5, 6]
+    my numbers.filter(is even).map(square it).reduce(0, add up)
+    "#;
+    let result = eval(code);
+    match result {
+        // evens: 2,4,6 -> squares: 4,16,36 -> sum: 56
+        Ok(Value::Num(n)) => assert_eq!(n, 56.0),
+        _ => panic!("Expected 56, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_pipeline_preserves_closure_context() {
+    let code = r#"
+    let min val = 2
+    let max val = 5
+    let scale factor = 10
+
+    ([1, 2, 3, 4, 5, 6]
+        .filter(fn(x) { return (x >= min val) and (x <= max val) })
+        .map(fn(x) { return x * scale factor })
+        .reduce(0, fn(acc, x) { return acc + x }))
+    "#;
+    let result = eval(code);
+    match result {
+        // filter: 2,3,4,5 -> map: 20,30,40,50 -> sum: 140
+        Ok(Value::Num(n)) => assert_eq!(n, 140.0),
+        _ => panic!("Expected 140, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_nested_map_operations() {
+    // Map over array of arrays
+    let code = r#"
+    [[1, 2], [3, 4], [5, 6]].map(fn(inner) {
+        return inner.map(fn(x) { return x * 2 }).sum()
+    })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            // [1,2] -> [2,4] -> 6
+            // [3,4] -> [6,8] -> 14
+            // [5,6] -> [10,12] -> 22
+            assert_eq!(arr[0], Value::Num(6.0));
+            assert_eq!(arr[1], Value::Num(14.0));
+            assert_eq!(arr[2], Value::Num(22.0));
+        }
+        _ => panic!("Expected [6,14,22], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_filter_then_method_chain() {
+    let code = r#"
+    ([5, 2, 8, 1, 9, 3]
+        .filter(fn(x) { return x > 3 })
+        .sort()
+        .reverse()
+        .first())
+    "#;
+    let result = eval(code);
+    match result {
+        // filter: 5,8,9 -> sort: 5,8,9 -> reverse: 9,8,5 -> first: 9
+        Ok(Value::Num(n)) => assert_eq!(n, 9.0),
+        _ => panic!("Expected 9, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_reduce_returns_function() {
+    // Reduce can return any type, including functions
+    let code = r#"
+    let composers = [
+        fn(x) { return x + 1 },
+        fn(x) { return x * 2 },
+        fn(x) { return x + 10 }
+    ]
+
+    let composed = composers.reduce(fn(x) { return x }, fn(acc, f) {
+        return fn(x) { return f(acc(x)) }
+    })
+
+    composed(5)
+    "#;
+    let result = eval(code);
+    match result {
+        // ((5 + 1) * 2) + 10 = 22
+        Ok(Value::Num(n)) => assert_eq!(n, 22.0),
+        _ => panic!("Expected 22, got {:?}", result),
+    }
+}
+
+// ==================== ERROR CASES ====================
+
+#[test]
+fn test_map_no_argument_fails() {
+    let code = r#"
+    [1, 2, 3].map()
+    "#;
+    let result = eval(code);
+    assert!(result.is_err(), "Expected error for map with no arguments");
+}
+
+#[test]
+fn test_filter_no_argument_fails() {
+    let code = r#"
+    [1, 2, 3].filter()
+    "#;
+    let result = eval(code);
+    assert!(
+        result.is_err(),
+        "Expected error for filter with no arguments"
+    );
+}
+
+#[test]
+fn test_reduce_missing_callback_fails() {
+    let code = r#"
+    [1, 2, 3].reduce(0)
+    "#;
+    let result = eval(code);
+    assert!(
+        result.is_err(),
+        "Expected error for reduce with only initial value"
+    );
+}
+
+#[test]
+fn test_reduce_no_arguments_fails() {
+    let code = r#"
+    [1, 2, 3].reduce()
+    "#;
+    let result = eval(code);
+    assert!(
+        result.is_err(),
+        "Expected error for reduce with no arguments"
+    );
+}
+
+#[test]
+fn test_map_non_function_fails() {
+    let code = r#"
+    [1, 2, 3].map(42)
+    "#;
+    let result = eval(code);
+    assert!(
+        result.is_err(),
+        "Expected error for map with non-function argument"
+    );
+}
+
+#[test]
+fn test_filter_non_function_fails() {
+    let code = r#"
+    [1, 2, 3].filter("not a function")
+    "#;
+    let result = eval(code);
+    assert!(
+        result.is_err(),
+        "Expected error for filter with non-function argument"
+    );
+}
+
+#[test]
+fn test_reduce_non_function_callback_fails() {
+    let code = r#"
+    [1, 2, 3].reduce(0, "not a function")
+    "#;
+    let result = eval(code);
+    assert!(
+        result.is_err(),
+        "Expected error for reduce with non-function callback"
     );
 }
