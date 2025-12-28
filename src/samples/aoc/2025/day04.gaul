@@ -1,0 +1,92 @@
+let Example Grid = [
+    "..@@.@@@@.",
+    "@@@.@.@.@@",
+    "@@@@@.@.@@",
+    "@.@@@@..@.",
+    "@@.@@@@.@@",
+    ".@@@@@@@.@",
+    ".@.@.@.@@@",
+    "@.@@@.@@@@",
+    ".@@@@@@@@.",
+    "@.@.@@@.@."
+]
+let Actual Grid = read_file("src/samples/aoc/2025/day04.txt").lines()
+
+fn Parse Grid(Lines) {
+    (Lines
+        .map(fn(Line) { Line.trim() })
+        .filter(fn(Line) { Line.len() > 0 })
+        .map(fn(Line) { Line.chars() }))
+}
+
+fn Get Cell(Grid, Row, Col) {
+    let Rows = Grid.len()
+    let Cols = Grid.get(0).len()
+    if((Row >= 0) and (Row < Rows) and (Col >= 0) and (Col < Cols)) {
+        Grid.get(Row).get(Col)
+    } else {
+        "."
+    }
+}
+
+fn Count Adjacent Rolls(Grid, Row, Col) {
+    let Offsets = [
+        [-1, -1], [-1, 0], [-1, 1],
+        [0, -1],           [0, 1],
+        [1, -1],  [1, 0],  [1, 1]
+    ]
+    (Offsets
+        .map(fn(Offset) { Get Cell(Grid, Row + Offset.get(0), Col + Offset.get(1)) })
+        .filter(fn(Cell) { Cell == "@" })
+        .len())
+}
+
+fn All Positions(Grid) {
+    let Rows = Grid.len()
+    let Cols = Grid.get(0).len()
+    (0..Rows).to_array().reduce([], fn(Acc, Row) {
+        let Row Positions = (0..Cols).to_array().map(fn(Col) { [Row, Col] })
+        Row Positions.reduce(Acc, fn(A, Pos) {
+            A.push(Pos)
+            A
+        })
+    })
+}
+
+fn Find Accessible Rolls(Grid) {
+    (All Positions(Grid)
+        .filter(fn(Pos) {
+            let Row = Pos.get(0)
+            let Col = Pos.get(1)
+            Get Cell(Grid, Row, Col) == "@" and Count Adjacent Rolls(Grid, Row, Col) < 4
+        }))
+}
+
+fn Remove Rolls(Grid, Positions) {
+    Positions.reduce(Grid, fn(G, Pos) {
+        G.get(Pos.get(0)).set(Pos.get(1), ".")
+        G
+    })
+}
+
+fn Count Removed Rolls(Input, Iterate Until Empty) {
+    var Grid = Parse Grid(Input)
+    var Total Removed = 0
+    var Accessible = Find Accessible Rolls(Grid)
+
+    if(Iterate Until Empty) {
+        while(Accessible.len() > 0) {
+            Total Removed = Total Removed + Accessible.len()
+            Grid = Remove Rolls(Grid, Accessible)
+            Accessible = Find Accessible Rolls(Grid)
+        }
+    } else {
+        Total Removed = Accessible.len()
+    }
+    Total Removed
+}
+
+println(Count Removed Rolls(Example Grid, false))
+println(Count Removed Rolls(Actual Grid, false))
+println(Count Removed Rolls(Example Grid, true))
+println(Count Removed Rolls(Actual Grid, true))
