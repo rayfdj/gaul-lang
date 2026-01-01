@@ -1,0 +1,150 @@
+let Example Input = "123 328  51 64
+ 45 64  387 23
+  6 98  215 314
+*   +   *   +"
+
+let Actual Input = read_file("src/samples/aoc/2025/day06.txt")
+
+fn Solve Problem(Numbers, Op) {
+    if(Op == "+") {
+        Numbers.sum()
+    } else {
+        Numbers.reduce(1, fn(Acc, N) { Acc * N })
+    }
+}
+
+fn Parse And Solve Human Style(Input) {
+    let Lines = (Input.lines().filter(fn(L) { L.trim().len() > 0 }))
+    let Num Lines = Lines.len()
+    let Op Line = Lines.get(Num Lines - 1)
+
+    let Ops = (Op Line.trim().chars().filter(fn(C) { C == "*" or C == "+" }))
+
+    var All Numbers = []
+    for(i : 0..(Num Lines - 1)) {
+        let Line Numbers = (Lines.get(i).split(" ")
+            .map(fn(S) { S.trim() })
+            .filter(fn(S) { S.len() > 0 })
+            .map(fn(S) { S.to_num() }))
+        All Numbers.push(Line Numbers)
+    }
+
+    let Num Problems = Ops.len()
+    var Total = 0
+
+    for(p : 0..Num Problems) {
+        var Nums = []
+        for(Row : 0..All Numbers.len()) {
+            let Row Nums = All Numbers.get(Row)
+            if(p < Row Nums.len()) {
+                Nums.push(Row Nums.get(p))
+            }
+        }
+        Total = Total + Solve Problem(Nums, Ops.get(p))
+    }
+    Total
+}
+
+fn Reverse String(S) {
+    S.chars().reverse().join("")
+}
+
+fn Parse And Solve Cephalopod Style(Input) {
+    let Lines = (Input.lines().filter(fn(L) { L.trim().len() > 0 }))
+    let Num Lines = Lines.len()
+
+    // Isolate the Operator line (last line)
+    let Op Line = Lines.get(Num Lines - 1)
+
+    // 1. Parse Ops: The problem says "Right-to-Left", so we reverse the operators
+    // to match the order we will process the blocks (Rightmost block first).
+    let Ops = (Op Line.trim().chars().filter(fn(C) { C == "*" or C == "+" }).reverse())
+
+    // 2. Build a Grid (List of Lists) for the numbers (excluding Op line)
+    let Num Rows = Num Lines - 1
+    var Grid = []
+    var Max Width = 0
+
+    for(r : 0..Num Rows) {
+        let Chars = Lines.get(r).chars()
+        if(Chars.len() > Max Width) { Max Width = Chars.len() }
+        Grid.push(Chars)
+    }
+
+    // 3. Scan Columns Left-to-Right to find "Problem Blocks"
+    // Problems are separated by a full column of spaces.
+    var All Blocks = []
+    var Current Block = []
+
+    for(c : 0..Max Width) {
+        var Col Chars = []
+        var Is Empty = true
+
+        // Extract this vertical column
+        for(r : 0..Num Rows) {
+            let Row = Grid.get(r)
+            if(c < Row.len()) {
+                let Char = Row.get(c)
+                Col Chars.push(Char)
+                if(Char != " ") { Is Empty = false }
+            } else {
+                Col Chars.push(" ") // Pad short lines
+            }
+        }
+
+        if(Is Empty) {
+            // We hit a separator. Save the block if we have one.
+            if(Current Block.len() > 0) {
+                All Blocks.push(Current Block)
+                Current Block = []
+            }
+        } else {
+            // Add column to current block
+            Current Block.push(Col Chars)
+        }
+    }
+    // Don't forget the last block
+    if(Current Block.len() > 0) {
+        All Blocks.push(Current Block)
+    }
+
+    // 4. Solve
+    // We parsed blocks Left-to-Right, but Part 2 says start with the Rightmost problem.
+    // So we reverse the blocks to match our reversed Ops.
+    let Problem Blocks = All Blocks.reverse()
+
+    var Total = 0
+    for(p : 0..Ops.len()) {
+        let Op = Ops.get(p)
+        let Block = Problem Blocks.get(p)
+
+        // Inside a problem, we also read "Right-to-Left in columns".
+        // Our 'Block' is [LeftCol, ..., RightCol], so we reverse it.
+        let Cols = Block.reverse()
+        var Nums = []
+
+        for(c : 0..Cols.len()) {
+            // Join the vertical column characters to form the number
+            let Num Str = Cols.get(c).join("").trim()
+            if(Num Str.len() > 0) {
+                Nums.push(Num Str.to_num())
+            }
+        }
+
+        Total = Total + Solve Problem(Nums, Op)
+    }
+    Total
+}
+
+fn Solve Worksheet(Input, Human Style) {
+    if(Human Style) {
+        Parse And Solve Human Style(Input)
+    } else {
+        Parse And Solve Cephalopod Style(Input)
+    }
+}
+
+println(Solve Worksheet(Example Input, true))
+println(Solve Worksheet(Actual Input, true))
+println(Solve Worksheet(Example Input, false))
+println(Solve Worksheet(Actual Input, false))

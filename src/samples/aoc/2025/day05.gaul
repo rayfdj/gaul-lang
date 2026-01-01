@@ -1,0 +1,108 @@
+let Example Input = "3-5
+10-14
+16-20
+12-18
+
+1
+5
+8
+11
+17
+32"
+
+let Actual Input = read_file("src/samples/aoc/2025/day05.txt")
+
+fn Parse Input(Input) {
+    let All Lines = Input.lines()
+    var Ranges = []
+    var Ids = []
+    var Parsing Ranges = true
+
+    for(Line : All Lines) {
+        let Trimmed = Line.trim()
+        if(Trimmed.len() == 0) {
+            Parsing Ranges = false
+        } else {
+            if(Parsing Ranges) {
+                let Bounds = Trimmed.split("-")
+                Ranges.push([Bounds.get(0).trim().to_num(), Bounds.get(1).trim().to_num()])
+            } else {
+                Ids.push(Trimmed.to_num())
+            }
+        }
+    }
+    [Ranges, Ids]
+}
+
+fn Is In Range(Id, Range) {
+    (Id >= Range.get(0)) and (Id <= Range.get(1))
+}
+
+fn Is Fresh(Id, Ranges) {
+    Ranges.filter(fn(Range) { Is In Range(Id, Range) }).len() > 0
+}
+
+fn Ranges Overlap(R1, R2) {
+    (R1.get(0) <= R2.get(1) + 1) and (R2.get(0) <= R1.get(1) + 1)
+}
+
+fn Merge Two Ranges(R1, R2) {
+    let Min Start = if(R1.get(0) < R2.get(0)) { R1.get(0) } else { R2.get(0) }
+    let Max End = if(R1.get(1) > R2.get(1)) { R1.get(1) } else { R2.get(1) }
+    [Min Start, Max End]
+}
+
+fn Sort Ranges By Start(Ranges) {
+    let Arr = Ranges.map(fn(R) { R })
+    let Len = Arr.len()
+    for(i : 0..Len) {
+        for(j : 0..(Len - i - 1)) {
+            let A = Arr.get(j)
+            let B = Arr.get(j + 1)
+            if(A.get(0) > B.get(0)) {
+                Arr.set(j, B)
+                Arr.set(j + 1, A)
+            }
+        }
+    }
+    Arr
+}
+
+fn Merge All Ranges(Ranges) {
+    let Sorted = Sort Ranges By Start(Ranges)
+    if(Sorted.len() == 0) { return [] }
+
+    var Merged = [Sorted.get(0)]
+    for(i : 1..Sorted.len()) {
+        let Current = Sorted.get(i)
+        let Last = Merged.get(Merged.len() - 1)
+        if(Ranges Overlap(Last, Current)) {
+            Merged.set(Merged.len() - 1, Merge Two Ranges(Last, Current))
+        } else {
+            Merged.push(Current)
+        }
+    }
+    Merged
+}
+
+fn Range Size(Range) {
+    Range.get(1) - Range.get(0) + 1
+}
+
+fn Count Fresh(Input, Check Available Only) {
+    let Parsed = Parse Input(Input)
+    let Ranges = Parsed.get(0)
+    let Ids = Parsed.get(1)
+
+    if(Check Available Only) {
+        Ids.filter(fn(Id) { Is Fresh(Id, Ranges) }).len()
+    } else {
+        let Merged = Merge All Ranges(Ranges)
+        Merged.map(fn(Range) { Range Size(Range) }).sum()
+    }
+}
+
+println(Count Fresh(Example Input, true))
+println(Count Fresh(Actual Input, true))
+println(Count Fresh(Example Input, false))
+println(Count Fresh(Actual Input, false))

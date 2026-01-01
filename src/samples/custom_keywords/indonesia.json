@@ -1,0 +1,20 @@
+{
+  "and": "dan",
+  "or": "ato",
+  "if": "kalo",
+  "else": "eh",
+  "while": "selama",
+  "for": "untuk",
+  "function": "mantra",
+  "return": "balikin",
+  "true": "yoi",
+  "false": "kagak",
+  "null": "hampa",
+  "let": "biarin",
+  "var": "anggep",
+  "class": "kelas",
+  "this": "gue",
+  "super": "ortu",
+  "break": "cabut",
+  "continue": "gas"
+}

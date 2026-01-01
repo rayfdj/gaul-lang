@@ -1,0 +1,143 @@
+// 🎮 Permainan Tebak Angka Ajaib
+// Mantra-mantra untuk menebak angka rahasia!
+// Jalankan program ini dengan memakai opsi keyword, seperti ini
+// gaul-lang src/samples/custom_keywords/indonesia.gaul --keywords src/samples/custom_keywords/indonesia.json
+
+mantra Buat Angka Rahasia(Seed) {
+    biarin Angka = (Seed * 7 + 13).mod(100)
+    balikin Angka
+}
+
+mantra Cek Tebakan(Tebakan, Rahasia) {
+    kalo(Tebakan == Rahasia) {
+        balikin "🎉 BENER BANGET!"
+    } eh {
+        kalo(Tebakan < Rahasia) {
+            balikin "⬆️ Kurang gede!"
+        } eh {
+            balikin "⬇️ Kegedean!"
+        }
+    }
+}
+
+mantra Main Game(Rahasia, Tebakan List) {
+    anggep Hasil = []
+    anggep Ketemu = kagak
+
+    untuk(Tebakan : Tebakan List) {
+        kalo(Ketemu) {
+            gas
+        }
+
+        biarin Pesan = Cek Tebakan(Tebakan, Rahasia)
+        Hasil.push("Tebak " + Tebakan.to_str() + ": " + Pesan)
+
+        kalo(Tebakan == Rahasia) {
+            Ketemu = yoi
+        }
+    }
+
+    balikin Hasil
+}
+
+mantra Hitung Mundur(Dari) {
+    anggep I = Dari
+    anggep Hasil = ""
+
+    selama(I > 0) {
+        Hasil = Hasil + I.to_str() + "... "
+        I = I - 1
+    }
+
+    balikin Hasil + "🚀 MULAI!"
+}
+
+mantra Fizzbuzz Gaul(N) {
+    anggep I = 1
+    anggep Hasil = []
+
+    selama(I <= N) {
+        biarin Bisa Bagi 3 = I.mod(3) == 0
+        biarin Bisa Bagi 5 = I.mod(5) == 0
+
+        kalo((Bisa Bagi 3) dan (Bisa Bagi 5)) {
+            Hasil.push("✨ Mantul!")
+        } eh {
+            kalo(Bisa Bagi 3) {
+                Hasil.push("🔥 Gaskeun!")
+            } eh {
+                kalo(Bisa Bagi 5) {
+                    Hasil.push("💯 Cakep!")
+                } eh {
+                    Hasil.push(I)
+                }
+            }
+        }
+
+        I = I + 1
+    }
+
+    balikin Hasil
+}
+
+mantra Cari Genap(Angka List) {
+    anggep Hasil = []
+
+    untuk(Angka : Angka List) {
+        kalo(Angka.mod(2) == 0) {
+            Hasil.push(Angka)
+        }
+    }
+
+    balikin Hasil
+}
+
+mantra Hitung Total(Angka List) {
+    anggep Total = 0
+    untuk(Angka : Angka List) {
+        Total = Total + Angka
+    }
+    balikin Total
+}
+
+// 🎬 Jalanin semua mantra!
+
+println("=== 🇮🇩 Selamat Datang di Gaul! ===")
+println("")
+
+println("📢 Hitung mundur:")
+println(Hitung Mundur(5))
+println("")
+
+println("🎮 Main tebak angka:")
+biarin Angka Rahasia = Buat Angka Rahasia(42)
+println("Angka rahasia: " + Angka Rahasia.to_str())
+biarin Daftar Tebakan = [20, 40, 50, 34, 30, 41]
+biarin Hasil Game = Main Game(Angka Rahasia, Daftar Tebakan)
+untuk(H : Hasil Game) {
+    println(H)
+}
+println("")
+
+println("🎵 FizzBuzz versi Gaul (1-15):")
+biarin Hasil Fizzbuzz = Fizzbuzz Gaul(15)
+println(Hasil Fizzbuzz)
+println("")
+
+println("🔢 Cari angka genap dari [1,2,3,4,5,6,7,8,9,10]:")
+biarin Semua Angka = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+biarin Angka Genap = Cari Genap(Semua Angka)
+println(Angka Genap)
+println("")
+
+println("➕ Total angka genap:")
+println(Hitung Total(Angka Genap))
+println("")
+
+biarin Gaul Itu Keren = yoi
+biarin Gaul Itu Boring = kagak
+println("Gaul itu keren? " + Gaul Itu Keren.to_str())
+println("Gaul itu boring? " + Gaul Itu Boring.to_str())
+println("")
+
+println("=== 🙌 Makasih udah nyoba Gaul! ===")
