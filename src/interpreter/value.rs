@@ -1,6 +1,7 @@
 use crate::interpreter::environment::Environment;
 use crate::parser::ast::Expr;
 use std::cell::RefCell;
+use std::fmt;
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
@@ -15,12 +16,22 @@ pub enum Value {
     NativeFn(Rc<NativeFunction>),
 }
 
-#[derive(Debug)]
 pub struct Function {
     pub name: Rc<str>,
     pub params: Vec<Rc<str>>,
     pub body: Rc<Expr>,
     pub closure: Rc<Environment>,
+}
+
+impl fmt::Debug for Function {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Function")
+            .field("name", &self.name)
+            .field("params", &self.params)
+            .field("body", &"<expr>")
+            .field("closure", &"<env>")
+            .finish()
+    }
 }
 
 #[derive(Debug)]

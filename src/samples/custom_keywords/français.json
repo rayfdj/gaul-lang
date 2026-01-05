@@ -1,0 +1,20 @@
+{
+  "and": "et",
+  "or": "ou",
+  "if": "si",
+  "else": "sinon",
+  "while": "tantque",
+  "for": "pour",
+  "function": "sortilège",
+  "return": "renvoie",
+  "true": "vrai",
+  "false": "faux",
+  "null": "rien",
+  "let": "soit",
+  "var": "mut",
+  "class": "classe",
+  "this": "moi",
+  "super": "parent",
+  "break": "stop",
+  "continue": "suite"
+}

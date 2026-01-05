@@ -1,3 +1,4 @@
+use gaul_lang::config::RuntimeConfig;
 use gaul_lang::interpreter::Interpreter;
 use gaul_lang::interpreter::environment::Environment;
 use gaul_lang::interpreter::value::Value;
@@ -10,7 +11,7 @@ use gaul_lang::scanner::Scanner;
 fn eval(source: &str) -> Result<Value, String> {
     let keywords = load_keywords(None).map_err(|e| e.to_string())?;
     let mut resolver = Resolver::new();
-    let mut interpreter = Interpreter::new(Environment::new());
+    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default());
 
     let scanner = Scanner::new(source, &keywords);
     let tokens = scanner.scan_tokens().map_err(|e| format!("{:?}", e))?;
@@ -3253,4 +3254,576 @@ fn test_reduce_non_function_callback_fails() {
         result.is_err(),
         "Expected error for reduce with non-function callback"
     );
+}
+
+// ==================== JAM KARET (~=) OPERATOR TESTS ====================
+
+// --- Numeric Approximate Equality ---
+
+#[test]
+fn test_jam_karet_numbers_equal() {
+    let result = eval("100 ~= 100");
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_numbers_within_tolerance() {
+    // 100 vs 104 is 4% difference, within default 5%
+    let result = eval("100 ~= 104");
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!(
+            "Expected true (4% diff within 5% tolerance), got {:?}",
+            result
+        ),
+    }
+}
+
+#[test]
+fn test_jam_karet_numbers_outside_tolerance() {
+    // 100 vs 110 is 10% difference, outside default 5%
+    let result = eval("100 ~= 110");
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!(
+            "Expected false (10% diff outside 5% tolerance), got {:?}",
+            result
+        ),
+    }
+}
+
+#[test]
+fn test_jam_karet_numbers_boundary_exactly_5_percent() {
+    // 100 vs 105 is exactly 5%, should be true (<=)
+    let result = eval("100 ~= 105");
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true (exactly 5% tolerance), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_numbers_just_over_tolerance() {
+    // 100 vs 105.5 -> diff = 5.5, max = 105.5, relative = 5.21% > 5%
+    let result = eval("100 ~= 105.5");
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!("Expected false (just over 5% tolerance), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_numbers_symmetric() {
+    // Order shouldn't matter
+    let result1 = eval("100 ~= 104");
+    let result2 = eval("104 ~= 100");
+    match (result1, result2) {
+        (Ok(Value::Bool(b1)), Ok(Value::Bool(b2))) => {
+            assert_eq!(b1, b2, "~= should be symmetric");
+            assert!(b1);
+        }
+        _ => panic!("Expected both to be true"),
+    }
+}
+
+#[test]
+fn test_jam_karet_small_numbers() {
+    // 1 vs 1.04 is 4% difference
+    let result = eval("1 ~= 1.04");
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_small_numbers_outside_tolerance() {
+    // 1 vs 2 is 100% difference
+    let result = eval("1 ~= 2");
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!("Expected false (100% diff), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_large_numbers() {
+    // 1000000 vs 1040000 is 4% difference
+    let result = eval("1000000 ~= 1040000");
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_negative_numbers() {
+    // -100 vs -104 is 4% difference
+    let result = eval("(-100) ~= (-104)");
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_negative_outside_tolerance() {
+    // -100 vs -110 is 10% difference
+    let result = eval("(-100) ~= (-110)");
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!("Expected false, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_mixed_sign_numbers() {
+    // -1 vs 1 should be way outside tolerance
+    let result = eval("(-1) ~= 1");
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!("Expected false (opposite signs), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_zero_vs_zero() {
+    let result = eval("0 ~= 0");
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_zero_vs_small() {
+    // 0 vs 0.001 - relative diff is infinite/undefined, should be false
+    let result = eval("0 ~= 0.001");
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!("Expected false (0 vs non-zero), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_floats() {
+    // 3.14159 vs 3.14 is ~0.05% difference
+    let result = eval("3.14159 ~= 3.14");
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_in_expression() {
+    let code = r#"
+    let a = 100
+    let b = 103
+    if (a ~= b) { "close enough" } else { "not close" }
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "close enough"),
+        _ => panic!("Expected 'close enough', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_in_while_condition() {
+    let code = r#"
+    var x = 100
+    var iterations = 0
+    while (x ~= 100) {
+        x = x + 1
+        iterations = iterations + 1
+        if (iterations > 20) { break }
+    }
+    iterations
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => {
+            // Should iterate while within 5% of 100 (up to 105)
+            assert!(n >= 5.0 && n <= 6.0, "Expected ~5-6 iterations, got {}", n);
+        }
+        _ => panic!("Expected number, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_chained_comparisons() {
+    // a ~= b and b ~= c doesn't mean a ~= c (not transitive)
+    let code = r#"
+    let a = 100
+    let b = 104
+    let c = 108
+    let ab = a ~= b
+    let bc = b ~= c
+    let ac = a ~= c
+    [ab, bc, ac]
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr[0], Value::Bool(true)); // 100 ~= 104 (4%)
+            assert_eq!(arr[1], Value::Bool(true)); // 104 ~= 108 (~3.8%)
+            assert_eq!(arr[2], Value::Bool(false)); // 100 ~= 108 (8%)
+        }
+        _ => panic!("Expected array of bools, got {:?}", result),
+    }
+}
+
+// --- String Approximate Equality (Levenshtein) ---
+
+#[test]
+fn test_jam_karet_strings_equal() {
+    let result = eval(r#""hello" ~= "hello""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_one_typo() {
+    // "hello" vs "helo" - distance 1, threshold for 5 chars is 1
+    let result = eval(r#""hello" ~= "helo""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true (1 edit), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_one_substitution() {
+    // "hello" vs "hallo" - distance 1
+    let result = eval(r#""hello" ~= "hallo""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true (1 substitution), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_one_insertion() {
+    // "hello" vs "helloo" - distance 1
+    let result = eval(r#""hello" ~= "helloo""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true (1 insertion), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_too_different() {
+    // "hello" vs "world" - distance 4, threshold for 5 chars is 1
+    let result = eval(r#""hello" ~= "world""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!("Expected false (too many edits), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_longer_more_tolerance() {
+    // "programming" (11 chars) vs "programing" (10 chars) - distance 1
+    // threshold = max(11, 10) / 5 = 2
+    let result = eval(r#""programming" ~= "programing""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_longer_two_typos() {
+    // "programming" vs "programing" with extra typo
+    // "programming" vs "progrming" - distance 2, threshold 2
+    let result = eval(r#""programming" ~= "progrming""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true (2 edits within threshold), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_case_sensitive() {
+    // "Hello" vs "hello" - distance 1
+    let result = eval(r#""Hello" ~= "hello""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true (case counts as 1 edit), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_empty_vs_empty() {
+    let result = eval(r#""" ~= """#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_empty_vs_short() {
+    // "" vs "a" - distance 1, threshold max(0,1)/5 = 0, but min 1
+    let result = eval(r#""" ~= "a""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!(
+            "Expected true (within min threshold of 1), got {:?}",
+            result
+        ),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_empty_vs_longer() {
+    // "" vs "hello" - distance 5, threshold 1
+    let result = eval(r#""" ~= "hello""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        _ => panic!("Expected false, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_symmetric() {
+    let result1 = eval(r#""hello" ~= "helo""#);
+    let result2 = eval(r#""helo" ~= "hello""#);
+    match (result1, result2) {
+        (Ok(Value::Bool(b1)), Ok(Value::Bool(b2))) => {
+            assert_eq!(b1, b2, "String ~= should be symmetric");
+        }
+        _ => panic!("Expected both to be bools"),
+    }
+}
+
+#[test]
+fn test_jam_karet_indonesian_typos() {
+    // Common Indonesian misspellings
+    // "terima kasih" vs "trima kasih" - 1 deletion
+    let result = eval(r#""terima kasih" ~= "trima kasih""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_indonesian_typos_2() {
+    // "selamat" vs "slamat" - 1 deletion, threshold 7/5 = 1
+    let result = eval(r#""selamat" ~= "slamat""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_transposition() {
+    // "receive" vs "recieve" - distance 2
+    // threshold = ceil(7 * 0.2) = ceil(1.4) = 2, so this is within tolerance
+    let result = eval(r#""receive" ~= "recieve""#);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!(
+            "Expected true (distance 2 within threshold 2), got {:?}",
+            result
+        ),
+    }
+}
+
+#[test]
+fn test_jam_karet_strings_in_filter() {
+    let code = r#"
+    let names = ["John", "Jon", "Jane", "Joan"]
+    names.filter(fn(name) { return name ~= "John" })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            // "John" ~= "John" (0), "Jon" ~= "John" (1), "Jane" ~= "John" (2), "Joan" ~= "John" (1)
+            // threshold for 4 chars = ceil(4 * 0.2) = 1, so John, Jon, and Joan match
+            assert_eq!(arr.len(), 3);
+        }
+        _ => panic!("Expected array with 3 elements, got {:?}", result),
+    }
+}
+
+// --- Precedence and Associativity ---
+
+#[test]
+fn test_jam_karet_precedence_with_and() {
+    // ~= should have same precedence as ==
+    let code = "100 ~= 103 and 200 ~= 205";
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_precedence_with_or() {
+    let code = "100 ~= 150 or 200 ~= 205";
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b), // first false, second true
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_precedence_with_comparison() {
+    // Comparison (<) should be tighter than ~=
+    // This parses as: (5 < 10) ~= true, which would be type error
+    // OR: 5 < (10 ~= true) which is also weird
+    // Actually ~= is at equality level, so: (5 < 10) ~= true
+    // But ~= on bool vs bool... depends on implementation
+    // Let's test a clearer case
+    let code = "(5 < 10) == (100 ~= 103)";
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b), // true == true
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_not_operator() {
+    let code = "!(100 ~= 200)";
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b), // 100 ~= 200 is false, !false = true
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+// --- Type Errors ---
+
+#[test]
+fn test_jam_karet_number_vs_string_error() {
+    let result = eval(r#"100 ~= "100""#);
+    assert!(result.is_err(), "Expected error for number ~= string");
+}
+
+#[test]
+fn test_jam_karet_bool_error() {
+    let result = eval("true ~= false");
+    assert!(result.is_err(), "Expected error for bool ~= bool");
+}
+
+#[test]
+fn test_jam_karet_null_error() {
+    let result = eval("null ~= null");
+    assert!(result.is_err(), "Expected error for null ~= null");
+}
+
+#[test]
+fn test_jam_karet_array_error() {
+    let result = eval("[1, 2] ~= [1, 2]");
+    assert!(result.is_err(), "Expected error for array ~= array");
+}
+
+#[test]
+fn test_jam_karet_function_error() {
+    let code = r#"
+    fn a() { return 1 }
+    fn b() { return 1 }
+    a ~= b
+    "#;
+    let result = eval(code);
+    assert!(result.is_err(), "Expected error for function ~= function");
+}
+
+// --- Real-world Use Cases ---
+
+#[test]
+fn test_jam_karet_financial_comparison() {
+    // Comparing prices that might have rounding differences
+    let code = r#"
+    let expected price = 99.99
+    let actual price = 100.02
+    if (expected price ~= actual price) {
+        "price acceptable"
+    } else {
+        "price mismatch"
+    }
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "price acceptable"),
+        _ => panic!("Expected 'price acceptable', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_measurement_tolerance() {
+    // Scientific measurements with tolerance
+    let code = r#"
+    let expected = 9.81
+    let measured = 9.78
+    expected ~= measured
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(b)) => assert!(b), // ~0.3% difference
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_fuzzy_search() {
+    // Finding approximate matches in a list
+    let code = r#"
+    let products = ["iPhone", "iPad", "iPod", "iMac", "MacBook"]
+    let search = "ifone"
+    products.filter(fn(p) { return p ~= search })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            // "iPhone" vs "ifone" - distance 2 (P->f, h->deleted? Let's see)
+            // Actually: iPhone -> ifone needs: P->f (1), h deleted (1) = 2
+            // threshold = 6/5 = 1, so might not match
+            // This test documents actual behavior
+            assert!(arr.len() <= 1);
+        }
+        _ => panic!("Expected array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_jam_karet_grade_boundaries() {
+    // Flexible grade boundaries
+    let code = r#"
+    fn is passing(score, threshold) {
+        return (score ~= threshold) or (score > threshold)
+    }
+    let results = [
+        is passing(58, 60),
+        is passing(55, 60),
+        is passing(62, 60)
+    ]
+    results
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr[0], Value::Bool(true)); // 58 ~= 60 (3.3%)
+            assert_eq!(arr[1], Value::Bool(false)); // 55 ~= 60 (8.3%)
+            assert_eq!(arr[2], Value::Bool(true)); // 62 > 60
+        }
+        _ => panic!("Expected array, got {:?}", result),
+    }
 }

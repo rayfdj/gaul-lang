@@ -3,6 +3,7 @@ pub mod native_function;
 pub mod native_method;
 pub mod value;
 
+use crate::config::RuntimeConfig;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::native_function::all_native_functions;
 use crate::interpreter::native_method::call_native_method;
@@ -40,6 +41,7 @@ pub struct Interpreter {
     // 3rd try for closure. So we're holding a pointer to the "head" environment, rather than
     // mucking around with stack of scopes.
     env: Rc<Environment>,
+    runtime_config: RuntimeConfig,
 }
 
 // Propagate control flow, discard value
@@ -63,8 +65,11 @@ macro_rules! prop_val {
 }
 
 impl Interpreter {
-    pub fn new(env: Environment) -> Self {
-        let mut interpreter = Self { env: Rc::new(env) };
+    pub fn new(env: Environment, runtime_config: RuntimeConfig) -> Self {
+        let mut interpreter = Self {
+            env: Rc::new(env),
+            runtime_config,
+        };
         interpreter.define_native_functions();
         interpreter
     }
@@ -292,7 +297,25 @@ impl Interpreter {
                             (TokenType::LessEqual, Value::Str(s1), Value::Str(s2)) => {
                                 Ok(Value::Bool(s1 <= s2).into())
                             }
-                            (TokenType::ApproxEqual, _, _) => todo!("jam karet!"),
+                            (TokenType::ApproxEqual, Value::Num(n1), Value::Num(n2)) => {
+                                let diff = (n1 - n2).abs();
+                                let max_val = n1.abs().max(n2.abs());
+                                let is_close = if max_val == 0.0 {
+                                    diff == 0.0
+                                } else {
+                                    (diff / max_val) <= self.runtime_config.jam_karet_num
+                                };
+                                Ok(Value::Bool(is_close).into())
+                            }
+                            (TokenType::ApproxEqual, Value::Str(s1), Value::Str(s2)) => {
+                                let max_len = s1.chars().count().max(s2.chars().count());
+                                let threshold =
+                                    ((max_len as f64) * self.runtime_config.jam_karet_str).ceil()
+                                        as usize;
+                                let threshold = threshold.max(1); // minimum 1 edit allowed
+                                let distance = strsim::levenshtein(&s1, &s2);
+                                Ok(Value::Bool(distance <= threshold).into())
+                            }
                             (op, l, r) => Err(RuntimeError {
                                 line: expression.line,
                                 message: format!("cannot apply {:?} to {:?} and {:?}", op, l, r),

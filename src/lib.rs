@@ -1,3 +1,4 @@
+pub mod config;
 pub mod interpreter;
 pub mod keywords;
 pub mod parser;

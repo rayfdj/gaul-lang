@@ -194,6 +194,7 @@ dependencies = [
  "dirs",
  "rustyline",
  "serde_json",
+ "strsim",
 ]
 
 [[package]]

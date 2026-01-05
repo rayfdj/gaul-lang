@@ -1,5 +1,7 @@
 use anyhow::Result;
 use clap::Parser as ClapParser;
+use gaul_lang::config::DEFAULT_JAM_KARET_STR;
+use gaul_lang::config::{DEFAULT_JAM_KARET_NUM, RuntimeConfig};
 use gaul_lang::interpreter::Interpreter;
 use gaul_lang::interpreter::environment::Environment;
 use gaul_lang::interpreter::value::Value;
@@ -22,6 +24,15 @@ struct Cli {
     /// Path to keywords JSON file
     #[arg(short, long)]
     keywords: Option<String>,
+
+    /// "Jam Karet" config :))) The default values
+    /// Relative tolerance for ~= on numbers (default: 0.05 = 5%)
+    #[arg(long, default_value_t = DEFAULT_JAM_KARET_NUM)]
+    jam_karet_num: f64,
+
+    /// Relative tolerance for ~= on strings (default: 0.2 = 20%)
+    #[arg(long, default_value_t = DEFAULT_JAM_KARET_STR)]
+    jam_karet_str: f64,
 }
 
 fn main() -> Result<()> {
@@ -29,7 +40,11 @@ fn main() -> Result<()> {
 
     let keywords = load_keywords(cli.keywords.as_deref())?;
     let mut resolver = Resolver::new();
-    let mut interpreter = Interpreter::new(Environment::new());
+    let runtime_config = RuntimeConfig {
+        jam_karet_num: cli.jam_karet_num,
+        jam_karet_str: cli.jam_karet_str,
+    };
+    let mut interpreter = Interpreter::new(Environment::new(), runtime_config);
 
     match cli.script {
         None => run_prompt(&keywords, &mut resolver, &mut interpreter)?,

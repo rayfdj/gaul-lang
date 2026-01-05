@@ -1,0 +1,20 @@
+{
+  "and": "且",
+  "or": "或",
+  "if": "如果",
+  "else": "否则",
+  "while": "当",
+  "for": "遍历",
+  "function": "法术",
+  "return": "返回",
+  "true": "真",
+  "false": "假",
+  "null": "空",
+  "let": "设",
+  "var": "变",
+  "class": "类",
+  "this": "我",
+  "super": "父",
+  "break": "跳出",
+  "continue": "继续"
+}

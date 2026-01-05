@@ -1,0 +1,179 @@
+// 🎮 Le Jeu de Devinette Magique
+// Des sortilèges pour deviner le nombre secret!
+// Lancez ce programme avec l'option keywords, comme ceci:
+// gaul-lang src/samples/custom_keywords/france.gaul --keywords src/samples/custom_keywords/france.json
+
+sortilège Créer Nombre Secret(Graine) {
+    soit Nombre = (Graine * 7 + 13).mod(100)
+    renvoie Nombre
+}
+
+sortilège Vérifier Essai(Essai, Secret) {
+    si(Essai == Secret) {
+        renvoie "🎉 BRAVO! C'EST ÇA!"
+    } sinon {
+        si(Essai < Secret) {
+            renvoie "⬆️ Plus grand!"
+        } sinon {
+            renvoie "⬇️ Plus petit!"
+        }
+    }
+}
+
+sortilège Jouer(Secret, Liste Essais) {
+    mut Résultats = []
+    mut Trouvé = faux
+
+    pour(Essai : Liste Essais) {
+        si(Trouvé) {
+            suite
+        }
+
+        soit Message = Vérifier Essai(Essai, Secret)
+        Résultats.push("Essai " + Essai.to_str() + ": " + Message)
+
+        si(Essai == Secret) {
+            Trouvé = vrai
+        }
+    }
+
+    renvoie Résultats
+}
+
+sortilège Compte à Rebours(Depuis) {
+    mut I = Depuis
+    mut Résultat = ""
+
+    tantque(I > 0) {
+        Résultat = Résultat + I.to_str() + "... "
+        I = I - 1
+    }
+
+    renvoie Résultat + "🚀 C'EST PARTI!"
+}
+
+sortilège Fizzbuzz Français(N) {
+    mut I = 1
+    mut Résultats = []
+
+    tantque(I <= N) {
+        soit Divisible Par 3 = I.mod(3) == 0
+        soit Divisible Par 5 = I.mod(5) == 0
+
+        si((Divisible Par 3) et (Divisible Par 5)) {
+            Résultats.push("✨ Magnifique!")
+        } sinon {
+            si(Divisible Par 3) {
+                Résultats.push("🔥 Génial!")
+            } sinon {
+                si(Divisible Par 5) {
+                    Résultats.push("💯 Super!")
+                } sinon {
+                    Résultats.push(I)
+                }
+            }
+        }
+
+        I = I + 1
+    }
+
+    renvoie Résultats
+}
+
+sortilège Chercher Pairs(Liste Nombres) {
+    mut Résultats = []
+
+    pour(Nombre : Liste Nombres) {
+        si(Nombre.mod(2) == 0) {
+            Résultats.push(Nombre)
+        }
+    }
+
+    renvoie Résultats
+}
+
+sortilège Calculer Total(Liste Nombres) {
+    mut Total = 0
+    pour(Nombre : Liste Nombres) {
+        Total = Total + Nombre
+    }
+    renvoie Total
+}
+
+sortilège Fibonacci(N) {
+    si(N <= 1) {
+        renvoie N
+    }
+
+    mut A = 0
+    mut B = 1
+    mut I = 2
+
+    tantque(I <= N) {
+        soit Temp = A + B
+        A = B
+        B = Temp
+        I = I + 1
+    }
+
+    renvoie B
+}
+
+sortilège Suite Fibonacci(Jusquà) {
+    mut Résultats = []
+    mut I = 0
+
+    tantque(I < Jusquà) {
+        Résultats.push(Fibonacci(I))
+        I = I + 1
+    }
+
+    renvoie Résultats
+}
+
+// 🎬 Lançons tous les sortilèges!
+
+println("=== 🇫🇷 Bienvenue dans Gaul! ===")
+println("")
+
+println("📢 Compte à rebours:")
+println(Compte à Rebours(5))
+println("")
+
+println("🎮 Jeu de devinette:")
+soit Nombre Secret = Créer Nombre Secret(42)
+println("Le nombre secret: " + Nombre Secret.to_str())
+soit Liste Essais = [20, 40, 50, 34, 30, 41]
+soit Résultats Jeu = Jouer(Nombre Secret, Liste Essais)
+pour(R : Résultats Jeu) {
+    println(R)
+}
+println("")
+
+println("🎵 FizzBuzz à la française (1-15):")
+soit Résultats Fizzbuzz = Fizzbuzz Français(15)
+println(Résultats Fizzbuzz)
+println("")
+
+println("🔢 Chercher les nombres pairs dans [1,2,3,4,5,6,7,8,9,10]:")
+soit Tous Les Nombres = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+soit Nombres Pairs = Chercher Pairs(Tous Les Nombres)
+println(Nombres Pairs)
+println("")
+
+println("➕ Total des nombres pairs:")
+println(Calculer Total(Nombres Pairs))
+println("")
+
+println("🔢 Suite de Fibonacci (10 premiers):")
+soit Fib = Suite Fibonacci(10)
+println(Fib)
+println("")
+
+soit Gaul Est Cool = vrai
+soit Gaul Est Ennuyeux = faux
+println("Gaul est cool? " + Gaul Est Cool.to_str())
+println("Gaul est ennuyeux? " + Gaul Est Ennuyeux.to_str())
+println("")
+
+println("=== 🙌 Merci d'avoir essayé Gaul! ===")
