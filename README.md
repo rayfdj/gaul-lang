@@ -235,6 +235,16 @@ Where `français.json` maps:
 println(结果)
 ```
 
+Where `中文.json` maps:
+```json
+{
+  "function": "法术",
+  "return": "返回",
+  "if": "如果",
+  "let": "设"
+}
+```
+
 ### Indonesian Slang (indonesia.gaul)
 
 ```gaul
