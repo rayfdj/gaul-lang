@@ -1,0 +1,211 @@
+// Day 9: Movie Theater - Largest Rectangle from Red Tiles
+// Part 1: Any two tiles as opposite corners
+// Part 2: Rectangle must be contained within polygon formed by tiles
+
+let Example Tiles = [
+    "7,1",
+    "11,1",
+    "11,7",
+    "9,7",
+    "9,5",
+    "2,5",
+    "2,3",
+    "7,3"
+]
+
+let Actual Tiles = read_file("src/samples/aoc/2025/day09.txt").lines()
+
+fn Parse Tiles(Lines) {
+    (Lines
+        .map(fn(L) { L.trim() })
+        .filter(fn(L) { L.len() > 0 })
+        .map(fn(L) {
+            let Parts = L.split(",")
+            [Parts.get(0).to_num(), Parts.get(1).to_num()]
+        }))
+}
+
+fn Abs(X) {
+    if(X < 0) { 0 - X } else { X }
+}
+
+fn Rectangle Area(P1, P2) {
+    // Area including the tiles themselves
+    let Width = Abs(P2.get(0) - P1.get(0)) + 1
+    let Height = Abs(P2.get(1) - P1.get(1)) + 1
+    Width * Height
+}
+
+// Part 1: Find largest rectangle using any two tiles as opposite corners
+fn Largest Rectangle Any Pair(Tiles) {
+    let N = Tiles.len()
+    var Max Area = 0
+
+    for(I : 0..N) {
+        for(J : (I + 1)..N) {
+            let Area = Rectangle Area(Tiles.get(I), Tiles.get(J))
+            if(Area > Max Area) {
+                Max Area = Area
+            }
+        }
+    }
+    Max Area
+}
+
+// Part 2: Rectangle must only contain red/green tiles
+// Red tiles = input coordinates, Green tiles = polygon edges + interior
+
+fn Min(A, B) { if(A < B) { A } else { B } }
+fn Max(A, B) { if(A > B) { A } else { B } }
+
+// Check if point is on line segment from P1 to P2
+fn Point On Segment(X, Y, P1, P2) {
+    let X1 = P1.get(0)
+    let Y1 = P1.get(1)
+    let X2 = P2.get(0)
+    let Y2 = P2.get(1)
+
+    // Check if point is in bounding box
+    if((X < Min(X1, X2)) or (X > Max(X1, X2))) { return false }
+    if((Y < Min(Y1, Y2)) or (Y > Max(Y1, Y2))) { return false }
+
+    // For axis-aligned segments (as per puzzle: same row or column)
+    if(X1 == X2) { return X == X1 }
+    if(Y1 == Y2) { return Y == Y1 }
+
+    false
+}
+
+// Check if point is on any edge of the polygon
+fn Point On Edge(X, Y, Polygon) {
+    let N = Polygon.len()
+    for(I : 0..N) {
+        let J = (I + 1).mod(N)
+        if(Point On Segment(X, Y, Polygon.get(I), Polygon.get(J))) {
+            return true
+        }
+    }
+    false
+}
+
+// Check if point is strictly inside polygon using ray casting
+fn Point Inside Polygon(X, Y, Polygon) {
+    let N = Polygon.len()
+    var Inside = false
+
+    var J = N - 1
+    for(I : 0..N) {
+        let Xi = Polygon.get(I).get(0)
+        let Yi = Polygon.get(I).get(1)
+        let Xj = Polygon.get(J).get(0)
+        let Yj = Polygon.get(J).get(1)
+
+        // Check if ray from (X,Y) going right crosses edge
+        if(((Yi > Y) != (Yj > Y)) and
+           (X < (Xj - Xi) * (Y - Yi) / (Yj - Yi) + Xi)) {
+            Inside = !Inside
+        }
+        J = I
+    }
+    Inside
+}
+
+// Check if point is red or green (on polygon or inside it)
+fn Is Red Or Green(X, Y, Polygon) {
+    (Point On Edge(X, Y, Polygon)) or (Point Inside Polygon(X, Y, Polygon))
+}
+
+// Check if all tiles in rectangle are red or green
+// Optimized: For rectilinear polygon, check corners + edge intersections
+fn Rectangle All Red Green(X1, Y1, X2, Y2, Polygon) {
+    let Min X = Min(X1, X2)
+    let Max X = Max(X1, X2)
+    let Min Y = Min(Y1, Y2)
+    let Max Y = Max(Y1, Y2)
+
+    // P1 and P2 are already red tiles (corners we're iterating)
+    // Only need to check the other 2 corners: (MinX, MaxY) and (MaxX, MinY)
+    if(!Is Red Or Green(Max X, Min Y, Polygon)) { return false }
+    if(!Is Red Or Green(Min X, Max Y, Polygon)) { return false }
+
+    // For rectilinear polygon: check no polygon edge cuts into rectangle interior
+    // An edge cuts in if it's a vertical edge with X strictly between MinX and MaxX
+    // and Y range overlapping [MinY, MaxY], OR horizontal edge with Y strictly between
+    // MinY and MaxY and X range overlapping [MinX, MaxX]
+    let N = Polygon.len()
+    for(I : 0..N) {
+        let J = (I + 1).mod(N)
+        let P1 = Polygon.get(I)
+        let P2 = Polygon.get(J)
+        let Ex1 = P1.get(0)
+        let Ey1 = P1.get(1)
+        let Ex2 = P2.get(0)
+        let Ey2 = P2.get(1)
+
+        if(Ex1 == Ex2) {
+            // Vertical edge at X = Ex1
+            // Cuts into rectangle interior if Ex1 is strictly inside (MinX, MaxX)
+            // and edge's Y range STRICTLY overlaps (MinY, MaxY)
+            if((Ex1 > Min X) and (Ex1 < Max X)) {
+                let Edge Min Y = Min(Ey1, Ey2)
+                let Edge Max Y = Max(Ey1, Ey2)
+                // Strict interior overlap: edge enters between MinY and MaxY
+                if((Edge Max Y > Min Y) and (Edge Min Y < Max Y)) {
+                    return false
+                }
+            }
+        } else {
+            // Horizontal edge at Y = Ey1
+            // Cuts into rectangle interior if Ey1 is strictly inside (MinY, MaxY)
+            // and edge's X range STRICTLY overlaps (MinX, MaxX)
+            if((Ey1 > Min Y) and (Ey1 < Max Y)) {
+                let Edge Min X = Min(Ex1, Ex2)
+                let Edge Max X = Max(Ex1, Ex2)
+                // Strict interior overlap
+                if((Edge Max X > Min X) and (Edge Min X < Max X)) {
+                    return false
+                }
+            }
+        }
+    }
+    true
+}
+
+// Part 2: Find largest rectangle with red corners, all tiles red/green
+fn Largest Rectangle In Polygon(Tiles) {
+    let N = Tiles.len()
+    if(N < 3) { return 0 }
+
+    var Max Area = 0
+
+    for(I : 0..N) {
+        for(J : (I + 1)..N) {
+            let P1 = Tiles.get(I)
+            let P2 = Tiles.get(J)
+
+            // Check if all tiles in rectangle are red or green
+            if(Rectangle All Red Green(P1.get(0), P1.get(1), P2.get(0), P2.get(1), Tiles)) {
+                let Area = Rectangle Area(P1, P2)
+                if(Area > Max Area) {
+                    Max Area = Area
+                }
+            }
+        }
+    }
+    Max Area
+}
+
+fn Solve Movie Theater(Input, Check Containment) {
+    let Tiles = Parse Tiles(Input)
+
+    if(Check Containment) {
+        Largest Rectangle In Polygon(Tiles)
+    } else {
+        Largest Rectangle Any Pair(Tiles)
+    }
+}
+
+println(Solve Movie Theater(Example Tiles, false))
+println(Solve Movie Theater(Actual Tiles, false))
+println(Solve Movie Theater(Example Tiles, true))
+println(Solve Movie Theater(Actual Tiles, true))

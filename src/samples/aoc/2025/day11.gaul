@@ -1,0 +1,162 @@
+// Day 11: Reactor - Count Paths in Directed Graph
+// Part 1: Count all distinct paths from 'you' to 'out'
+// Part 2: Count paths from 'svr' to 'out' that pass through both 'dac' and 'fft'
+
+let Example Graph = [
+    "aaa: you hhh",
+    "you: bbb ccc",
+    "bbb: ddd eee",
+    "ccc: ddd eee fff",
+    "ddd: ggg",
+    "eee: out",
+    "fff: out",
+    "ggg: out",
+    "hhh: ccc fff iii",
+    "iii: out"
+]
+
+let Example Graph 2 = [
+    "svr: aaa bbb",
+    "aaa: fft",
+    "fft: ccc",
+    "bbb: tty",
+    "tty: ccc",
+    "ccc: ddd eee",
+    "ddd: hub",
+    "hub: fff",
+    "eee: dac",
+    "dac: fff",
+    "fff: ggg hhh",
+    "ggg: out",
+    "hhh: out"
+]
+
+let Actual Graph = read_file("src/samples/aoc/2025/day11.txt").lines()
+
+fn Parse Graph(Lines) {
+    // Returns a map-like structure: [[source, [targets]], ...]
+    (Lines
+        .map(fn(L) { L.trim() })
+        .filter(fn(L) { (L.len() > 0) and (L.contains(":")) })
+        .map(fn(L) {
+            let Parts = L.split(":")
+            let Source = Parts.get(0).trim()
+            let Targets = (Parts.get(1).trim().split(" ")
+                .map(fn(T) { T.trim() })
+                .filter(fn(T) { T.len() > 0 }))
+            [Source, Targets]
+        }))
+}
+
+fn Get Outputs(Graph, Node) {
+    for(Entry : Graph) {
+        if(Entry.get(0) == Node) {
+            return Entry.get(1)
+        }
+    }
+    []
+}
+
+// Part 1: Simple path count with memoization
+// Returns count of paths from Start to End
+fn Count Paths Simple(Graph, Start, End, Memo) {
+    if(Start == End) { return 1 }
+
+    // Check memo
+    for(M : Memo) {
+        if(M.get(0) == Start) {
+            return M.get(1)
+        }
+    }
+
+    let Outputs = Get Outputs(Graph, Start)
+    var Total = 0
+    for(Next : Outputs) {
+        Total = Total + Count Paths Simple(Graph, Next, End, Memo)
+    }
+
+    Memo.push([Start, Total])
+    Total
+}
+
+// Part 2: Count paths that pass through both checkpoints
+// State: (current node, visited dac, visited fft)
+fn Count Paths Through Checkpoints(Graph, Start, End, Check1, Check2) {
+    // We need to count paths that visit both checkpoints
+    // Use DP: memo[node][visitedCheck1][visitedCheck2] = count
+
+    // Build memoization table as list of [node, v1, v2, count]
+    var Memo = []
+
+    fn Count With State(Node, Visited1, Visited2) {
+        // Update visited status
+        let V1 = (Visited1) or (Node == Check1)
+        let V2 = (Visited2) or (Node == Check2)
+
+        if(Node == End) {
+            if((V1) and (V2)) { return 1 } else { return 0 }
+        }
+
+        // Check memo
+        for(M : Memo) {
+            if((M.get(0) == Node) and (M.get(1) == V1) and (M.get(2) == V2)) {
+                return M.get(3)
+            }
+        }
+
+        let Outputs = Get Outputs(Graph, Node)
+        var Total = 0
+        for(Next : Outputs) {
+            Total = Total + Count With State(Next, V1, V2)
+        }
+
+        Memo.push([Node, V1, V2, Total])
+        Total
+    }
+
+    Count With State(Start, false, false)
+}
+
+// Alternative Part 2: Decompose into three subproblems
+// Paths(svr->dac) * Paths(dac->fft) * Paths(fft->out)
+// + Paths(svr->fft) * Paths(fft->dac) * Paths(dac->out)
+fn Count Paths Decomposed(Graph, Start, End, Check1, Check2) {
+    var Memo1 = []
+    var Memo2 = []
+    var Memo3 = []
+    var Memo4 = []
+    var Memo5 = []
+    var Memo6 = []
+
+    // Route 1: svr -> dac -> fft -> out
+    let Path1 = Count Paths Simple(Graph, Start, Check1, Memo1)
+    let Path2 = Count Paths Simple(Graph, Check1, Check2, Memo2)
+    let Path3 = Count Paths Simple(Graph, Check2, End, Memo3)
+    let Route1 = Path1 * Path2 * Path3
+
+    // Route 2: svr -> fft -> dac -> out
+    let Path4 = Count Paths Simple(Graph, Start, Check2, Memo4)
+    let Path5 = Count Paths Simple(Graph, Check2, Check1, Memo5)
+    let Path6 = Count Paths Simple(Graph, Check1, End, Memo6)
+    let Route2 = Path4 * Path5 * Path6
+
+    Route1 + Route2
+}
+
+fn Solve Reactor(Input, Check Both) {
+    let Graph = Parse Graph(Input)
+
+    if(Check Both) {
+        // Part 2: paths from 'svr' to 'out' through 'dac' and 'fft'
+        Count Paths Decomposed(Graph, "svr", "out", "dac", "fft")
+    } else {
+        // Part 1: paths from 'you' to 'out'
+        var Memo = []
+        Count Paths Simple(Graph, "you", "out", Memo)
+    }
+}
+
+println(Solve Reactor(Example Graph, false))
+println(Solve Reactor(Actual Graph, false))
+println(Solve Reactor(Example Graph 2, true))
+println(Solve Reactor(Actual Graph, true))

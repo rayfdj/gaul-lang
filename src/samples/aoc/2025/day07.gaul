@@ -1,0 +1,196 @@
+// Day 7: Laboratories - Tachyon Beam Splitters
+// A beam enters at 'S', travels downward, splits at '^' into left and right
+// Key: beams MERGE when they occupy the same column!
+
+let Example Grid = [
+    ".......S.......",
+    "...............",
+    ".......^.......",
+    "...............",
+    "......^.^......",
+    "...............",
+    ".....^.^.^.....",
+    "...............",
+    "....^.^...^....",
+    "...............",
+    "...^.^...^.^...",
+    "...............",
+    "..^...^.....^..",
+    "...............",
+    ".^.^.^.^.^...^.",
+    "..............."
+]
+
+let Actual Grid = read_file("src/samples/aoc/2025/day07.txt").lines()
+
+fn Parse Grid(Lines) {
+    (Lines
+        .map(fn(L) { L.trim() })
+        .filter(fn(L) { L.len() > 0 }))
+}
+
+fn Find Start(Grid) {
+    for(Row : 0..Grid.len()) {
+        let Line = Grid.get(Row)
+        for(Col : 0..Line.len()) {
+            if(Line.char_at(Col) == "S") {
+                return [Row, Col]
+            }
+        }
+    }
+    [0, 0]
+}
+
+fn Get Cell(Grid, Row, Col) {
+    if((Row < 0) or (Row >= Grid.len())) { return "X" }
+    let Line = Grid.get(Row)
+    if((Col < 0) or (Col >= Line.len())) { return "X" }
+    Line.char_at(Col)
+}
+
+// Helper: check if array contains value
+fn Contains(Arr, Val) {
+    for(X : Arr) {
+        if(X == Val) { return true }
+    }
+    false
+}
+
+// Helper: add to array if not already present (set-like behavior)
+fn Add Unique(Arr, Val) {
+    if(!Contains(Arr, Val)) {
+        Arr.push(Val)
+    }
+}
+
+// Part 1: Count total number of splits (each ^ hit = 1 split)
+// Key insight: beams MERGE when in same column, so track unique columns
+fn Count Splits(Grid) {
+    let Parsed = Parse Grid(Grid)
+    let Start = Find Start(Parsed)
+    let Rows = Parsed.len()
+    let Cols = Parsed.get(0).len()
+
+    // Build row-indexed list of splitter columns for fast lookup
+    var Splitters By Row = []
+    for(R : 0..Rows) {
+        var Row Splitters = []
+        let Line = Parsed.get(R)
+        for(C : 0..Line.len()) {
+            if(Line.char_at(C) == "^") {
+                Row Splitters.push(C)
+            }
+        }
+        Splitters By Row.push(Row Splitters)
+    }
+
+    // Track active beam columns (as a set - beams merge!)
+    var Beam Cols = [Start.get(1)]
+    var Total Splits = 0
+
+    // Process each row from start+1 to end
+    for(Row : (Start.get(0) + 1)..Rows) {
+        let Row Splitters = Splitters By Row.get(Row)
+        var Next Beam Cols = []
+
+        for(Col : Beam Cols) {
+            // Check if this beam hits a splitter at this row
+            if(Contains(Row Splitters, Col)) {
+                // Split! Count it and emit left/right beams
+                Total Splits = Total Splits + 1
+                if(Col - 1 >= 0) {
+                    Add Unique(Next Beam Cols, Col - 1)
+                }
+                if(Col + 1 < Cols) {
+                    Add Unique(Next Beam Cols, Col + 1)
+                }
+            } else {
+                // Beam continues downward
+                Add Unique(Next Beam Cols, Col)
+            }
+        }
+
+        Beam Cols = Next Beam Cols
+        if(Beam Cols.len() == 0) { break }
+    }
+
+    Total Splits
+}
+
+// Part 2: Count total timelines (beams) reaching the bottom
+// Uses memoization: memo[col] = number of timelines passing through this column
+fn Count Timelines(Grid) {
+    let Parsed = Parse Grid(Grid)
+    let Start = Find Start(Parsed)
+    let Rows = Parsed.len()
+    let Cols = Parsed.get(0).len()
+
+    // Build row-indexed list of splitter columns
+    var Splitters By Row = []
+    for(R : 0..Rows) {
+        var Row Splitters = []
+        let Line = Parsed.get(R)
+        for(C : 0..Line.len()) {
+            if(Line.char_at(C) == "^") {
+                Row Splitters.push(C)
+            }
+        }
+        Splitters By Row.push(Row Splitters)
+    }
+
+    // Timeline counts per column, process row by row
+    var Timeline Counts = []
+    for(C : 0..Cols) { Timeline Counts.push(0) }
+    Timeline Counts.set(Start.get(1), 1)
+
+    for(Row : (Start.get(0) + 1)..Rows) {
+        let Row Splitters = Splitters By Row.get(Row)
+        var New Counts = []
+        for(C : 0..Cols) { New Counts.push(0) }
+
+        // For each column with timelines, propagate to splitters below
+        for(Col : 0..Cols) {
+            let Count = Timeline Counts.get(Col)
+            if(Count > 0) {
+                // Find if there's a splitter in this column at this row
+                var Hit Splitter = false
+                for(S : Row Splitters) {
+                    if(S == Col) {
+                        Hit Splitter = true
+                        break
+                    }
+                }
+
+                if(Hit Splitter) {
+                    // Split: add count to left and right
+                    if(Col - 1 >= 0) {
+                        New Counts.set(Col - 1, New Counts.get(Col - 1) + Count)
+                    }
+                    if(Col + 1 < Cols) {
+                        New Counts.set(Col + 1, New Counts.get(Col + 1) + Count)
+                    }
+                } else {
+                    // Pass through
+                    New Counts.set(Col, New Counts.get(Col) + Count)
+                }
+            }
+        }
+        Timeline Counts = New Counts
+    }
+
+    // Sum all timelines that reached the bottom
+    Timeline Counts.sum()
+}
+
+fn Solve Tachyon Manifold(Input, Count Timelines Mode) {
+    if(Count Timelines Mode) {
+        Count Timelines(Input)
+    } else {
+        Count Splits(Input)
+    }
+}
+
+println(Solve Tachyon Manifold(Example Grid, false))
+println(Solve Tachyon Manifold(Actual Grid, false))
+println(Solve Tachyon Manifold(Example Grid, true))
+println(Solve Tachyon Manifold(Actual Grid, true))

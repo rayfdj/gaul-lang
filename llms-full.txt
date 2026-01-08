@@ -1,0 +1,637 @@
+# Gaul Language Reference for AI Coding Agents
+
+> Gaul is a dynamically-typed, interpreted language with spaced identifiers, custom keywords, and fuzzy equality. This document contains everything needed to write idiomatic Gaul code.
+
+## Critical Differences from Mainstream Languages
+
+When generating Gaul code, you MUST follow these conventions:
+
+1. **Use spaced identifiers** - Write `My Variable` not `myVariable` or `my_variable`
+2. **Capitalize words** - Convention is `Title Case With Spaces` for identifiers
+3. **Use `and`/`or` for logic, `!` for negation** - Never use `&&` or `||`, but DO use `!` for not
+4. **ALWAYS parenthesize `and`/`or` operands** - Write `(A > 0) and (B < 10)` NOT `A > 0 and B < 10` (the parser may treat `0 and B` as a spaced identifier!)
+5. **No semicolons** - Expressions are newline/punctuation-delimited
+6. **Expression-based if** - `if` returns a value: `let X = if(cond) { a } else { b }`
+7. **Parentheses required** - `if(cond)`, `while(cond)`, `for(x : collection)`
+8. **Colon in for loops** - `for(Item : Array)` not `for Item in Array`
+9. **Method access with `.get()`** - Arrays use `Arr.get(0)` not `Arr[0]`
+10. **Parenthesize multiline chains** - Wrap method chains spanning multiple lines in `()` or the parser won't see continuations
+
+---
+
+## Variables
+
+```gaul
+let Immutable Value = 42           // Cannot be reassigned
+var Mutable Counter = 0            // Can be reassigned
+Mutable Counter = Mutable Counter + 1
+```
+
+Identifiers can contain spaces and terminate at operators, punctuation, or newlines.
+
+---
+
+## Data Types
+
+```gaul
+// Numbers (all floats internally)
+let Integer = 42
+let Float = 3.14159
+let With Separators = 1_000_000    // Readability separators
+let Hex = 0xFF                     // 255
+let Binary = 0b1010                // 10
+let Octal = 0o77                   // 63
+
+// Strings
+let Greeting = "Hello, World!"
+let Unicode = "Bonjour"
+
+// Booleans
+let Yes = true
+let No = false
+
+// Arrays (heterogeneous)
+let Mixed = [1, "two", true, [3, 4]]
+let Matrix = [[1, 2], [3, 4]]
+
+// Nil
+let Nothing = nil
+```
+
+---
+
+## Operators
+
+### Arithmetic
+```gaul
+5 + 3      // 8
+5 - 3      // 2
+5 * 3      // 15
+5 / 3      // 1.666...
+5.mod(3)   // 2 (modulo is a method, not %)
+5.pow(3)   // 125
+```
+
+### Comparison
+```gaul
+a == b     // Strict equality
+a != b     // Strict inequality
+a < b
+a <= b
+a > b
+a >= b
+```
+
+### Jam Karet (Fuzzy Equality) - UNIQUE TO GAUL
+```gaul
+a ~= b     // Approximate equality
+
+// For numbers: within 5% tolerance (default)
+100 ~= 104          // true (4% difference)
+100 ~= 110          // false (10% difference)
+0.1 + 0.2 ~= 0.3    // true (solves float imprecision!)
+
+// For strings: Levenshtein distance tolerance (default 20%)
+"hello" ~= "helo"   // true (1 edit)
+"hello" ~= "world"  // false (too different)
+```
+
+### Logical (Use `and`, `or`, `!`)
+
+**CRITICAL**: Due to spaced identifiers, you MUST parenthesize each operand around `and`/`or`.
+Otherwise `A > 0 and B` may parse `0 and B` as a single identifier!
+
+```gaul
+true and false      // false
+true or false       // true
+!true               // false (use ! for negation, not "not")
+
+// CORRECT: Always parenthesize operands
+(A > 0) and (B < 10)
+(X == 1) or (Y == 2)
+(Foo) and (Bar)
+((A > 0) and (B < 10)) or (C == 0)
+!(Is Valid)         // Negation with !
+
+// WRONG: Missing parentheses - WILL CAUSE PARSE ERRORS
+A > 0 and B < 10    // Parser sees "0 and B" as identifier!
+X == 1 or Y == 2    // Parser sees "1 or Y" as identifier!
+```
+
+### String Concatenation
+```gaul
+"Hello, " + "World!"  // "Hello, World!"
+"Value: " + 42        // "Value: 42" (auto-converts)
+```
+
+---
+
+## Control Flow
+
+### If/Else (Expression-Based)
+```gaul
+// If is an EXPRESSION - it returns a value
+let Grade = if(Score >= 90) {
+    "A"
+} else {
+    if(Score >= 80) { "B" } else { "C" }
+}
+
+// Can use inline for simple cases
+let Max = if(A > B) { A } else { B }
+
+// As statement (return value ignored)
+if(Debug Mode) {
+    println("Debug info")
+}
+```
+
+### While Loop
+```gaul
+var I = 0
+while(I < 10) {
+    println(I)
+    I = I + 1
+}
+```
+
+### For Loop (Two Forms)
+```gaul
+// Iterating over collection
+for(Item : My Array) {
+    println(Item)
+}
+
+// Iterating over range (exclusive end)
+for(I : 0..10) {
+    println(I)  // 0, 1, 2, ... 9
+}
+
+// Ranges must be converted to array for methods
+let Indices = (0..10).to_array()
+```
+
+### Break and Continue
+```gaul
+for(I : 0..100) {
+    if(I == 50) { break }
+    if(I.mod(2) == 0) { continue }
+    println(I)
+}
+```
+
+---
+
+## Functions
+
+### Definition and Calls
+```gaul
+fn Calculate Total(Base Price, Tax Rate) {
+    Base Price * (1 + Tax Rate)
+}
+
+let Price = Calculate Total(100, 0.08)
+```
+
+### Return Statement
+```gaul
+fn Find First Match(Items, Target) {
+    for(Item : Items) {
+        if(Item == Target) {
+            return Item  // Early return
+        }
+    }
+    return nil
+}
+```
+
+### Implicit Return
+```gaul
+// Last expression is returned automatically
+fn Square(X) {
+    X * X
+}
+```
+
+### Anonymous Functions (Lambdas)
+```gaul
+let Double = fn(X) { X * 2 }
+Double(5)  // 10
+
+// Common with higher-order functions
+Numbers.map(fn(X) { X * 2 })
+Numbers.filter(fn(X) { X > 0 })
+```
+
+### Closures
+```gaul
+fn Make Counter() {
+    var Count = 0
+    fn Increment() {
+        Count = Count + 1
+        Count
+    }
+    return Increment
+}
+
+let Counter = Make Counter()
+Counter()  // 1
+Counter()  // 2
+```
+
+---
+
+## Standard Library Methods
+
+### String Methods
+```gaul
+let S = "Hello, World!"
+
+S.len()                  // 13
+S.chars()                // ["H", "e", "l", "l", "o", ...]
+S.char_at(0)             // "H"
+S.substring(0, 5)        // "Hello"
+S.split(", ")            // ["Hello", "World!"]
+S.contains("World")      // true
+S.trim()                 // Removes leading/trailing whitespace
+S.to_num()               // Parse to number (or nil if invalid)
+S.lines()                // Split by newlines
+```
+
+### Array Methods
+```gaul
+let Arr = [3, 1, 4, 1, 5, 9]
+
+// Access
+Arr.len()                // 6
+Arr.get(0)               // 3 (use this, not Arr[0])
+Arr.first()              // 3
+Arr.last()               // 9
+
+// Modification (mutates in place)
+Arr.push(2)              // Appends 2
+Arr.set(0, 99)           // Sets index 0 to 99
+
+// Aggregation
+Arr.sum()                // 23
+Arr.min()                // 1
+Arr.max()                // 9
+
+// Transformation (returns new array)
+Arr.sort()               // [1, 1, 3, 4, 5, 9]
+Arr.reverse()            // [9, 5, 1, 4, 1, 3]
+Arr.join("-")            // "3-1-4-1-5-9"
+
+// Predicates
+Arr.contains(5)          // true
+```
+
+### Functional Methods (Most Important!)
+```gaul
+let Numbers = [1, 2, 3, 4, 5]
+
+// Map: transform each element
+let Doubled = Numbers.map(fn(X) { X * 2 })
+// [2, 4, 6, 8, 10]
+
+// Filter: keep matching elements
+let Evens = Numbers.filter(fn(X) { X.mod(2) == 0 })
+// [2, 4]
+
+// Reduce: accumulate to single value
+let Sum = Numbers.reduce(0, fn(Acc, X) { Acc + X })
+// 15
+
+// Chaining (IDIOMATIC GAUL)
+// IMPORTANT: Wrap multiline chains in parentheses!
+let Result = (Numbers
+    .filter(fn(X) { X.mod(2) == 0 })
+    .map(fn(X) { X * X })
+    .sum())
+// 20
+
+// Single-line chains don't need outer parens
+let Sum = Numbers.filter(fn(X) { X > 0 }).sum()
+```
+
+### Number Methods
+```gaul
+let N = -42.7
+
+N.abs()                  // 42.7
+N.floor()                // -43
+N.ceil()                 // -42
+N.round()                // -43
+N.sqrt()                 // NaN (negative)
+42.mod(5)                // 2 (modulo)
+42.floor_div(5)          // 8 (integer division)
+42.pow(2)                // 1764
+```
+
+### Range Methods
+```gaul
+let R = 0..10
+
+R.to_array()             // [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+```
+
+---
+
+## File I/O
+
+```gaul
+let Content = read_file("data.txt")
+let Lines = Content.lines()
+
+for(Line : Lines) {
+    println(Line.trim())
+}
+```
+
+---
+
+## Output
+
+```gaul
+println("Hello")         // Print with newline
+println(42)              // Numbers auto-convert
+println([1, 2, 3])       // Arrays print as [1, 2, 3]
+```
+
+---
+
+## Idiomatic Gaul Patterns
+
+### Pattern 1: Functional Pipelines
+```gaul
+// PREFER this (functional, chainable)
+let Valid Entries = (Input.lines()
+    .map(fn(Line) { Line.trim() })
+    .filter(fn(Line) { Line.len() > 0 })
+    .map(fn(Line) { Parse Entry(Line) })
+    .filter(fn(Entry) { Entry != nil }))
+
+// AVOID this (imperative, verbose)
+var Valid Entries = []
+for(Line : Input.lines()) {
+    let Trimmed = Line.trim()
+    if(Trimmed.len() > 0) {
+        let Entry = Parse Entry(Trimmed)
+        if(Entry != nil) {
+            Valid Entries.push(Entry)
+        }
+    }
+}
+```
+
+### Pattern 2: Expression-Based Results
+```gaul
+// PREFER: if as expression
+let Status = if(Count > 0) { "found" } else { "empty" }
+
+// PREFER: blocks return last expression
+fn Categorize(Value) {
+    if(Value < 0) {
+        "negative"
+    } else {
+        if(Value == 0) { "zero" } else { "positive" }
+    }
+}
+```
+
+### Pattern 3: Descriptive Spaced Names
+```gaul
+// PREFER: reads like English
+fn Calculate Tax Amount(Gross Income, Tax Rate, Deductions) {
+    let Taxable Income = Gross Income - Deductions
+    Taxable Income * Tax Rate
+}
+
+// AVOID: camelCase or snake_case
+fn calculateTaxAmount(grossIncome, taxRate, deductions) { ... }
+fn calculate_tax_amount(gross_income, tax_rate, deductions) { ... }
+```
+
+### Pattern 4: Grid/Matrix Access Helper
+```gaul
+fn Get Cell(Grid, Row, Col) {
+    let Rows = Grid.len()
+    let Cols = Grid.get(0).len()
+    if((Row >= 0) and (Row < Rows) and (Col >= 0) and (Col < Cols)) {
+        Grid.get(Row).get(Col)
+    } else {
+        nil  // or default value
+    }
+}
+```
+
+### Pattern 5: Generating All Positions
+```gaul
+fn All Positions(Grid) {
+    let Rows = Grid.len()
+    let Cols = Grid.get(0).len()
+    (0..Rows).to_array().reduce([], fn(Acc, Row) {
+        let Row Positions = (0..Cols).to_array().map(fn(Col) { [Row, Col] })
+        Row Positions.reduce(Acc, fn(A, Pos) {
+            A.push(Pos)
+            A
+        })
+    })
+}
+```
+
+### Pattern 6: Parsing Structured Input
+```gaul
+fn Parse Numbers From Line(Line) {
+    (Line.split(" ")
+        .map(fn(S) { S.trim() })
+        .filter(fn(S) { S.len() > 0 })
+        .map(fn(S) { S.to_num() }))
+}
+
+fn Parse Input(Input) {
+    (Input.lines()
+        .filter(fn(L) { L.trim().len() > 0 })
+        .map(fn(L) { Parse Numbers From Line(L) }))
+}
+```
+
+### Pattern 7: Accumulating with Reduce
+```gaul
+// Sum with initial value
+let Total = Items.reduce(0, fn(Acc, Item) { Acc + Item.value })
+
+// Building arrays
+let Flattened = Nested.reduce([], fn(Acc, Arr) {
+    for(Item : Arr) { Acc.push(Item) }
+    Acc
+})
+
+// Finding maximum
+let Max Item = Items.reduce(Items.first(), fn(Best, Item) {
+    if(Item.score > Best.score) { Item } else { Best }
+})
+```
+
+---
+
+## Common Mistakes to Avoid
+
+```gaul
+// WRONG: Using && ||
+if(a && b) { ... }              // Use: if((a) and (b))
+if(a || b) { ... }              // Use: if((a) or (b))
+// CORRECT: Using ! for negation
+if(!a) { ... }                  // This IS correct - Gaul uses ! for negation
+
+// WRONG: Missing parentheses around and/or operands (VERY COMMON MISTAKE!)
+if(A > 0 and B < 10) { }        // BROKEN: "0 and B" parsed as identifier
+if(X == 1 or Y == 2) { }        // BROKEN: "1 or Y" parsed as identifier
+// CORRECT:
+if((A > 0) and (B < 10)) { }    // Each operand is parenthesized
+if((X == 1) or (Y == 2)) { }    // Each operand is parenthesized
+
+// WRONG: Using array subscript
+let X = Arr[0]                  // Use: let X = Arr.get(0)
+Arr[0] = 5                      // Use: Arr.set(0, 5)
+
+// WRONG: Using % for modulo
+let R = 10 % 3                  // Use: let R = 10.mod(3)
+
+// WRONG: Missing parentheses in control flow
+if Condition { }                // Use: if(Condition) { }
+for X : Array { }               // Use: for(X : Array) { }
+
+// WRONG: Using semicolons
+let X = 5;                      // Use: let X = 5
+
+// WRONG: camelCase/snake_case
+let myVariable = 5              // Use: let My Variable = 5
+fn do_something() { }           // Use: fn Do Something() { }
+
+// WRONG: in-keyword for iteration
+for X in Array { }              // Use: for(X : Array) { }
+
+// WRONG: Multiline method chains without parentheses
+let Result = Items
+    .filter(fn(X) { X > 0 })
+    .map(fn(X) { X * 2 })       // BROKEN: Parser doesn't see continuation
+// CORRECT: Wrap in parentheses
+let Result = (Items
+    .filter(fn(X) { X > 0 })
+    .map(fn(X) { X * 2 }))      // Works: Parens group the expression
+```
+
+---
+
+## Custom Keywords (Localization)
+
+Gaul supports programming in any language via JSON keyword mapping:
+
+```bash
+gaul-lang script.gaul --keywords français.json
+```
+
+Example `français.json`:
+```json
+{
+  "function": "sortilege",
+  "return": "renvoie",
+  "if": "si",
+  "else": "sinon",
+  "let": "soit",
+  "var": "variable",
+  "while": "tantque",
+  "for": "pour",
+  "true": "vrai",
+  "false": "faux",
+  "and": "et",
+  "or": "ou",
+  "break": "arreter",
+  "continue": "continuer"
+}
+```
+
+Then write:
+```gaul
+sortilege Fibonacci(N) {
+    si(N <= 1) { renvoie N }
+    renvoie Fibonacci(N - 1) + Fibonacci(N - 2)
+}
+```
+
+---
+
+## Complete Example: Advent of Code Style
+
+```gaul
+let Input = read_file("input.txt")
+
+fn Parse Grid(Lines) {
+    (Lines
+        .map(fn(Line) { Line.trim() })
+        .filter(fn(Line) { Line.len() > 0 })
+        .map(fn(Line) { Line.chars() }))
+}
+
+fn Get Cell(Grid, Row, Col) {
+    let Rows = Grid.len()
+    let Cols = Grid.get(0).len()
+    if((Row >= 0) and (Row < Rows) and (Col >= 0) and (Col < Cols)) {
+        Grid.get(Row).get(Col)
+    } else {
+        "."
+    }
+}
+
+fn Count Neighbors(Grid, Row, Col, Target) {
+    let Offsets = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]]
+    (Offsets
+        .map(fn(O) { Get Cell(Grid, Row + O.get(0), Col + O.get(1)) })
+        .filter(fn(C) { C == Target })
+        .len())
+}
+
+fn Solve Part 1(Input) {
+    let Grid = Parse Grid(Input.lines())
+    var Count = 0
+    for(Row : 0..Grid.len()) {
+        for(Col : 0..Grid.get(0).len()) {
+            if(Get Cell(Grid, Row, Col) == "#") {
+                let Neighbors = Count Neighbors(Grid, Row, Col, "#")
+                if(Neighbors >= 3) {
+                    Count = Count + 1
+                }
+            }
+        }
+    }
+    Count
+}
+
+println(Solve Part 1(Input))
+```
+
+---
+
+## Summary: Quick Reference Card
+
+| Feature | Gaul Syntax |
+|---------|-------------|
+| Variable (immutable) | `let My Var = value` |
+| Variable (mutable) | `var My Var = value` |
+| Function | `fn My Func(Param) { body }` |
+| Lambda | `fn(X) { X * 2 }` |
+| If expression | `if(cond) { a } else { b }` |
+| For each | `for(Item : Array) { }` |
+| For range | `for(I : 0..10) { }` |
+| While | `while(cond) { }` |
+| And/Or/Not | `(a) and (b)`, `(a) or (b)`, `!a` (MUST parenthesize and/or operands!) |
+| Array access | `Arr.get(0)`, `Arr.set(0, val)` |
+| Fuzzy equal | `a ~= b` |
+| Map | `Arr.map(fn(X) { ... })` |
+| Filter | `Arr.filter(fn(X) { ... })` |
+| Reduce | `Arr.reduce(init, fn(Acc, X) { ... })` |
+| Multiline chain | `(Arr.map(...).filter(...))` (wrap in parens!) |
+| Modulo | `N.mod(M)` |
+| Read file | `read_file("path")` |
+| Print | `println(value)` |

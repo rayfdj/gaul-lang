@@ -1,0 +1,275 @@
+// Day 12: Christmas Tree Farm - Optimized 1D Solver (No Semicolons)
+
+let Example Input = [
+    "0:", "###", "##.", "##.",
+    "1:", "###", "##.", ".##",
+    "2:", ".##", "###", "##.",
+    "3:", "##.", "###", "##.",
+    "4:", "###", "#..", "###",
+    "5:", "###", ".#.", "###",
+    "4x4: 0 0 0 0 2 0",
+    "12x5: 1 0 1 0 2 2",
+    "12x5: 1 0 1 0 3 2"
+]
+
+let Actual Input = read_file("src/samples/aoc/2025/day12.txt").lines()
+
+// --- Geometry & Shape Pre-processing ---
+
+fn Normalize Shape(Coords) {
+    if(Coords.len() == 0) { return [] }
+    let Min R = Coords.reduce(9999, fn(Acc, P) { if(P.get(0) < Acc) { P.get(0) } else { Acc } })
+    let Min C = Coords.reduce(9999, fn(Acc, P) { if(P.get(1) < Acc) { P.get(1) } else { Acc } })
+
+    let Normalized = (Coords.map(fn(P) {
+        [P.get(0) - Min R, P.get(1) - Min C]
+    }))
+
+    // Sort coords to ensure uniqueness checks work
+    let Len = Normalized.len()
+    for(I : 0..Len) {
+        for(J : 0..(Len - 1)) {
+            let A = Normalized.get(J)
+            let B = Normalized.get(J + 1)
+            let Swap = if(A.get(0) > B.get(0)) { true } else {
+                if((A.get(0) == B.get(0)) and (A.get(1) > B.get(1))) { true } else { false }
+            }
+            if(Swap) {
+                Normalized.set(J, B)
+                Normalized.set(J + 1, A)
+            }
+        }
+    }
+    Normalized
+}
+
+fn Rotate Shape(Coords) {
+    Normalize Shape(Coords.map(fn(P) { [P.get(1), 0 - P.get(0)] }))
+}
+
+fn Flip Shape(Coords) {
+    Normalize Shape(Coords.map(fn(P) { [P.get(0), 0 - P.get(1)] }))
+}
+
+fn Generate Variants(Base Shape) {
+    let Vars = []
+    var Curr = Base Shape
+    for(I : 0..4) {
+        Vars.push(Curr)
+        Curr = Rotate Shape(Curr)
+    }
+    Curr = Flip Shape(Base Shape)
+    for(I : 0..4) {
+        Vars.push(Curr)
+        Curr = Rotate Shape(Curr)
+    }
+
+    // Deduplicate Variants
+    let Unique = []
+    for(V : Vars) {
+        let Is New = Unique.reduce(true, fn(Acc, U) {
+            if(!Acc) { false } else {
+                if(V.len() != U.len()) { true } else {
+                    (0..V.len()).to_array().reduce(false, fn(Diff, K) {
+                        let P1 = V.get(K)
+                        let P2 = U.get(K)
+                        if((P1.get(0) != P2.get(0)) or (P1.get(1) != P2.get(1))) { true } else { Diff }
+                    })
+                }
+            }
+        })
+        if(Is New) { Unique.push(V) }
+    }
+    Unique
+}
+
+// --- Parsing ---
+
+fn Parse Input(Lines) {
+    let Clean Lines = (Lines
+        .map(fn(L) { L.trim() })
+        .filter(fn(L) { L.len() > 0 }))
+
+    let Shapes = []
+    let Regions = []
+    var Current Id = -1
+    var Current Coords = []
+    var Current Row = 0
+
+    fn Save Shape(Id, Coords, Target) {
+        if(Id >= 0) {
+             while(Target.len() <= Id) { Target.push([]) }
+             Target.set(Id, Normalize Shape(Coords))
+        }
+    }
+
+    for(Line : Clean Lines) {
+        if(Line.contains("x") and Line.contains(":")) {
+            Save Shape(Current Id, Current Coords, Shapes)
+            Current Id = -1
+            Regions.push(Line)
+        } else {
+            if(Line.contains(":")) {
+                Save Shape(Current Id, Current Coords, Shapes)
+                let Parts = Line.split(":")
+                Current Id = Parts.get(0).to_num()
+                Current Coords = []
+                Current Row = 0
+            } else {
+                if(Current Id >= 0) {
+                    let Chars = Line.chars()
+                    for(Col : 0..Chars.len()) {
+                        if(Chars.get(Col) == "#") {
+                            Current Coords.push([Current Row, Col])
+                        }
+                    }
+                    Current Row = Current Row + 1
+                }
+            }
+        }
+    }
+    Save Shape(Current Id, Current Coords, Shapes)
+    [Shapes, Regions]
+}
+
+// --- Optimization: Pre-calculate Valid Placements on 1D Grid ---
+
+fn Build Move Cache(W, H, All Variants) {
+    // Returns a list where Index = Shape ID
+    // Value = List of Valid Placements.
+    // Each Valid Placement is a list of flat 1D indices [idx1, idx2, idx3...]
+
+    All Variants.map(fn(Variants) {
+        let Valid Moves For Shape = []
+
+        for(Var : Variants) {
+            // Scan every top-left position on the board
+            for(R : 0..H) {
+                for(C : 0..W) {
+                    // Check bounds for this variant at this position
+                    let Fits = Var.reduce(true, fn(Acc, P) {
+                        if(!Acc) { false } else {
+                            let Nr = R + P.get(0)
+                            let Nc = C + P.get(1)
+                            if((Nr < 0) or (Nr >= H) or (Nc < 0) or (Nc >= W)) { false } else { true }
+                        }
+                    })
+
+                    if(Fits) {
+                        // Calculate flat 1D indices: Idx = r * W + c
+                        let Indices = Var.map(fn(P) {
+                            (R + P.get(0)) * W + (C + P.get(1))
+                        })
+                        Valid Moves For Shape.push(Indices)
+                    }
+                }
+            }
+        }
+        Valid Moves For Shape
+    })
+}
+
+// --- 1D Solver Core ---
+
+fn Solve Fast(Grid, Pieces, Index, Move Cache) {
+    // Base Case: All pieces placed
+    if(Index >= Pieces.len()) { return true }
+
+    let Shape Id = Pieces.get(Index)
+    let Possible Placements = Move Cache.get(Shape Id)
+
+    for(Placement : Possible Placements) {
+        // 1. Collision Check (Fast 1D Loop)
+        var Can Fit = true
+        for(Idx : Placement) {
+            if(Grid.get(Idx) != 0) {
+                Can Fit = false
+                break
+            }
+        }
+
+        if(Can Fit) {
+            // 2. Toggle On
+            for(Idx : Placement) { Grid.set(Idx, Shape Id + 1) }
+
+            // 3. Recurse
+            if(Solve Fast(Grid, Pieces, Index + 1, Move Cache)) { return true }
+
+            // 4. Backtrack (Toggle Off)
+            for(Idx : Placement) { Grid.set(Idx, 0) }
+        }
+    }
+
+    false
+}
+
+fn Solve Tree Farm(Input) {
+    let Data = Parse Input(Input)
+    let Shapes = Data.get(0)
+    let Regions = Data.get(1)
+
+    // 1. Generate all rotation/flip variants for all shapes
+    let All Variants = Shapes.map(fn(S) { Generate Variants(S) })
+
+    var Solved Count = 0
+
+    for(Line : Regions) {
+        let Parts = Line.split(": ")
+        let Dims = Parts.get(0).split("x")
+        let W = Dims.get(0).to_num()
+        let H = Dims.get(1).to_num()
+
+        let Counts = (Parts.get(1).split(" ")
+            .map(fn(S) { S.to_num() }))
+
+        // Build list of pieces to place
+        let Pieces = []
+        var Area Sum = 0
+        for(Id : 0..Counts.len()) {
+            let C = Counts.get(Id)
+            let Size = Shapes.get(Id).len()
+            for(K : 0..C) {
+                Pieces.push([Id, Size])
+                Area Sum = Area Sum + Size
+            }
+        }
+
+        // Pruning 1: Total Area
+        if(Area Sum <= (W * H)) {
+
+            // Optimization: Sort pieces Largest to Smallest
+            // This fails faster on impossible branches
+            let Len = Pieces.len()
+            for(I : 0..Len) {
+                for(J : 0..(Len - 1)) {
+                    let A = Pieces.get(J)
+                    let B = Pieces.get(J + 1)
+                    if(A.get(1) < B.get(1)) {
+                        Pieces.set(J, B)
+                        Pieces.set(J + 1, A)
+                    }
+                }
+            }
+            let Sorted Ids = Pieces.map(fn(P) { P.get(0) })
+
+            // 2. Build Optimization Cache
+            // Pre-calculate ALL valid 1D index sets for this board size
+            let Move Cache = Build Move Cache(W, H, All Variants)
+
+            // 3. Init 1D Grid (Flat array is faster)
+            let Grid Size = W * H
+            let Grid = []
+            for(I : 0..Grid Size) { Grid.push(0) }
+
+            // 4. Run Solver
+            if(Solve Fast(Grid, Sorted Ids, 0, Move Cache)) {
+                Solved Count = Solved Count + 1
+            }
+        }
+    }
+
+    Solved Count
+}
+
+println(Solve Tree Farm(Example Input))
+println(Solve Tree Farm(Actual Input))

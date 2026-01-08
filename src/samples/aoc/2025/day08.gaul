@@ -1,0 +1,262 @@
+// Day 8: Playground - Junction Boxes with Union-Find
+// Connect closest pairs of 3D points, track circuit sizes
+
+let Example Points = [
+    "162,817,812",
+    "57,618,57",
+    "906,360,560",
+    "592,479,940",
+    "352,342,300",
+    "466,668,158",
+    "542,29,236",
+    "431,825,988",
+    "739,650,466",
+    "52,470,668",
+    "216,146,977",
+    "819,987,18",
+    "117,168,530",
+    "805,96,715",
+    "346,949,466",
+    "970,615,88",
+    "941,993,340",
+    "862,61,35",
+    "984,92,344",
+    "425,690,689"
+]
+
+let Actual Points = read_file("src/samples/aoc/2025/day08.txt").lines()
+
+fn Parse Points(Lines) {
+    (Lines
+        .map(fn(L) { L.trim() })
+        .filter(fn(L) { L.len() > 0 })
+        .map(fn(L) {
+            let Parts = L.split(",")
+            [Parts.get(0).to_num(), Parts.get(1).to_num(), Parts.get(2).to_num()]
+        }))
+}
+
+fn Squared Distance(P1, P2) {
+    let Dx = P1.get(0) - P2.get(0)
+    let Dy = P1.get(1) - P2.get(1)
+    let Dz = P1.get(2) - P2.get(2)
+    Dx * Dx + Dy * Dy + Dz * Dz
+}
+
+// Union-Find with path compression
+fn Make UF(N) {
+    var Parent = []
+    var Size = []
+    for(I : 0..N) {
+        Parent.push(I)
+        Size.push(1)
+    }
+    [Parent, Size]
+}
+
+fn Find Root(UF, X) {
+    let Parent = UF.get(0)
+    var Node = X
+    while(Parent.get(Node) != Node) {
+        // Path compression
+        let Grandparent = Parent.get(Parent.get(Node))
+        Parent.set(Node, Grandparent)
+        Node = Parent.get(Node)
+    }
+    Node
+}
+
+fn Union Nodes(UF, X, Y) {
+    let Parent = UF.get(0)
+    let Size = UF.get(1)
+
+    let Root X = Find Root(UF, X)
+    let Root Y = Find Root(UF, Y)
+
+    if(Root X == Root Y) {
+        return false  // Already connected
+    }
+
+    // Union by size
+    if(Size.get(Root X) < Size.get(Root Y)) {
+        Parent.set(Root X, Root Y)
+        Size.set(Root Y, Size.get(Root Y) + Size.get(Root X))
+    } else {
+        Parent.set(Root Y, Root X)
+        Size.set(Root X, Size.get(Root X) + Size.get(Root Y))
+    }
+    true
+}
+
+fn Get Component Size(UF, X) {
+    let Root = Find Root(UF, X)
+    UF.get(1).get(Root)
+}
+
+// Quicksort helper: partition edges by pivot
+fn Partition Edges(Edges, Low, High) {
+    let Pivot = Edges.get(High).get(0)
+    var I = Low - 1
+
+    for(J : Low..High) {
+        if(Edges.get(J).get(0) <= Pivot) {
+            I = I + 1
+            let Tmp = Edges.get(I)
+            Edges.set(I, Edges.get(J))
+            Edges.set(J, Tmp)
+        }
+    }
+
+    let Tmp = Edges.get(I + 1)
+    Edges.set(I + 1, Edges.get(High))
+    Edges.set(High, Tmp)
+    I + 1
+}
+
+// Iterative quicksort (avoid recursion depth issues)
+fn Quicksort Edges(Edges) {
+    let Len = Edges.len()
+    if(Len <= 1) { return Edges }
+
+    // Stack for iterative quicksort: [low, high] pairs
+    var Stack = [[0, Len - 1]]
+
+    while(Stack.len() > 0) {
+        let Range = Stack.get(Stack.len() - 1)
+        Stack = (Stack.filter(fn(X) { !((X.get(0) == Range.get(0)) and (X.get(1) == Range.get(1))) }))
+
+        // Manual pop - remove last element
+        var New Stack = []
+        for(I : 0..(Stack.len())) {
+            if(I < Stack.len() - 1) {
+                New Stack.push(Stack.get(I))
+            }
+        }
+        // Actually just rebuild without last
+        New Stack = []
+        let Stack Len = Stack.len()
+        for(I : 0..Stack Len) {
+            New Stack.push(Stack.get(I))
+        }
+        Stack = New Stack
+
+        let Low = Range.get(0)
+        let High = Range.get(1)
+
+        if(Low < High) {
+            let P = Partition Edges(Edges, Low, High)
+
+            if(P - 1 > Low) {
+                Stack.push([Low, P - 1])
+            }
+            if(P + 1 < High) {
+                Stack.push([P + 1, High])
+            }
+        }
+    }
+    Edges
+}
+
+// Get all edges sorted by distance
+fn Get Sorted Edges(Points) {
+    let N = Points.len()
+    var Edges = []
+
+    for(I : 0..N) {
+        for(J : (I + 1)..N) {
+            let Dist = Squared Distance(Points.get(I), Points.get(J))
+            Edges.push([Dist, I, J])
+        }
+    }
+
+    Quicksort Edges(Edges)
+}
+
+fn Get Top Three Product(UF, N) {
+    // Collect unique component sizes
+    var Sizes = []
+    var Seen Roots = []
+
+    for(I : 0..N) {
+        let Root = Find Root(UF, I)
+        var Already Seen = false
+        for(S : Seen Roots) {
+            if(S == Root) { Already Seen = true }
+        }
+        if(!Already Seen) {
+            Seen Roots.push(Root)
+            Sizes.push(Get Component Size(UF, I))
+        }
+    }
+
+    // Sort descending
+    let Len = Sizes.len()
+    for(I : 0..Len) {
+        for(J : 0..(Len - I - 1)) {
+            if(Sizes.get(J) < Sizes.get(J + 1)) {
+                let Tmp = Sizes.get(J)
+                Sizes.set(J, Sizes.get(J + 1))
+                Sizes.set(J + 1, Tmp)
+            }
+        }
+    }
+
+    // Multiply top 3 (or fewer if not enough)
+    var Product = 1
+    let Count = if(Len < 3) { Len } else { 3 }
+    for(I : 0..Count) {
+        Product = Product * Sizes.get(I)
+    }
+    Product
+}
+
+fn Solve Playground(Input, Find Full Connection) {
+    let Points = Parse Points(Input)
+    let N = Points.len()
+    let Edges = Get Sorted Edges(Points)
+    let UF = Make UF(N)
+
+    var Edges Processed = 0
+    var Connections Made = 0
+    var Last Edge = [0, 0]
+
+    for(Edge : Edges) {
+        let I = Edge.get(1)
+        let J = Edge.get(2)
+
+        Edges Processed = Edges Processed + 1
+
+        if(Union Nodes(UF, I, J)) {
+            Connections Made = Connections Made + 1
+            Last Edge = [I, J]
+
+            if(Find Full Connection) {
+                // Part 2: Check if all connected
+                if(Connections Made == N - 1) {
+                    // Return product of x-coordinates of last connected pair
+                    return Points.get(I).get(0) * Points.get(J).get(0)
+                }
+            }
+        }
+
+        // Part 1: After processing 1000 pairs (not 1000 successful connections)
+        if(!Find Full Connection) {
+            let Target = if(N <= 20) { 10 } else { 1000 }
+            if(Edges Processed == Target) {
+                return Get Top Three Product(UF, N)
+            }
+        }
+    }
+
+    // Fallback
+    if(Find Full Connection) {
+        Points.get(Last Edge.get(0)).get(0) * Points.get(Last Edge.get(1)).get(0)
+    } else {
+        Get Top Three Product(UF, N)
+    }
+}
+
+println(Solve Playground(Example Points, false))
+println(Solve Playground(Actual Points, false))
+println(Solve Playground(Example Points, true))
+println(Solve Playground(Actual Points, true))

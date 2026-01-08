@@ -1,0 +1,391 @@
+// Day 10: Factory - Lights Out Puzzle
+// Toggle lights to match target pattern using minimum button presses
+// Each button toggles specific light positions (XOR toggle)
+
+let Example Machines = [
+    "[.##.] (3) (1,3) (2) (2,3) (0,2) (0,1) {3,5,4,7}",
+    "[...#.] (0,2,3,4) (2,3) (0,4) (0,1,2) (1,2,3,4) {7,5,12,7,2}",
+    "[.###.#] (0,1,2,3,4) (0,3,4) (0,1,2,4,5) (1,2) {10,11,11,5,10,5}"
+]
+
+let Actual Machines = read_file("src/samples/aoc/2025/day10.txt").lines()
+
+fn Parse Machine(Line) {
+    let Trimmed = Line.trim()
+    if(Trimmed.len() == 0) { return null }
+
+    // Find target pattern between [ ]
+    let Bracket Start = Trimmed.chars().reduce(-1, fn(Acc, C) {
+        if((Acc == -1) and (C == "[")) { 0 } else { Acc }
+    })
+
+    var Bracket End = -1
+    let Chars = Trimmed.chars()
+    for(I : 0..Chars.len()) {
+        if(Chars.get(I) == "]") { Bracket End = I }
+    }
+
+    if((Bracket Start == -1) or (Bracket End == -1)) { return null }
+
+    let Target Str = Trimmed.substring(Bracket Start + 1, Bracket End)
+    let Target = Target Str.chars().map(fn(C) { if(C == "#") { 1 } else { 0 } })
+    let Num Lights = Target.len()
+
+    // Parse buttons - each (x,y,z) is a button
+    var Buttons = []
+    var I = Bracket End + 1
+    while(I < Trimmed.len()) {
+        if(Chars.get(I) == "(") {
+            // Find closing paren
+            var J = I + 1
+            while((J < Trimmed.len()) and (Chars.get(J) != ")")) {
+                J = J + 1
+            }
+            let Button Str = Trimmed.substring(I + 1, J)
+            let Positions = (Button Str.split(",")
+                .map(fn(S) { S.trim().to_num() }))
+            Buttons.push(Positions)
+            I = J + 1
+        } else {
+            I = I + 1
+        }
+    }
+
+    [Target, Buttons, Num Lights]
+}
+
+fn Apply Button(State, Button) {
+    var New State = State.map(fn(X) { X })
+    for(Pos : Button) {
+        // XOR toggle
+        New State.set(Pos, if(New State.get(Pos) == 0) { 1 } else { 0 })
+    }
+    New State
+}
+
+fn States Equal(S1, S2) {
+    if(S1.len() != S2.len()) { return false }
+    for(I : 0..S1.len()) {
+        if(S1.get(I) != S2.get(I)) { return false }
+    }
+    true
+}
+
+fn Count Ones(State) {
+    State.filter(fn(X) { X == 1 }).len()
+}
+
+// Since pressing a button twice cancels out, each button is pressed 0 or 1 times
+// Use recursive subset enumeration to find minimum presses
+fn Solve Machine Subset(Target, Buttons, Num Lights, Button Idx, State, Presses, Best So Far) {
+    // Pruning: if we already have more presses than best, stop
+    if(Presses >= Best So Far) { return Best So Far }
+
+    if(Button Idx == Buttons.len()) {
+        if(States Equal(State, Target)) {
+            return Presses
+        } else {
+            return Best So Far
+        }
+    }
+
+    // Try not pressing this button
+    var Best = Solve Machine Subset(Target, Buttons, Num Lights, Button Idx + 1, State, Presses, Best So Far)
+
+    // Try pressing this button
+    let New State = Apply Button(State, Buttons.get(Button Idx))
+    let With Press = Solve Machine Subset(Target, Buttons, Num Lights, Button Idx + 1, New State, Presses + 1, Best)
+    if(With Press < Best) { Best = With Press }
+
+    Best
+}
+
+fn Solve Machine BFS(Target, Buttons, Num Lights) {
+    // Initial state: all lights off
+    var Initial = []
+    for(I : 0..Num Lights) { Initial.push(0) }
+
+    if(States Equal(Initial, Target)) { return 0 }
+
+    // Use subset enumeration instead of BFS (cleaner, handles all cases)
+    let Result = Solve Machine Subset(Target, Buttons, Num Lights, 0, Initial, 0, Buttons.len() + 1)
+
+    if(Result > Buttons.len()) { -1 } else { Result }
+}
+
+// Part 2: Joltage counter problem (addition, not XOR)
+// Parse joltage requirements from {...}
+fn Parse Joltage(Line) {
+    let Chars = Line.chars()
+    var I = 0
+    while((I < Chars.len()) and (Chars.get(I) != "{")) {
+        I = I + 1
+    }
+    if(I >= Chars.len()) { return [] }
+
+    var J = I + 1
+    while((J < Chars.len()) and (Chars.get(J) != "}")) {
+        J = J + 1
+    }
+
+    let Joltage Str = Line.substring(I + 1, J)
+    (Joltage Str.split(",")
+        .map(fn(S) { S.trim().to_num() }))
+}
+
+// Gaussian elimination over integers for Part 2
+// Returns [Pivot Cols, Matrix after elimination, Rank]
+fn Gauss Eliminate(Buttons, Joltage) {
+    let Num Buttons = Buttons.len()
+    let Num Counters = Joltage.len()
+
+    // Build augmented matrix [A | b]
+    var M = []
+    for(I : 0..Num Counters) {
+        var Row = []
+        for(J : 0..Num Buttons) {
+            var Val = 0
+            for(Pos : Buttons.get(J)) {
+                if(Pos == I) { Val = 1 }
+            }
+            Row.push(Val)
+        }
+        Row.push(Joltage.get(I))
+        M.push(Row)
+    }
+
+    var Pivot Cols = []
+    var Row Idx = 0
+
+    for(Col : 0..Num Buttons) {
+        if(Row Idx >= Num Counters) { break }
+
+        // Find pivot
+        var Pivot Row = -1
+        for(R : Row Idx..Num Counters) {
+            if(M.get(R).get(Col) != 0) {
+                Pivot Row = R
+                break
+            }
+        }
+
+        if(Pivot Row >= 0) {
+            // Swap rows
+            let Tmp = M.get(Row Idx)
+            M.set(Row Idx, M.get(Pivot Row))
+            M.set(Pivot Row, Tmp)
+
+            Pivot Cols.push(Col)
+
+            // Eliminate column in other rows
+            let Pivot Val = M.get(Row Idx).get(Col)
+            for(R : 0..Num Counters) {
+                if(R != Row Idx) {
+                    let R Val = M.get(R).get(Col)
+                    if(R Val != 0) {
+                        for(C : 0..(Num Buttons + 1)) {
+                            let New Val = Pivot Val * M.get(R).get(C) - R Val * M.get(Row Idx).get(C)
+                            M.get(R).set(C, New Val)
+                        }
+                    }
+                }
+            }
+            Row Idx = Row Idx + 1
+        }
+    }
+
+    [Pivot Cols, M, Row Idx]
+}
+
+// Given fixed values for free variables, solve for basic variables
+fn Solve With Free Vars(Buttons, Joltage, Pivot Cols, Matrix, Free Vals) {
+    let Num Buttons = Buttons.len()
+    let Num Counters = Joltage.len()
+    let Rank = Pivot Cols.len()
+
+    // Build solution vector
+    var Solution = []
+    for(I : 0..Num Buttons) { Solution.push(0) }
+
+    // Set free variable values
+    var Free Idx = 0
+    for(Col : 0..Num Buttons) {
+        var Is Pivot = false
+        for(PC : Pivot Cols) {
+            if(PC == Col) { Is Pivot = true }
+        }
+        if(!Is Pivot) {
+            if(Free Idx < Free Vals.len()) {
+                Solution.set(Col, Free Vals.get(Free Idx))
+                Free Idx = Free Idx + 1
+            }
+        }
+    }
+
+    // Solve for basic variables using back-substitution
+    // For each pivot row (in reverse order for cleaner back-sub)
+    var Row = Rank - 1
+    while(Row >= 0) {
+        let Pivot Col = Pivot Cols.get(Row)
+        let M Row = Matrix.get(Row)
+        let Pivot Val = M Row.get(Pivot Col)
+
+        // RHS = augmented column value
+        var RHS = M Row.get(Num Buttons)
+
+        // Subtract contributions from other variables
+        for(Col : 0..Num Buttons) {
+            if(Col != Pivot Col) {
+                RHS = RHS - M Row.get(Col) * Solution.get(Col)
+            }
+        }
+
+        // Check divisibility
+        if(Pivot Val == 0) { return [-1] }
+
+        // Handle negative pivot values
+        var Check RHS = RHS
+        var Check Pivot = Pivot Val
+        if(Check Pivot < 0) {
+            Check RHS = 0 - Check RHS
+            Check Pivot = 0 - Check Pivot
+        }
+
+        if((Check RHS.mod(Check Pivot)) != 0) { return [-1] }
+
+        let Val = Check RHS.floor_div(Check Pivot)
+        if(Val < 0) { return [-1] }
+
+        Solution.set(Pivot Col, Val)
+        Row = Row - 1
+    }
+
+    // Verify solution is valid (all non-negative)
+    for(S : Solution) {
+        if(S < 0) { return [-1] }
+    }
+
+    Solution
+}
+
+// Simple bound: use max joltage value (safer than complex bound computation)
+fn Compute Free Var Bound(Joltage) {
+    var Max Val = 0
+    for(J : Joltage) {
+        if(J > Max Val) { Max Val = J }
+    }
+    Max Val
+}
+
+// Search with per-variable bounds
+fn Search Free Vars Bounded(Buttons, Joltage, Pivot Cols, Matrix, Free Cols, Free Bounds, Free Idx, Free Vals, Best So Far) {
+    if(Free Idx == Free Cols.len()) {
+        let Solution = Solve With Free Vars(Buttons, Joltage, Pivot Cols, Matrix, Free Vals)
+        if(Solution.get(0) < 0) { return Best So Far }
+
+        var Sum = 0
+        for(S : Solution) { Sum = Sum + S }
+        if(Sum < Best So Far) { return Sum } else { return Best So Far }
+    }
+
+    var Current Sum = 0
+    for(V : Free Vals) { Current Sum = Current Sum + V }
+
+    var Best = Best So Far
+    let Max Val = Free Bounds.get(Free Idx)
+
+    for(V : 0..(Max Val + 1)) {
+        if((Current Sum + V) >= Best) { break }
+
+        var New Vals = []
+        for(X : Free Vals) { New Vals.push(X) }
+        New Vals.push(V)
+
+        let Result = Search Free Vars Bounded(Buttons, Joltage, Pivot Cols, Matrix, Free Cols, Free Bounds, Free Idx + 1, New Vals, Best)
+        if(Result < Best) { Best = Result }
+    }
+
+    Best
+}
+
+fn Solve Machine Joltage(Line) {
+    let Machine = Parse Machine(Line)
+    if(Machine == null) { return 0 }
+
+    let Buttons = Machine.get(1)
+    let Joltage = Parse Joltage(Line)
+
+    if(Joltage.len() == 0) { return 0 }
+
+    // Gaussian elimination
+    let Gauss Result = Gauss Eliminate(Buttons, Joltage)
+    let Pivot Cols = Gauss Result.get(0)
+    let Matrix = Gauss Result.get(1)
+    let Rank = Gauss Result.get(2)
+
+    // Find free columns
+    var Free Cols = []
+    for(Col : 0..Buttons.len()) {
+        var Is Pivot = false
+        for(PC : Pivot Cols) {
+            if(PC == Col) { Is Pivot = true }
+        }
+        if(!Is Pivot) {
+            Free Cols.push(Col)
+        }
+    }
+
+    // Compute bounds for each free variable (use same max bound for all)
+    let Max Bound = Compute Free Var Bound(Joltage)
+    var Free Bounds = []
+    for(FC : Free Cols) {
+        Free Bounds.push(Max Bound)
+    }
+
+    // If no free variables, solve directly
+    if(Free Cols.len() == 0) {
+        var Free Vals = []
+        let Solution = Solve With Free Vars(Buttons, Joltage, Pivot Cols, Matrix, Free Vals)
+        if(Solution.get(0) < 0) { return 0 }
+        var Sum = 0
+        for(S : Solution) { Sum = Sum + S }
+        return Sum
+    }
+
+    // Search over free variables with tighter bounds
+    var Free Vals = []
+    let Result = Search Free Vars Bounded(Buttons, Joltage, Pivot Cols, Matrix, Free Cols, Free Bounds, 0, Free Vals, 1000000)
+
+    if(Result >= 1000000) { 0 } else { Result }
+}
+
+fn Solve Factory Part1(Input) {
+    var Total = 0
+    for(Line : Input) {
+        let Machine = Parse Machine(Line)
+        if(Machine != null) {
+            let Target = Machine.get(0)
+            let Buttons = Machine.get(1)
+            let Num Lights = Machine.get(2)
+            let Presses = Solve Machine BFS(Target, Buttons, Num Lights)
+            if(Presses >= 0) {
+                Total = Total + Presses
+            }
+        }
+    }
+    Total
+}
+
+fn Solve Factory Part2(Input) {
+    var Total = 0
+    for(Line : Input) {
+        let Presses = Solve Machine Joltage(Line)
+        Total = Total + Presses
+    }
+    Total
+}
+
+println(Solve Factory Part1(Example Machines))
+println(Solve Factory Part1(Actual Machines))
+println(Solve Factory Part2(Example Machines))
+println(Solve Factory Part2(Actual Machines))

@@ -1,0 +1,31 @@
+# Gaul
+
+> A dynamically-typed, interpreted programming language where identifiers can have spaces, keywords speak your language, and approximate equality (`~=`) is a first-class citizen. Built in Rust.
+
+Gaul (from Indonesian "bahasa gaul" — slang language) challenges conventions: variable names read like natural language, you can program in your native tongue via custom keywords, and fuzzy matching is built into the language.
+
+## Key Syntax Differences from Mainstream Languages
+
+- **Spaced identifiers**: Write `let My Variable = 42` not `myVariable`
+- **Expression-based**: Everything returns a value, including `if` blocks
+- **Custom keywords**: Program in French, Mandarin, Indonesian via JSON mapping
+- **Jam Karet operator** (`~=`): Fuzzy equality for numbers (5% tolerance) and strings (Levenshtein distance)
+- **Boolean operators**: `and`, `or`, `!` (not `&&`, `||`) — MUST parenthesize and/or operands: `(A > 0) and (B < 10)`
+- **No semicolons**: Newlines and expression boundaries are sufficient
+- **Multiline chains need parens**: `(Items.map(...).filter(...))` — wrap in `()` or parser won't see line continuations
+
+## Documentation
+
+- [llms-full.txt](/llms-full.txt): Complete self-contained reference with all syntax, stdlib, and idioms
+- [README.md](/README.md): Project overview and quick start guide
+
+## Code Examples
+
+- [src/samples/aoc/2025/](/src/samples/aoc/2025/): Advent of Code solutions demonstrating real-world usage
+- [src/samples/closure.gaul](/src/samples/closure.gaul): Closure demonstration
+- [src/samples/custom_keywords/](/src/samples/custom_keywords/): French, Mandarin, Indonesian examples
+
+## Optional
+
+- [Cargo.toml](/Cargo.toml): Rust project configuration
+- [src/](/src/): Interpreter source code in Rust
