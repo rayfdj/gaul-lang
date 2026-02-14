@@ -44,6 +44,14 @@ pub enum TokenType {
     Less,         // <
     LessEqual,    // <=
 
+    // Bitwise operators
+    Ampersand,  // &
+    Pipe,       // |
+    Caret,      // ^
+    Tilde,      // ~
+    LeftShift,  // <<
+    RightShift, // >>
+
     // Funky operators
     ApproxEqual, // ~= (jam karet!)
     Range,       // ..

@@ -5198,3 +5198,146 @@ fn test_unicode_accented_pointer_length() {
         err
     );
 }
+
+// ============================================================
+// Bitwise operators
+// ============================================================
+
+#[test]
+fn test_bitwise_and_basic() {
+    assert_eq!(eval("12 & 10").unwrap(), Value::Num(8.0));
+    assert_eq!(eval("0xFF & 0x0F").unwrap(), Value::Num(15.0));
+    assert_eq!(eval("0 & 42").unwrap(), Value::Num(0.0));
+}
+
+#[test]
+fn test_bitwise_or_basic() {
+    assert_eq!(eval("5 | 3").unwrap(), Value::Num(7.0));
+    assert_eq!(eval("0 | 0").unwrap(), Value::Num(0.0));
+    assert_eq!(eval("0xFF00 | 0x00FF").unwrap(), Value::Num(65535.0));
+}
+
+#[test]
+fn test_bitwise_xor_basic() {
+    assert_eq!(eval("5 ^ 3").unwrap(), Value::Num(6.0));
+    assert_eq!(eval("42 ^ 42").unwrap(), Value::Num(0.0));
+    assert_eq!(eval("0 ^ 42").unwrap(), Value::Num(42.0));
+}
+
+#[test]
+fn test_left_shift_basic() {
+    assert_eq!(eval("1 << 0").unwrap(), Value::Num(1.0));
+    assert_eq!(eval("1 << 8").unwrap(), Value::Num(256.0));
+    assert_eq!(eval("5 << 2").unwrap(), Value::Num(20.0));
+}
+
+#[test]
+fn test_right_shift_basic() {
+    assert_eq!(eval("256 >> 8").unwrap(), Value::Num(1.0));
+    assert_eq!(eval("20 >> 2").unwrap(), Value::Num(5.0));
+    assert_eq!(eval("1 >> 1").unwrap(), Value::Num(0.0));
+}
+
+#[test]
+fn test_bitwise_not_basic() {
+    assert_eq!(eval("~0").unwrap(), Value::Num(-1.0));
+    assert_eq!(eval("~5").unwrap(), Value::Num(-6.0));
+    assert_eq!(eval("~-1").unwrap(), Value::Num(0.0));
+    assert_eq!(eval("~~5").unwrap(), Value::Num(5.0));
+}
+
+#[test]
+fn test_bitwise_negative_numbers() {
+    assert_eq!(eval("-1 & 0xFF").unwrap(), Value::Num(255.0));
+    assert_eq!(eval("-1 >> 1").unwrap(), Value::Num(-1.0)); // arithmetic shift
+    assert_eq!(eval("~-1").unwrap(), Value::Num(0.0));
+}
+
+#[test]
+fn test_bitwise_precedence_and_binds_tighter_than_or() {
+    // & binds tighter than |: 2 | (1 & 3) = 2 | 1 = 3
+    assert_eq!(eval("2 | 1 & 3").unwrap(), Value::Num(3.0));
+}
+
+#[test]
+fn test_bitwise_precedence_and_binds_tighter_than_xor() {
+    // & binds tighter than ^: 1 ^ (3 & 2) = 1 ^ 2 = 3
+    assert_eq!(eval("1 ^ 3 & 2").unwrap(), Value::Num(3.0));
+}
+
+#[test]
+fn test_bitwise_precedence_xor_binds_tighter_than_or() {
+    // ^ binds tighter than |: 1 | (2 ^ 3) = 1 | 1 = 1
+    assert_eq!(eval("1 | 2 ^ 3").unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_bitwise_precedence_shift_vs_term() {
+    // term binds tighter than shift: 1 << (2 + 3) = 1 << 5 = 32
+    assert_eq!(eval("1 << 2 + 3").unwrap(), Value::Num(32.0));
+    // (1 + 2) << 3 = 3 << 3 = 24
+    assert_eq!(eval("1 + 2 << 3").unwrap(), Value::Num(24.0));
+}
+
+#[test]
+fn test_bitwise_precedence_vs_equality() {
+    // equality is above bitwise: (5 & 3) == 1 = true
+    assert_eq!(eval("5 & 3 == 1").unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_bitwise_associativity() {
+    // left-associative: (8 >> 1) >> 1 = 4 >> 1 = 2
+    assert_eq!(eval("8 >> 1 >> 1").unwrap(), Value::Num(2.0));
+    // (1 << 1) << 2 = 2 << 2 = 8
+    assert_eq!(eval("1 << 1 << 2").unwrap(), Value::Num(8.0));
+}
+
+#[test]
+fn test_bitwise_with_hex_and_binary_literals() {
+    assert_eq!(eval("0xFF & 0x0F").unwrap(), Value::Num(15.0));
+    assert_eq!(eval("0b1100 | 0b0011").unwrap(), Value::Num(15.0));
+    assert_eq!(eval("0b1010 ^ 0b1100").unwrap(), Value::Num(6.0));
+}
+
+#[test]
+fn test_bitwise_with_variables() {
+    let code = "let x = 5\nlet y = 3\nx & y";
+    assert_eq!(eval(code).unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_bitwise_in_if_condition() {
+    let code = r#"
+    let flags = 6
+    if ((flags & 4) != 0) { "yes" } else { "no" }
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("yes".into()));
+}
+
+#[test]
+fn test_bitwise_not_combined_with_and() {
+    // ~0 & 0xFF = -1 & 255 = 255
+    assert_eq!(eval("~0 & 0xFF").unwrap(), Value::Num(255.0));
+}
+
+#[test]
+fn test_bitwise_type_errors() {
+    assert!(eval(r#""hello" & 5"#).is_err());
+    assert!(eval("true | false").is_err());
+    assert!(eval(r#"~"hello""#).is_err());
+    assert!(eval(r#"5 << "two""#).is_err());
+}
+
+#[test]
+fn test_bitwise_shift_by_zero() {
+    assert_eq!(eval("42 << 0").unwrap(), Value::Num(42.0));
+    assert_eq!(eval("42 >> 0").unwrap(), Value::Num(42.0));
+}
+
+#[test]
+fn test_approx_equal_still_works() {
+    // Make sure ~= (approximate equality) still works after adding bare ~
+    assert_eq!(eval("1.0 ~= 1.0001").unwrap(), Value::Bool(true));
+    assert_eq!(eval("1.0 ~= 2.0").unwrap(), Value::Bool(false));
+}

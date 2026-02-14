@@ -441,8 +441,24 @@ impl Parser {
                 TokenType::Greater,
                 TokenType::GreaterEqual,
             ],
-            |p| p.range(), // Calls the custom range method
+            |p| p.bitwise_or(),
         )
+    }
+
+    fn bitwise_or(&mut self) -> Result<Expr, ParseError> {
+        self.binary_expression(&[TokenType::Pipe], |p| p.bitwise_xor())
+    }
+
+    fn bitwise_xor(&mut self) -> Result<Expr, ParseError> {
+        self.binary_expression(&[TokenType::Caret], |p| p.bitwise_and())
+    }
+
+    fn bitwise_and(&mut self) -> Result<Expr, ParseError> {
+        self.binary_expression(&[TokenType::Ampersand], |p| p.shift())
+    }
+
+    fn shift(&mut self) -> Result<Expr, ParseError> {
+        self.binary_expression(&[TokenType::LeftShift, TokenType::RightShift], |p| p.range())
     }
 
     fn range(&mut self) -> Result<Expr, ParseError> {
@@ -473,7 +489,7 @@ impl Parser {
     }
 
     fn unary(&mut self) -> Result<Expr, ParseError> {
-        if self.match_any(&[TokenType::Bang, TokenType::Minus]) {
+        if self.match_any(&[TokenType::Bang, TokenType::Minus, TokenType::Tilde]) {
             let operator = self.previous().clone();
             let span = operator.span;
             let operand = self.unary()?; // recursive for chained unary: --x

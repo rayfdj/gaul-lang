@@ -120,12 +120,17 @@ impl Scanner {
                 }
             }
 
-            // Approximate equality (jam karet!)
+            // Bitwise operators
+            '&' => self.add_token(TokenType::Ampersand),
+            '|' => self.add_token(TokenType::Pipe),
+            '^' => self.add_token(TokenType::Caret),
+
+            // Tilde: ~= is approximate equality, bare ~ is bitwise NOT
             '~' => {
                 if self.match_char('=') {
                     self.add_token(TokenType::ApproxEqual)
                 } else {
-                    self.report_error("Expected '=' after '~' for approximate equality")
+                    self.add_token(TokenType::Tilde)
                 }
             }
 
@@ -151,6 +156,8 @@ impl Scanner {
             '>' => {
                 let token_type = if self.match_char('=') {
                     TokenType::GreaterEqual
+                } else if self.match_char('>') {
+                    TokenType::RightShift
                 } else {
                     TokenType::Greater
                 };
@@ -160,6 +167,8 @@ impl Scanner {
             '<' => {
                 let token_type = if self.match_char('=') {
                     TokenType::LessEqual
+                } else if self.match_char('<') {
+                    TokenType::LeftShift
                 } else {
                     TokenType::Less
                 };

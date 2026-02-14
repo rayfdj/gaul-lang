@@ -195,6 +195,9 @@ impl Interpreter {
                 match (&operator.token_type, operand_value) {
                     (TokenType::Bang, Value::Bool(b)) => Ok(Value::Bool(!b).into()),
                     (TokenType::Minus, Value::Num(n)) => Ok(Value::Num(-n).into()),
+                    (TokenType::Tilde, Value::Num(n)) => {
+                        Ok(Value::Num(!(n as i64) as f64).into())
+                    }
                     (op_type, v) => Err(RuntimeError {
                         span: expression.span,
                         message: format!(
@@ -259,6 +262,23 @@ impl Interpreter {
                             }
                             (TokenType::Star, Value::Num(n1), Value::Num(n2)) => {
                                 Ok(Value::Num(n1 * n2).into())
+                            }
+
+                            // bitwise
+                            (TokenType::Ampersand, Value::Num(n1), Value::Num(n2)) => {
+                                Ok(Value::Num(((n1 as i64) & (n2 as i64)) as f64).into())
+                            }
+                            (TokenType::Pipe, Value::Num(n1), Value::Num(n2)) => {
+                                Ok(Value::Num(((n1 as i64) | (n2 as i64)) as f64).into())
+                            }
+                            (TokenType::Caret, Value::Num(n1), Value::Num(n2)) => {
+                                Ok(Value::Num(((n1 as i64) ^ (n2 as i64)) as f64).into())
+                            }
+                            (TokenType::LeftShift, Value::Num(n1), Value::Num(n2)) => {
+                                Ok(Value::Num(((n1 as i64) << (n2 as i64)) as f64).into())
+                            }
+                            (TokenType::RightShift, Value::Num(n1), Value::Num(n2)) => {
+                                Ok(Value::Num(((n1 as i64) >> (n2 as i64)) as f64).into())
                             }
 
                             // weird String concat
