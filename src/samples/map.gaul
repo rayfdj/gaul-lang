@@ -1,0 +1,87 @@
+// Maps in Gaul!
+// A map is a key-value data structure. Keys can be strings, numbers, booleans, or null.
+
+// --- Creating Maps ---
+
+let Empty Map = [:]
+let Person = ["name": "Alice", "age": 30, "active": true]
+println(Person)
+
+// --- Getting and Setting ---
+
+println(Person.get("name"))          // Alice
+println(Person.get("missing"))       // null (no error for missing keys)
+println(Person.get_or("job", "?"))   // ? (default value for missing keys)
+
+Person.set("email", "alice@example.com")
+println(Person.len())                // 4
+
+// --- Checking and Removing ---
+
+println(Person.has("name"))          // true
+println(Person.has("phone"))         // false
+
+let Removed = Person.remove("email")
+println(Removed)                     // alice@example.com
+println(Person.has("email"))         // false
+
+// --- Iterating ---
+// for-loop over a map gives you the keys
+
+println("-- All entries --")
+for(Key : Person) {
+    println(Key)
+    println(Person.get(Key))
+}
+
+// --- keys(), values(), entries() ---
+
+println(Person.keys())
+println(Person.values())
+
+let Entries = Person.entries()
+for(Entry : Entries) {
+    println(Entry)
+}
+
+// --- Frequency Counting ---
+// The classic pattern: count how often each word appears
+
+let Words = ["apple", "banana", "apple", "cherry", "banana", "apple"]
+let Counts = [:]
+
+for(Word : Words) {
+    let Current = Counts.get_or(Word, 0)
+    Counts.set(Word, Current + 1)
+}
+
+println("-- Word Frequencies --")
+for(Word : Counts) {
+    let N = Counts.get(Word)
+    println(Word)
+    println(N)
+}
+
+// --- Visited Set ---
+// Track which items you've already seen
+
+let Items = [1, 2, 3, 2, 1, 4, 5, 3]
+let Seen = [:]
+var Unique Count = 0
+
+for(Item : Items) {
+    if(!Seen.has(Item)) {
+        Seen.set(Item, true)
+        Unique Count = Unique Count + 1
+    }
+}
+
+println(Unique Count)  // 5
+
+// --- Numeric and Mixed Keys ---
+
+let Grid = [0: "origin", 1: "right", -1: "left"]
+println(Grid.get(0))     // origin
+
+let Mixed = ["name": "Bob", 42: "the answer", true: "yes!", null: "nothing"]
+println(Mixed.len())     // 4

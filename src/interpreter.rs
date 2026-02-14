@@ -7,7 +7,7 @@ use crate::config::RuntimeConfig;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::native_function::all_native_functions;
 use crate::interpreter::native_method::call_native_method;
-use crate::interpreter::value::{Function, Value};
+use crate::interpreter::value::{Function, MapKey, Value};
 use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
 use crate::scanner::token::TokenType;
 use std::cell::RefCell;
@@ -354,6 +354,20 @@ impl Interpreter {
                 Ok(Value::Array(Rc::new(RefCell::new(array))).into())
             }
 
+            ExprKind::Map { pairs } => {
+                let mut map = std::collections::HashMap::new();
+                for (key_expr, val_expr) in pairs {
+                    let key_val = prop_val!(self.evaluate_expression(key_expr));
+                    let map_key = MapKey::from_value(&key_val).map_err(|msg| RuntimeError {
+                        line: expression.line,
+                        message: msg,
+                    })?;
+                    let value = prop_val!(self.evaluate_expression(val_expr));
+                    map.insert(map_key, value);
+                }
+                Ok(Value::Map(Rc::new(RefCell::new(map))).into())
+            }
+
             ExprKind::If {
                 condition,
                 then_branch,
@@ -475,9 +489,34 @@ impl Interpreter {
                         self.env = previous;
                         result
                     }
+                    Value::Map(map) => {
+                        // Collect keys first to avoid holding RefCell borrow during body execution
+                        let keys: Vec<Value> =
+                            map.borrow().keys().map(|k| k.to_value()).collect();
+                        let previous = self.env.clone();
+                        self.env = Rc::new(Environment::new_with_enclosing(previous.clone()));
+                        self.env.define(Value::Null, false); // slot 0
+                        let result: Result<ControlFlow, RuntimeError> = (|| {
+                            for key in &keys {
+                                self.env.set_at(0, 0, key.clone());
+                                match self.evaluate_expression(body.as_ref())? {
+                                    ControlFlow::Value(_) => {}
+                                    ControlFlow::Continue => continue,
+                                    ControlFlow::Break => break,
+                                    ControlFlow::Return(v) => return Ok(ControlFlow::Return(v)),
+                                }
+                            }
+                            Ok(Value::Null.into())
+                        })();
+                        self.env = previous;
+                        result
+                    }
                     _ => Err(RuntimeError {
                         line: expression.line,
-                        message: format!("iterable: '{:?}' must be a range or an array", iterable),
+                        message: format!(
+                            "iterable: '{:?}' must be a range, array, or map",
+                            iterable
+                        ),
                     }),
                 }
             }

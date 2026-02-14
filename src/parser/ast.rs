@@ -104,6 +104,11 @@ pub enum ExprKind {
         elements: Vec<Expr>,
     },
 
+    // Maps
+    Map {
+        pairs: Vec<(Expr, Expr)>,
+    },
+
     // Lambda
     Lambda {
         params: Vec<String>,

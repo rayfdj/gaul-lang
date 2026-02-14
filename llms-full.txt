@@ -54,6 +54,13 @@ let No = false
 let Mixed = [1, "two", true, [3, 4]]
 let Matrix = [[1, 2], [3, 4]]
 
+// Maps (key-value dictionaries)
+let Empty = [:]                              // Empty map
+let Person = ["name": "Alice", "age": 30]    // String keys
+let Grid = [0: "origin", 1: "right"]         // Numeric keys
+let Mixed Map = ["key": 1, 42: "val", true: "yes"]  // Mixed key types
+// Keys can be: Str, Num, Bool, null. Arrays/functions/maps cannot be keys.
+
 // Nil
 let Nothing = nil
 ```
@@ -155,9 +162,9 @@ while(I < 10) {
 }
 ```
 
-### For Loop (Two Forms)
+### For Loop (Three Forms)
 ```gaul
-// Iterating over collection
+// Iterating over array
 for(Item : My Array) {
     println(Item)
 }
@@ -165,6 +172,13 @@ for(Item : My Array) {
 // Iterating over range (exclusive end)
 for(I : 0..10) {
     println(I)  // 0, 1, 2, ... 9
+}
+
+// Iterating over map (iterates over KEYS)
+let Scores = ["Alice": 95, "Bob": 87]
+for(Name : Scores) {
+    println(Name)               // "Alice", "Bob"
+    println(Scores.get(Name))   // 95, 87
 }
 
 // Ranges must be converted to array for methods
@@ -284,6 +298,30 @@ Arr.join("-")            // "3-1-4-1-5-9"
 
 // Predicates
 Arr.contains(5)          // true
+```
+
+### Map Methods
+```gaul
+let M = ["name": "Alice", "age": 30]
+
+// Access
+M.get("name")                // "Alice"
+M.get("missing")             // null (no error for missing keys!)
+M.get_or("missing", "default")  // "default" (returns default if key absent)
+
+// Modification (mutates in place)
+M.set("email", "a@b.com")   // Insert or overwrite, returns null
+M.remove("email")            // Returns removed value, or null if missing
+
+// Queries
+M.has("name")                // true
+M.len()                      // 2
+M.is_empty()                 // false
+
+// Bulk access (returns arrays)
+M.keys()                     // ["name", "age"]
+M.values()                   // ["Alice", 30]
+M.entries()                  // [["name", "Alice"], ["age", 30]]
 ```
 
 ### Functional Methods (Most Important!)
@@ -456,7 +494,56 @@ fn Parse Input(Input) {
 }
 ```
 
-### Pattern 7: Accumulating with Reduce
+### Pattern 7: Frequency Counting with Maps
+```gaul
+// Count occurrences of each item
+let Words = ["apple", "banana", "apple", "cherry", "banana", "apple"]
+let Counts = [:]
+for(Word : Words) {
+    Counts.set(Word, Counts.get_or(Word, 0) + 1)
+}
+// Counts = ["apple": 3, "banana": 2, "cherry": 1]
+```
+
+### Pattern 8: Visited Set / Memoization with Maps
+```gaul
+// Track visited items (O(1) lookup instead of O(n) array scan)
+let Seen = [:]
+for(Item : Items) {
+    if(!Seen.has(Item)) {
+        Seen.set(Item, true)
+        // process Item...
+    }
+}
+
+// Memoization
+let Cache = [:]
+fn Fibonacci(N) {
+    if(N <= 1) { return N }
+    if(Cache.has(N)) { return Cache.get(N) }
+    let Result = Fibonacci(N - 1) + Fibonacci(N - 2)
+    Cache.set(N, Result)
+    Result
+}
+```
+
+### Pattern 9: Grouping with Maps
+```gaul
+// Group items by category
+let Items = [["fruit", "apple"], ["veggie", "carrot"], ["fruit", "banana"]]
+let Groups = [:]
+for(Item : Items) {
+    let Category = Item.get(0)
+    let Name = Item.get(1)
+    if(!Groups.has(Category)) {
+        Groups.set(Category, [])
+    }
+    Groups.get(Category).push(Name)
+}
+// Groups = ["fruit": ["apple", "banana"], "veggie": ["carrot"]]
+```
+
+### Pattern 10: Accumulating with Reduce
 ```gaul
 // Sum with initial value
 let Total = Items.reduce(0, fn(Acc, Item) { Acc + Item.value })
@@ -491,9 +578,11 @@ if(X == 1 or Y == 2) { }        // BROKEN: "1 or Y" parsed as identifier
 if((A > 0) and (B < 10)) { }    // Each operand is parenthesized
 if((X == 1) or (Y == 2)) { }    // Each operand is parenthesized
 
-// WRONG: Using array subscript
+// WRONG: Using array subscript or map subscript
 let X = Arr[0]                  // Use: let X = Arr.get(0)
 Arr[0] = 5                      // Use: Arr.set(0, 5)
+let V = Map["key"]              // Use: let V = Map.get("key")
+Map["key"] = 5                  // Use: Map.set("key", 5)
 
 // WRONG: Using % for modulo
 let R = 10 % 3                  // Use: let R = 10.mod(3)
@@ -611,6 +700,30 @@ fn Solve Part 1(Input) {
 println(Solve Part 1(Input))
 ```
 
+### With Maps (Frequency Counting Pattern)
+```gaul
+let Input = read_file("input.txt")
+
+fn Solve(Input) {
+    let Freq = [:]
+    for(Line : Input.lines()) {
+        for(Char : Line.trim().chars()) {
+            Freq.set(Char, Freq.get_or(Char, 0) + 1)
+        }
+    }
+
+    var Total = 0
+    for(Key : Freq) {
+        if(Freq.get(Key) > 1) {
+            Total = Total + Freq.get(Key)
+        }
+    }
+    Total
+}
+
+println(Solve(Input))
+```
+
 ---
 
 ## Summary: Quick Reference Card
@@ -627,8 +740,12 @@ println(Solve Part 1(Input))
 | While | `while(cond) { }` |
 | And/Or/Not | `(a) and (b)`, `(a) or (b)`, `!a` (MUST parenthesize and/or operands!) |
 | Array access | `Arr.get(0)`, `Arr.set(0, val)` |
+| Map literal | `["key": val, ...]`, `[:]` (empty) |
+| Map access | `M.get("key")`, `M.set("key", val)` |
+| Map check | `M.has("key")`, `M.len()`, `M.keys()` |
+| For over map | `for(Key : My Map) { }` (iterates keys) |
 | Fuzzy equal | `a ~= b` |
-| Map | `Arr.map(fn(X) { ... })` |
+| Map (array) | `Arr.map(fn(X) { ... })` |
 | Filter | `Arr.filter(fn(X) { ... })` |
 | Reduce | `Arr.reduce(init, fn(Acc, X) { ... })` |
 | Multiline chain | `(Arr.map(...).filter(...))` (wrap in parens!) |

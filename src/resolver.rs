@@ -261,6 +261,13 @@ impl Resolver {
                 self.pop_scope();
                 result // propagate error after cleanup
             }
+            ExprKind::Map { pairs } => {
+                for (key, value) in pairs {
+                    self.resolve_expression(key)?;
+                    self.resolve_expression(value)?;
+                }
+                Ok(())
+            }
             ExprKind::Num(_) | ExprKind::Str(_) | ExprKind::Bool(_) | ExprKind::Null => Ok(()),
         }
     }

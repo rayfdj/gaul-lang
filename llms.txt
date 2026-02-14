@@ -22,6 +22,7 @@ Gaul (from Indonesian "bahasa gaul" — slang language) challenges conventions: 
 ## Code Examples
 
 - [src/samples/aoc/2025/](/src/samples/aoc/2025/): Advent of Code solutions demonstrating real-world usage
+- [src/samples/map.gaul](/src/samples/map.gaul): Maps — creation, access, iteration, frequency counting, visited sets
 - [src/samples/closure.gaul](/src/samples/closure.gaul): Closure demonstration
 - [src/samples/custom_keywords/](/src/samples/custom_keywords/): French, Mandarin, Indonesian examples
 

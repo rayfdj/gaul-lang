@@ -3827,3 +3827,590 @@ fn test_jam_karet_grade_boundaries() {
         _ => panic!("Expected array, got {:?}", result),
     }
 }
+
+// =============================================================================
+// Map tests
+// =============================================================================
+
+#[test]
+fn test_map_literal_empty() {
+    let result = eval("[:]");
+    match result {
+        Ok(Value::Map(m)) => assert!(m.borrow().is_empty()),
+        _ => panic!("Expected empty map, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_literal_string_keys() {
+    let code = r#"["name": "Alice", "age": 30]"#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Map(m)) => assert_eq!(m.borrow().len(), 2),
+        _ => panic!("Expected map with 2 entries, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_literal_numeric_keys() {
+    let code = "[1: \"one\", 2: \"two\", 3: \"three\"]";
+    let result = eval(code);
+    match result {
+        Ok(Value::Map(m)) => assert_eq!(m.borrow().len(), 3),
+        _ => panic!("Expected map with 3 entries, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_literal_bool_keys() {
+    let code = "[true: \"yes\", false: \"no\"]";
+    let result = eval(code);
+    match result {
+        Ok(Value::Map(m)) => assert_eq!(m.borrow().len(), 2),
+        _ => panic!("Expected map with 2 entries, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_literal_mixed_keys() {
+    let code = r#"["name": "Alice", 1: "one", true: "yes"]"#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Map(m)) => assert_eq!(m.borrow().len(), 3),
+        _ => panic!("Expected map with 3 entries, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_literal_single_entry() {
+    let code = r#"["key": "value"]"#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Map(m)) => assert_eq!(m.borrow().len(), 1),
+        _ => panic!("Expected map with 1 entry, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_literal_duplicate_key_last_wins() {
+    let code = r#"
+    let m = ["a": 1, "a": 2]
+    m.get("a")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 2.0),
+        _ => panic!("Expected 2 (last wins), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_single_element_regression() {
+    // [42] must still parse as a single-element array, not a map
+    let result = eval("[42]");
+    match result {
+        Ok(Value::Array(a)) => {
+            let arr = a.borrow();
+            assert_eq!(arr.len(), 1);
+            assert_eq!(arr[0], Value::Num(42.0));
+        }
+        _ => panic!("Expected [42] as array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_empty_regression() {
+    let result = eval("[]");
+    match result {
+        Ok(Value::Array(a)) => assert!(a.borrow().is_empty()),
+        _ => panic!("Expected empty array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_get_existing_key() {
+    let code = r#"
+    let m = ["name": "Alice", "age": 30]
+    m.get("name")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "Alice"),
+        _ => panic!("Expected 'Alice', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_get_missing_key() {
+    let code = r#"
+    let m = ["name": "Alice"]
+    m.get("missing")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Null) => {}
+        _ => panic!("Expected null for missing key, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_get_or_existing() {
+    let code = r#"
+    let m = ["name": "Alice"]
+    m.get_or("name", "default")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "Alice"),
+        _ => panic!("Expected 'Alice', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_get_or_missing() {
+    let code = r#"
+    let m = ["name": "Alice"]
+    m.get_or("missing", "default")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "default"),
+        _ => panic!("Expected 'default', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_set_new_key() {
+    let code = r#"
+    let m = [:]
+    m.set("key", "value")
+    m.get("key")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "value"),
+        _ => panic!("Expected 'value', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_set_overwrite() {
+    let code = r#"
+    let m = ["key": "old"]
+    m.set("key", "new")
+    m.get("key")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "new"),
+        _ => panic!("Expected 'new', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_set_returns_null() {
+    let code = r#"
+    let m = [:]
+    m.set("key", "value")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Null) => {}
+        _ => panic!("Expected null from set, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_has_true() {
+    let code = r#"
+    let m = ["key": "value"]
+    m.has("key")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(true)) => {}
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_has_false() {
+    let code = r#"
+    let m = ["key": "value"]
+    m.has("missing")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(false)) => {}
+        _ => panic!("Expected false, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_remove_existing() {
+    let code = r#"
+    let m = ["key": "value"]
+    m.remove("key")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "value"),
+        _ => panic!("Expected removed value 'value', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_remove_missing() {
+    let code = r#"
+    let m = ["key": "value"]
+    m.remove("missing")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Null) => {}
+        _ => panic!("Expected null for missing remove, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_remove_actually_removes() {
+    let code = r#"
+    let m = ["key": "value"]
+    m.remove("key")
+    m.has("key")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(false)) => {}
+        _ => panic!("Expected false after remove, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_keys() {
+    let code = r#"
+    let m = ["a": 1, "b": 2]
+    m.keys().len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 2.0),
+        _ => panic!("Expected 2 keys, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_values() {
+    let code = r#"
+    let m = ["a": 1, "b": 2]
+    m.values().len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 2.0),
+        _ => panic!("Expected 2 values, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_entries() {
+    let code = r#"
+    let m = ["a": 1]
+    let entries = m.entries()
+    entries.len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 1.0),
+        _ => panic!("Expected 1 entry, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_entries_structure() {
+    let code = r#"
+    let m = ["key": "val"]
+    let entry = m.entries().get(0)
+    entry.len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 2.0),
+        _ => panic!("Expected entry of length 2, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_len() {
+    let code = r#"
+    let m = ["a": 1, "b": 2, "c": 3]
+    m.len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Expected 3, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_len_empty() {
+    let code = r#"
+    let m = [:]
+    m.len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 0.0),
+        _ => panic!("Expected 0, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_is_empty_true() {
+    let code = r#"
+    let m = [:]
+    m.is_empty()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(true)) => {}
+        _ => panic!("Expected true, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_is_empty_false() {
+    let code = r#"
+    let m = ["a": 1]
+    m.is_empty()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(false)) => {}
+        _ => panic!("Expected false, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_for_loop() {
+    let code = r#"
+    let m = ["a": 1, "b": 2, "c": 3]
+    var count = 0
+    for(k : m) {
+        count = count + 1
+    }
+    count
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Expected 3, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_for_loop_empty() {
+    let code = r#"
+    var count = 0
+    for(k : [:]) {
+        count = count + 1
+    }
+    count
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 0.0),
+        _ => panic!("Expected 0, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_for_loop_break() {
+    let code = r#"
+    let m = ["a": 1, "b": 2, "c": 3]
+    var count = 0
+    for(k : m) {
+        count = count + 1
+        if(count == 2) { break }
+    }
+    count
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 2.0),
+        _ => panic!("Expected 2, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_equality() {
+    let code = r#"
+    let a = ["x": 1, "y": 2]
+    let b = ["x": 1, "y": 2]
+    a == b
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(true)) => {}
+        _ => panic!("Expected true for equal maps, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_inequality() {
+    let code = r#"
+    let a = ["x": 1]
+    let b = ["x": 2]
+    a != b
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(true)) => {}
+        _ => panic!("Expected true for unequal maps, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_empty_equality() {
+    let code = "[:]  == [:]";
+    let result = eval(code);
+    match result {
+        Ok(Value::Bool(true)) => {}
+        _ => panic!("Expected true for empty maps, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_error_function_as_key() {
+    let code = r#"
+    let f = fn(x) { x }
+    [f: "value"]
+    "#;
+    let result = eval(code);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_map_error_array_as_key() {
+    let code = r#"
+    let a = [1, 2, 3]
+    [a: "value"]
+    "#;
+    let result = eval(code);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_map_computed_keys() {
+    let code = r#"
+    let key = "name"
+    let m = [key: "Alice"]
+    m.get("name")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "Alice"),
+        _ => panic!("Expected 'Alice', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_display_empty() {
+    let code = r#"
+    let m = [:]
+    m
+    "#;
+    let result = eval(code);
+    match &result {
+        Ok(val @ Value::Map(_)) => {
+            assert_eq!(format!("{}", val), "[:]");
+        }
+        _ => panic!("Expected map, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_frequency_counting() {
+    // Classic AOC pattern: frequency counting
+    let code = r#"
+    let words = ["apple", "banana", "apple", "cherry", "banana", "apple"]
+    let counts = [:]
+    for(word : words) {
+        let current = counts.get_or(word, 0)
+        counts.set(word, current + 1)
+    }
+    counts.get("apple")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 3.0),
+        _ => panic!("Expected 3, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_as_visited_set() {
+    // Classic AOC pattern: visited set
+    let code = r#"
+    let visited = [:]
+    let items = [1, 2, 3, 2, 1, 4]
+    var unique count = 0
+    for(item : items) {
+        if(!visited.has(item)) {
+            visited.set(item, true)
+            unique count = unique count + 1
+        }
+    }
+    unique count
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 4.0),
+        _ => panic!("Expected 4 unique items, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_null_key() {
+    let code = r#"
+    let m = [null: "nothing"]
+    m.get(null)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "nothing"),
+        _ => panic!("Expected 'nothing', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_get_numeric_key() {
+    let code = r#"
+    let m = [42: "answer"]
+    m.get(42)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "answer"),
+        _ => panic!("Expected 'answer', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_map_for_loop_uses_keys() {
+    // Verify that for-loop iterates over keys, and we can use them to look up values
+    let code = r#"
+    let m = ["a": 10, "b": 20]
+    var total = 0
+    for(k : m) {
+        total = total + m.get(k)
+    }
+    total
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 30.0),
+        _ => panic!("Expected 30, got {:?}", result),
+    }
+}

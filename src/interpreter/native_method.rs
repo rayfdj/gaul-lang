@@ -1,4 +1,4 @@
-use crate::interpreter::value::Value;
+use crate::interpreter::value::{MapKey, Value};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -312,6 +312,60 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
                 _ => Err("sort only supports arrays of numbers or strings".into()),
             }
         }
+
+        // Map!
+        (Value::Map(map), "get") => {
+            let key_val = args.first().ok_or("get expects a key")?;
+            let key = MapKey::from_value(key_val)?;
+            Ok(map.borrow().get(&key).cloned().unwrap_or(Value::Null))
+        }
+        (Value::Map(map), "get_or") => {
+            let key_val = args.first().ok_or("get_or expects a key")?;
+            let default = args.get(1).ok_or("get_or expects a default value")?;
+            let key = MapKey::from_value(key_val)?;
+            Ok(map
+                .borrow()
+                .get(&key)
+                .cloned()
+                .unwrap_or_else(|| default.clone()))
+        }
+        (Value::Map(map), "set") => {
+            let key_val = args.first().ok_or("set expects a key")?;
+            let value = args.get(1).ok_or("set expects a value")?.clone();
+            let key = MapKey::from_value(key_val)?;
+            map.borrow_mut().insert(key, value);
+            Ok(Value::Null)
+        }
+        (Value::Map(map), "has") => {
+            let key_val = args.first().ok_or("has expects a key")?;
+            let key = MapKey::from_value(key_val)?;
+            Ok(Value::Bool(map.borrow().contains_key(&key)))
+        }
+        (Value::Map(map), "remove") => {
+            let key_val = args.first().ok_or("remove expects a key")?;
+            let key = MapKey::from_value(key_val)?;
+            Ok(map.borrow_mut().remove(&key).unwrap_or(Value::Null))
+        }
+        (Value::Map(map), "keys") => {
+            let keys: Vec<Value> = map.borrow().keys().map(|k| k.to_value()).collect();
+            Ok(Value::Array(Rc::new(RefCell::new(keys))))
+        }
+        (Value::Map(map), "values") => {
+            let values: Vec<Value> = map.borrow().values().cloned().collect();
+            Ok(Value::Array(Rc::new(RefCell::new(values))))
+        }
+        (Value::Map(map), "entries") => {
+            let entries: Vec<Value> = map
+                .borrow()
+                .iter()
+                .map(|(k, v)| {
+                    Value::Array(Rc::new(RefCell::new(vec![k.to_value(), v.clone()])))
+                })
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(entries))))
+        }
+        (Value::Map(map), "len") => Ok(Value::Num(map.borrow().len() as f64)),
+        (Value::Map(map), "is_empty") => Ok(Value::Bool(map.borrow().is_empty())),
 
         // Range
         (Value::Range(from, _until), "from") => Ok(Value::Num(*from)),

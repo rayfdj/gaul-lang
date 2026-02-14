@@ -653,24 +653,68 @@ impl Parser {
         let line = self.peek().line;
         self.consume(TokenType::LeftBracket, "[")?;
 
-        let mut elements = Vec::new();
-
-        while !self.check(TokenType::RightBracket) && !self.is_at_end() {
-            if self.check(TokenType::RightBracket) {
-                break;
-            }
-            elements.push(self.expression()?);
-            if !self.check(TokenType::RightBracket) {
-                self.consume(TokenType::Comma, ",")?;
-            }
+        // [] → empty array
+        if self.check(TokenType::RightBracket) {
+            self.advance();
+            return Ok(Expr {
+                kind: ExprKind::Array { elements: vec![] },
+                line,
+            });
         }
 
-        self.consume(TokenType::RightBracket, "]")?;
+        // [:] → empty map
+        if self.check(TokenType::Colon) {
+            self.advance(); // consume ':'
+            self.consume(TokenType::RightBracket, "]")?;
+            return Ok(Expr {
+                kind: ExprKind::Map { pairs: vec![] },
+                line,
+            });
+        }
 
-        Ok(Expr {
-            kind: ExprKind::Array { elements },
-            line,
-        })
+        // Parse first expression, then decide: map or array?
+        let first = self.expression()?;
+
+        if self.check(TokenType::Colon) {
+            // It's a map: [key: value, ...]
+            self.advance(); // consume ':'
+            let value = self.expression()?;
+            let mut pairs = vec![(first, value)];
+
+            while self.check(TokenType::Comma) {
+                self.advance(); // consume ','
+                if self.check(TokenType::RightBracket) {
+                    break; // trailing comma
+                }
+                let key = self.expression()?;
+                self.consume(TokenType::Colon, ":")?;
+                let val = self.expression()?;
+                pairs.push((key, val));
+            }
+
+            self.consume(TokenType::RightBracket, "]")?;
+            Ok(Expr {
+                kind: ExprKind::Map { pairs },
+                line,
+            })
+        } else {
+            // It's an array: [expr, ...]
+            let mut elements = vec![first];
+
+            while self.check(TokenType::Comma) {
+                self.advance(); // consume ','
+                if self.check(TokenType::RightBracket) {
+                    break; // trailing comma
+                }
+                elements.push(self.expression()?);
+            }
+
+            self.consume(TokenType::RightBracket, "]")?;
+            Ok(Expr {
+                kind: ExprKind::Array { elements },
+                line,
+            })
+        }
     }
 
     fn block(&mut self) -> Result<Expr, ParseError> {

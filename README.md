@@ -126,6 +126,52 @@ let Result = Numbers
 // 220
 ```
 
+### Maps
+
+Maps are key-value dictionaries. Create them with `[key: value]` syntax, using `[:]` for an empty map. Keys can be strings, numbers, booleans, or null.
+
+```gaul
+// Create a map
+let Person = ["name": "Alice", "age": 30, "active": true]
+
+// Access values
+Person.get("name")             // "Alice"
+Person.get("missing")          // null (no error)
+Person.get_or("job", "none")   // "none" (default for missing key)
+
+// Modify
+Person.set("email", "alice@example.com")
+Person.remove("email")         // returns the removed value
+
+// Check
+Person.has("name")             // true
+Person.len()                   // 3
+Person.is_empty()              // false
+
+// Iterate over keys
+for(Key : Person) {
+    println(Key)
+}
+
+// Get all keys, values, or entries
+Person.keys()                  // ["name", "age", "active"]
+Person.values()                // ["Alice", 30, true]
+Person.entries()               // [["name", "Alice"], ["age", 30], ...]
+```
+
+Maps are perfect for frequency counting, memoization, and lookup tables:
+
+```gaul
+let Words = ["apple", "banana", "apple", "cherry", "banana", "apple"]
+let Counts = [:]
+
+for(Word : Words) {
+    Counts.set(Word, Counts.get_or(Word, 0) + 1)
+}
+
+// Counts = ["apple": 3, "banana": 2, "cherry": 1]
+```
+
 ### Closures
 
 ```gaul
@@ -300,7 +346,7 @@ Indonesian keyword mapping:
 
 ## Battle-Tested: Advent of Code 2025
 
-Gaul has been used to solve **Advent of Code 2025 Days 1-6**, proving that while it's still a toy language at this point, it CAN already be used to solve problems. Here's a taste of Day 4's solution using functional programming:
+Gaul has been used to solve **Advent of Code 2025 Days 1-12**, proving that while it's still a toy language at this point, it CAN already be used to solve problems. Here's a taste of Day 4's solution using functional programming:
 
 ```gaul
 fn Count Adjacent Rolls(Grid, Row, Col) {
@@ -328,7 +374,7 @@ fn All Positions(Grid) {
 }
 ```
 
-Check out `src/samples/aoc/2025/` for solutions up to Day 6.
+Check out `src/samples/aoc/2025/` for solutions up to Day 12.
 
 ---
 
@@ -359,6 +405,22 @@ Arr.sort()           // [1, 1, 2, 3, 4, 5, 6, 9]
 Arr.reverse()        // [6, 2, 9, 5, 1, 4, 1, 3]
 Arr.contains(5)      // true
 Arr.join("-")        // "3-1-4-1-5-9-2-6"
+```
+
+### Map Methods
+```gaul
+let M = ["a": 1, "b": 2, "c": 3]
+M.get("a")               // 1
+M.get("z")               // null (missing key)
+M.get_or("z", 0)         // 0 (with default)
+M.set("d", 4)            // insert or overwrite
+M.has("a")               // true
+M.remove("c")            // 3 (returns removed value)
+M.keys()                 // ["a", "b", "d"]
+M.values()               // [1, 2, 4]
+M.entries()              // [["a", 1], ["b", 2], ["d", 4]]
+M.len()                  // 3
+M.is_empty()             // false
 ```
 
 ### Number Methods
