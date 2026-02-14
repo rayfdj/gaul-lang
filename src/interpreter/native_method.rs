@@ -97,6 +97,39 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
                 .collect();
             Ok(Value::Array(Rc::new(RefCell::new(chars))))
         }
+        (Value::Str(s), "replace") => {
+            let old = match args.first() {
+                Some(Value::Str(s)) => &s[..],
+                _ => return Err("replace expects a string to find".into()),
+            };
+            let new = match args.get(1) {
+                Some(Value::Str(s)) => &s[..],
+                _ => return Err("replace expects a replacement string".into()),
+            };
+            Ok(Value::Str(s[..].replace(old, new).into()))
+        }
+        (Value::Str(s), "index_of") => {
+            let sub = match args.first() {
+                Some(Value::Str(s)) => &s[..],
+                _ => return Err("index_of expects a string".into()),
+            };
+            match s[..].find(sub) {
+                Some(byte_pos) => {
+                    let char_index = s[..byte_pos].chars().count();
+                    Ok(Value::Num(char_index as f64))
+                }
+                None => Ok(Value::Num(-1.0)),
+            }
+        }
+        (Value::Str(s), "to_upper") => Ok(Value::Str(s[..].to_uppercase().into())),
+        (Value::Str(s), "to_lower") => Ok(Value::Str(s[..].to_lowercase().into())),
+        (Value::Str(s), "repeat") => {
+            let n = match args.first() {
+                Some(Value::Num(n)) => *n as usize,
+                _ => return Err("repeat expects a number".into()),
+            };
+            Ok(Value::Str(s[..].repeat(n).into()))
+        }
 
         // Number methods!
         (Value::Num(n), "to_str") => Ok(Value::Str(n.to_string().into())),
@@ -310,6 +343,29 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
                     Ok(Value::Array(Rc::new(RefCell::new(sorted))))
                 }
                 _ => Err("sort only supports arrays of numbers or strings".into()),
+            }
+        }
+        (Value::Array(elements), "slice") => {
+            let start = match args.first() {
+                Some(Value::Num(n)) => *n as usize,
+                _ => return Err("slice expects a start index".into()),
+            };
+            let arr = elements.borrow();
+            let end = match args.get(1) {
+                Some(Value::Num(n)) => (*n as usize).min(arr.len()),
+                None => arr.len(),
+                _ => return Err("slice end must be a number".into()),
+            };
+            let start = start.min(arr.len());
+            let sliced: Vec<Value> = arr.get(start..end).unwrap_or_default().to_vec();
+            Ok(Value::Array(Rc::new(RefCell::new(sliced))))
+        }
+        (Value::Array(elements), "index_of") => {
+            let search_item = args.first().ok_or("index_of expects a value")?;
+            let arr = elements.borrow();
+            match arr.iter().position(|v| v == search_item) {
+                Some(idx) => Ok(Value::Num(idx as f64)),
+                None => Ok(Value::Num(-1.0)),
             }
         }
 

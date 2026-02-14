@@ -4414,3 +4414,371 @@ fn test_map_for_loop_uses_keys() {
         _ => panic!("Expected 30, got {:?}", result),
     }
 }
+
+// --- String replace ---
+
+#[test]
+fn test_string_replace_basic() {
+    let result = eval(r#""hello world".replace("world", "gaul")"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "hello gaul"),
+        _ => panic!("Expected 'hello gaul', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_replace_multiple_occurrences() {
+    let result = eval(r#""aaa".replace("a", "bb")"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "bbbbbb"),
+        _ => panic!("Expected 'bbbbbb', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_replace_no_match() {
+    let result = eval(r#""hello".replace("xyz", "abc")"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "hello"),
+        _ => panic!("Expected 'hello', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_replace_with_empty() {
+    let result = eval(r#""hello world".replace(" world", "")"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "hello"),
+        _ => panic!("Expected 'hello', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_replace_empty_source() {
+    let result = eval(r#""".replace("a", "b")"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), ""),
+        _ => panic!("Expected '', got {:?}", result),
+    }
+}
+
+// --- String index_of ---
+
+#[test]
+fn test_string_index_of_found() {
+    let result = eval(r#""hello world".index_of("world")"#);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 6.0),
+        _ => panic!("Expected 6, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_index_of_not_found() {
+    let result = eval(r#""hello".index_of("xyz")"#);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, -1.0),
+        _ => panic!("Expected -1, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_index_of_at_start() {
+    let result = eval(r#""hello".index_of("hel")"#);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 0.0),
+        _ => panic!("Expected 0, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_index_of_first_occurrence() {
+    let result = eval(r#""abcabc".index_of("bc")"#);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 1.0),
+        _ => panic!("Expected 1, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_index_of_unicode() {
+    // "café" — the 'é' is multi-byte in UTF-8
+    let result = eval(r#""café latte".index_of("latte")"#);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 5.0),
+        _ => panic!("Expected 5 (char index, not byte index), got {:?}", result),
+    }
+}
+
+// --- String to_upper / to_lower ---
+
+#[test]
+fn test_string_to_upper_basic() {
+    let result = eval(r#""hello".to_upper()"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "HELLO"),
+        _ => panic!("Expected 'HELLO', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_to_upper_already_upper() {
+    let result = eval(r#""HELLO".to_upper()"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "HELLO"),
+        _ => panic!("Expected 'HELLO', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_to_upper_mixed() {
+    let result = eval(r#""Hello World".to_upper()"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "HELLO WORLD"),
+        _ => panic!("Expected 'HELLO WORLD', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_to_upper_numbers_unchanged() {
+    let result = eval(r#""abc123!".to_upper()"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "ABC123!"),
+        _ => panic!("Expected 'ABC123!', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_to_lower_basic() {
+    let result = eval(r#""HELLO".to_lower()"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "hello"),
+        _ => panic!("Expected 'hello', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_to_lower_already_lower() {
+    let result = eval(r#""hello".to_lower()"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "hello"),
+        _ => panic!("Expected 'hello', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_to_lower_mixed() {
+    let result = eval(r#""Hello World".to_lower()"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "hello world"),
+        _ => panic!("Expected 'hello world', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_to_lower_numbers_unchanged() {
+    let result = eval(r#""ABC123!".to_lower()"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "abc123!"),
+        _ => panic!("Expected 'abc123!', got {:?}", result),
+    }
+}
+
+// --- String repeat ---
+
+#[test]
+fn test_string_repeat_basic() {
+    let result = eval(r#""ab".repeat(3)"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "ababab"),
+        _ => panic!("Expected 'ababab', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_repeat_zero() {
+    let result = eval(r#""hello".repeat(0)"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), ""),
+        _ => panic!("Expected '', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_string_repeat_one() {
+    let result = eval(r#""hello".repeat(1)"#);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "hello"),
+        _ => panic!("Expected 'hello', got {:?}", result),
+    }
+}
+
+// --- Array slice ---
+
+#[test]
+fn test_array_slice_basic() {
+    let code = r#"
+    let arr = [10, 20, 30, 40, 50]
+    arr.slice(1, 3).join(",")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "20,30"),
+        _ => panic!("Expected '20,30', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_slice_to_end() {
+    let code = r#"
+    let arr = [10, 20, 30, 40, 50]
+    arr.slice(2).join(",")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "30,40,50"),
+        _ => panic!("Expected '30,40,50', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_slice_empty_result() {
+    let code = r#"
+    let arr = [10, 20, 30]
+    arr.slice(2, 2).len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 0.0),
+        _ => panic!("Expected 0, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_slice_full() {
+    let code = r#"
+    let arr = [10, 20, 30]
+    arr.slice(0, 3).join(",")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "10,20,30"),
+        _ => panic!("Expected '10,20,30', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_slice_out_of_bounds() {
+    let code = r#"
+    let arr = [10, 20, 30]
+    arr.slice(1, 100).join(",")
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "20,30"),
+        _ => panic!("Expected '20,30', got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_slice_does_not_mutate() {
+    let code = r#"
+    var arr = [10, 20, 30, 40]
+    let sliced = arr.slice(1, 3)
+    arr.len()
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 4.0),
+        _ => panic!("Expected 4 (original unchanged), got {:?}", result),
+    }
+}
+
+// --- Array index_of ---
+
+#[test]
+fn test_array_index_of_found() {
+    let code = r#"[10, 20, 30].index_of(20)"#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 1.0),
+        _ => panic!("Expected 1, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_index_of_not_found() {
+    let code = r#"[10, 20, 30].index_of(99)"#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, -1.0),
+        _ => panic!("Expected -1, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_index_of_first_duplicate() {
+    let code = r#"[10, 20, 20, 30].index_of(20)"#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 1.0),
+        _ => panic!("Expected 1 (first occurrence), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_index_of_string() {
+    let code = r#"["a", "b", "c"].index_of("b")"#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 1.0),
+        _ => panic!("Expected 1, got {:?}", result),
+    }
+}
+
+// --- Array find ---
+
+#[test]
+fn test_array_find_found() {
+    let code = r#"
+    [1, 2, 3, 4, 5].find(fn(x) { x > 3 })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 4.0),
+        _ => panic!("Expected 4, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_find_not_found() {
+    let code = r#"
+    [1, 2, 3].find(fn(x) { x > 10 })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Null) => {}
+        _ => panic!("Expected null, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_find_returns_first_match() {
+    let code = r#"
+    [10, 20, 30, 40].find(fn(x) { x > 15 })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 20.0),
+        _ => panic!("Expected 20 (first match), got {:?}", result),
+    }
+}
+
+#[test]
+fn test_array_find_predicate_must_return_bool() {
+    let code = r#"
+    [1, 2, 3].find(fn(x) { x })
+    "#;
+    let result = eval(code);
+    assert!(result.is_err(), "Expected error, got {:?}", result);
+}

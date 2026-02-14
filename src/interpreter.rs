@@ -621,6 +621,35 @@ impl Interpreter {
 
                                 return Ok(acc.into());
                             }
+                            "find" => {
+                                let predicate =
+                                    argument_values.first().ok_or_else(|| RuntimeError {
+                                        line: expression.line,
+                                        message: "find expects a predicate".into(),
+                                    })?;
+                                let arr = elements.borrow();
+
+                                for item in arr.iter() {
+                                    let result = self.call_function(
+                                        predicate,
+                                        std::slice::from_ref(item),
+                                        expression.line,
+                                    )?;
+                                    match result {
+                                        Value::Bool(true) => return Ok(item.clone().into()),
+                                        Value::Bool(false) => {}
+                                        _ => {
+                                            return Err(RuntimeError {
+                                                line: expression.line,
+                                                message: "find predicate must return a boolean"
+                                                    .into(),
+                                            });
+                                        }
+                                    }
+                                }
+
+                                return Ok(Value::Null.into());
+                            }
                             _ => {}
                         }
                     }
