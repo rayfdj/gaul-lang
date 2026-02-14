@@ -10,6 +10,7 @@ use crate::interpreter::native_method::call_native_method;
 use crate::interpreter::value::{Function, MapKey, Value};
 use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
 use crate::scanner::token::TokenType;
+use crate::span::Span;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -33,7 +34,7 @@ impl From<Value> for ControlFlow {
 
 #[derive(Debug, Clone)]
 pub struct RuntimeError {
-    pub line: usize,
+    pub span: Span,
     pub message: String,
 }
 
@@ -87,7 +88,7 @@ impl Interpreter {
                 ControlFlow::Value(v) => last = v,
                 ControlFlow::Break | ControlFlow::Continue => {
                     return Err(RuntimeError {
-                        line: 0,
+                        span: Span::default(),
                         message: "break/continue outside loop".into(),
                     });
                 }
@@ -169,7 +170,7 @@ impl Interpreter {
                             Some((depth, slot)) => {
                                 self.env.assign_at(*depth, *slot, value).map_err(|msg| {
                                     RuntimeError {
-                                        line: expression.line,
+                                        span: expression.span,
                                         message: msg,
                                     }
                                 })?;
@@ -179,7 +180,7 @@ impl Interpreter {
                         }
                     }
                     other => Err(RuntimeError {
-                        line: expression.line,
+                        span: expression.span,
                         message: format!(
                             "Only identifier can be target of an assignment, but found: '{:?}'",
                             other
@@ -195,7 +196,7 @@ impl Interpreter {
                     (TokenType::Bang, Value::Bool(b)) => Ok(Value::Bool(!b).into()),
                     (TokenType::Minus, Value::Num(n)) => Ok(Value::Num(-n).into()),
                     (op_type, v) => Err(RuntimeError {
-                        line: expression.line,
+                        span: expression.span,
                         message: format!(
                             "cannot apply operator '{:?}' to operand '{:?}'",
                             op_type, v
@@ -221,7 +222,7 @@ impl Interpreter {
                         match right_value {
                             Value::Bool(_) => Ok(right_value.into()),
                             _ => Err(RuntimeError {
-                                line: expression.line,
+                                span: expression.span,
                                 message: format!(
                                     "right value '{:?}' is not of boolean type",
                                     right_value
@@ -230,7 +231,7 @@ impl Interpreter {
                         }
                     }
                     (TokenType::And | TokenType::Or, _) => Err(RuntimeError {
-                        line: expression.line,
+                        span: expression.span,
                         message: format!(
                             "logical operators require boolean operands, got {:?}",
                             left_value
@@ -249,7 +250,7 @@ impl Interpreter {
                             (TokenType::Slash, Value::Num(n1), Value::Num(n2)) => {
                                 if n2 == 0.0 {
                                     Err(RuntimeError {
-                                        line: expression.line,
+                                        span: expression.span,
                                         message: format!("cannot divide '{}' by '{}'", n1, n2),
                                     })
                                 } else {
@@ -317,7 +318,7 @@ impl Interpreter {
                                 Ok(Value::Bool(distance <= threshold).into())
                             }
                             (op, l, r) => Err(RuntimeError {
-                                line: expression.line,
+                                span: expression.span,
                                 message: format!("cannot apply {:?} to {:?} and {:?}", op, l, r),
                             }),
                         }
@@ -364,7 +365,7 @@ impl Interpreter {
                 for (key_expr, val_expr) in pairs {
                     let key_val = prop_val!(self.evaluate_expression(key_expr));
                     let map_key = MapKey::from_value(&key_val).map_err(|msg| RuntimeError {
-                        line: expression.line,
+                        span: expression.span,
                         message: msg,
                     })?;
                     let value = prop_val!(self.evaluate_expression(val_expr));
@@ -386,7 +387,7 @@ impl Interpreter {
                         None => Ok(Value::Null.into()),
                     },
                     _ => Err(RuntimeError {
-                        line: expression.line,
+                        span: expression.span,
                         message: format!(
                             "if condition must evaluate to bool, but it evaluates to {:?}",
                             condition
@@ -408,7 +409,7 @@ impl Interpreter {
                         Value::Bool(false) => break,
                         _ => {
                             return Err(RuntimeError {
-                                line: expression.line,
+                                span: expression.span,
                                 message: format!(
                                     "while condition must be bool, got {:?}",
                                     cond_value
@@ -427,7 +428,7 @@ impl Interpreter {
                     (Value::Num(n1), Value::Num(n2)) => {
                         if n1.fract() != 0.0 || n2.fract() != 0.0 {
                             Err(RuntimeError {
-                                line: expression.line,
+                                span: expression.span,
                                 message: format!(
                                     "range requires integers for start: '{}' and end: '{}'",
                                     n1, n2
@@ -438,7 +439,7 @@ impl Interpreter {
                         }
                     }
                     _ => Err(RuntimeError {
-                        line: expression.line,
+                        span: expression.span,
                         message: format!(
                             "range start: '{:?}' and end: '{:?}' must be numbers",
                             start_val, end_val
@@ -517,7 +518,7 @@ impl Interpreter {
                         result
                     }
                     _ => Err(RuntimeError {
-                        line: expression.line,
+                        span: expression.span,
                         message: format!(
                             "iterable: '{:?}' must be a range, array, or map",
                             iterable
@@ -555,7 +556,7 @@ impl Interpreter {
                             "map" => {
                                 let callable =
                                     argument_values.first().ok_or_else(|| RuntimeError {
-                                        line: expression.line,
+                                        span: expression.span,
                                         message: "map expects a function".into(),
                                     })?;
                                 let result: Result<Vec<Value>, RuntimeError> = elements
@@ -565,7 +566,7 @@ impl Interpreter {
                                         self.call_function(
                                             callable,
                                             std::slice::from_ref(e),
-                                            expression.line,
+                                            expression.span,
                                         )
                                     })
                                     .collect();
@@ -574,7 +575,7 @@ impl Interpreter {
                             "filter" => {
                                 let predicate =
                                     argument_values.first().ok_or_else(|| RuntimeError {
-                                        line: expression.line,
+                                        span: expression.span,
                                         message: "filter expects a predicate".into(),
                                     })?;
                                 let arr = elements.borrow();
@@ -584,14 +585,14 @@ impl Interpreter {
                                     let keep = self.call_function(
                                         predicate,
                                         std::slice::from_ref(item),
-                                        expression.line,
+                                        expression.span,
                                     )?;
                                     match keep {
                                         Value::Bool(true) => result.push(item.clone()),
                                         Value::Bool(false) => {}
                                         _ => {
                                             return Err(RuntimeError {
-                                                line: expression.line,
+                                                span: expression.span,
                                                 message: "filter predicate must return a boolean"
                                                     .into(),
                                             });
@@ -604,12 +605,12 @@ impl Interpreter {
                             "reduce" => {
                                 let initial_value =
                                     argument_values.first().ok_or_else(|| RuntimeError {
-                                        line: expression.line,
+                                        span: expression.span,
                                         message: "reduce expects an initial value".into(),
                                     })?;
                                 let callback =
                                     argument_values.get(1).ok_or_else(|| RuntimeError {
-                                        line: expression.line,
+                                        span: expression.span,
                                         message: "reduce expects a function".into(),
                                     })?;
 
@@ -620,7 +621,7 @@ impl Interpreter {
                                     acc = self.call_function(
                                         callback,
                                         &[acc, item.clone()],
-                                        expression.line,
+                                        expression.span,
                                     )?;
                                 }
 
@@ -629,7 +630,7 @@ impl Interpreter {
                             "find" => {
                                 let predicate =
                                     argument_values.first().ok_or_else(|| RuntimeError {
-                                        line: expression.line,
+                                        span: expression.span,
                                         message: "find expects a predicate".into(),
                                     })?;
                                 let arr = elements.borrow();
@@ -638,14 +639,14 @@ impl Interpreter {
                                     let result = self.call_function(
                                         predicate,
                                         std::slice::from_ref(item),
-                                        expression.line,
+                                        expression.span,
                                     )?;
                                     match result {
                                         Value::Bool(true) => return Ok(item.clone().into()),
                                         Value::Bool(false) => {}
                                         _ => {
                                             return Err(RuntimeError {
-                                                line: expression.line,
+                                                span: expression.span,
                                                 message: "find predicate must return a boolean"
                                                     .into(),
                                             });
@@ -662,14 +663,14 @@ impl Interpreter {
                     return call_native_method(&receiver, name, &argument_values)
                         .map(|v| v.into())
                         .map_err(|message| RuntimeError {
-                            line: expression.line,
+                            span: expression.span,
                             message,
                         });
                 }
 
                 let callee_value = prop_val!(self.evaluate_expression(callee));
                 // refactored this whole thing out to call_function
-                self.call_function(&callee_value, &argument_values, expression.line)
+                self.call_function(&callee_value, &argument_values, expression.span)
                     .map(|v| v.into())
             }
 
@@ -686,7 +687,7 @@ impl Interpreter {
                 // Get is handled in Call for method calls
                 // Standalone property access not yet implemented
                 Err(RuntimeError {
-                    line: expression.line,
+                    span: expression.span,
                     message: "standalone property access not yet implemented".into(),
                 })
             }
@@ -715,13 +716,13 @@ impl Interpreter {
         &mut self,
         callee: &Value,
         args: &[Value],
-        line: usize,
+        span: Span,
     ) -> Result<Value, RuntimeError> {
         match callee {
             Value::Fn(fun) => {
                 if fun.params.len() != args.len() {
                     return Err(RuntimeError {
-                        line,
+                        span,
                         message: format!(
                             "function '{}' expects {} arguments, but got {}",
                             fun.name,
@@ -743,17 +744,17 @@ impl Interpreter {
                 match result? {
                     ControlFlow::Return(v) => Ok(v),
                     ControlFlow::Break | ControlFlow::Continue => Err(RuntimeError {
-                        line,
+                        span,
                         message: "break/continue outside loop".into(),
                     }),
                     ControlFlow::Value(v) => Ok(v),
                 }
             }
             Value::NativeFn(native_fun) => {
-                (native_fun.func)(args).map_err(|msg| RuntimeError { line, message: msg })
+                (native_fun.func)(args).map_err(|msg| RuntimeError { span, message: msg })
             }
             _ => Err(RuntimeError {
-                line,
+                span,
                 message: format!("'{}' is not callable", callee),
             }),
         }

@@ -1,11 +1,12 @@
 use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
+use crate::span::Span;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct ResolveError {
-    pub line: usize,
+    pub span: Span,
     pub message: String,
 }
 
@@ -35,11 +36,11 @@ impl Resolver {
     fn define_native_functions(&mut self) {
         for (name, _native_function) in crate::interpreter::native_function::all_native_functions()
         {
-            self.define(name, 0).unwrap();
+            self.define(name, Span::default()).unwrap();
         }
     }
 
-    fn define(&mut self, name: &str, line: usize) -> Result<(), ResolveError> {
+    fn define(&mut self, name: &str, span: Span) -> Result<(), ResolveError> {
         let current_scope = self.scopes.last_mut().expect("scopes is empty");
         let slot_index = current_scope.len();
 
@@ -49,7 +50,7 @@ impl Resolver {
                 Ok(())
             }
             Entry::Occupied(e) => Err(ResolveError {
-                line,
+                span,
                 message: format!("Variable '{}' already defined in this scope", e.key(),),
             }),
         }
@@ -63,6 +64,23 @@ impl Resolver {
             }
         }
         None
+    }
+
+    fn find_closest(&self, name: &str) -> Option<String> {
+        let mut best: Option<(usize, String)> = None;
+        for scope in self.scopes.iter() {
+            for candidate in scope.keys() {
+                let dist = strsim::levenshtein(name, candidate);
+                if dist <= 2 {
+                    match &best {
+                        Some((d, _)) if dist < *d => best = Some((dist, candidate.clone())),
+                        None => best = Some((dist, candidate.clone())),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        best.map(|(_, s)| s)
     }
 
     fn push_scope(&mut self) {
@@ -81,24 +99,24 @@ impl Resolver {
     }
 
     fn resolve_declaration(&mut self, declaration: &mut Declaration) -> Result<(), ResolveError> {
-        let line = declaration.line;
+        let span = declaration.span;
         match &mut declaration.kind {
             // we're merging these two together because mutability will be checked by the
             // interpreter anyway
             DeclarationKind::Let { name, initializer }
             | DeclarationKind::Var { name, initializer } => {
                 self.resolve_expression(initializer)?;
-                self.define(name, line)?;
+                self.define(name, span)?;
             }
             DeclarationKind::Fn { name, params, body } => {
-                self.define(name, line)?;
+                self.define(name, span)?;
                 self.push_scope();
                 self.function_depth += 1;
 
                 let body = Rc::get_mut(body).expect("Rc<Expr> should be unique during resolution");
                 let result = (|| {
                     for param in params {
-                        self.define(param, line)?;
+                        self.define(param, span)?;
                     }
                     self.resolve_expression(body)
                 })();
@@ -113,17 +131,18 @@ impl Resolver {
     }
 
     fn resolve_expression(&mut self, expression: &mut Expr) -> Result<(), ResolveError> {
-        let line = expression.line;
+        let span = expression.span;
         match &mut expression.kind {
             ExprKind::Identifier { name, resolved } => {
                 if let Some(resolution) = self.lookup(name) {
                     *resolved = Some(resolution);
                     Ok(())
                 } else {
-                    Err(ResolveError {
-                        line,
-                        message: format!("Undefined variable '{}'", name),
-                    })
+                    let mut message = format!("Undefined variable '{}'", name);
+                    if let Some(suggestion) = self.find_closest(name) {
+                        message.push_str(&format!(" (did you mean '{}'?)", suggestion));
+                    }
+                    Err(ResolveError { span, message })
                 }
             }
             ExprKind::Assign { target, value } => {
@@ -204,7 +223,7 @@ impl Resolver {
                 self.loop_depth += 1;
 
                 let result = (|| {
-                    self.define(variable, line)?;
+                    self.define(variable, span)?;
                     self.resolve_expression(body)
                 })();
 
@@ -226,7 +245,7 @@ impl Resolver {
             ExprKind::Break => {
                 if self.loop_depth == 0 {
                     Err(ResolveError {
-                        line,
+                        span,
                         message: "'break' outside of loop".into(),
                     })
                 } else {
@@ -236,7 +255,7 @@ impl Resolver {
             ExprKind::Continue => {
                 if self.loop_depth == 0 {
                     Err(ResolveError {
-                        line,
+                        span,
                         message: "'continue' outside of loop".into(),
                     })
                 } else {
@@ -246,7 +265,7 @@ impl Resolver {
             ExprKind::Return(value) => {
                 if self.function_depth == 0 {
                     Err(ResolveError {
-                        line,
+                        span,
                         message: "'return' outside of function".into(),
                     })
                 } else {
@@ -263,7 +282,7 @@ impl Resolver {
                 let body = Rc::get_mut(body).expect("Rc<Expr> should be unique during resolution");
                 let result = (|| {
                     for param in params {
-                        self.define(param, line)?;
+                        self.define(param, span)?;
                     }
                     self.resolve_expression(body)
                 })();

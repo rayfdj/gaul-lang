@@ -1,16 +1,18 @@
+use crate::span::Span;
+
 #[derive(Clone, Debug)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,
-    pub line: usize,
+    pub span: Span,
 }
 
 impl Token {
-    pub fn new(token_type: TokenType, lexeme: impl Into<String>, line: usize) -> Self {
+    pub fn new(token_type: TokenType, lexeme: impl Into<String>, span: Span) -> Self {
         Token {
             token_type,
             lexeme: lexeme.into(),
-            line,
+            span,
         }
     }
 }

@@ -1,4 +1,5 @@
 use gaul_lang::config::RuntimeConfig;
+use gaul_lang::diagnostics;
 use gaul_lang::interpreter::Interpreter;
 use gaul_lang::interpreter::environment::Environment;
 use gaul_lang::interpreter::value::Value;
@@ -6,6 +7,7 @@ use gaul_lang::keywords::load_keywords;
 use gaul_lang::parser::Parser;
 use gaul_lang::resolver::Resolver;
 use gaul_lang::scanner::Scanner;
+use gaul_lang::span::Span;
 
 // Mimic what the Gaul interpreter is doing
 fn eval(source: &str) -> Result<Value, String> {
@@ -257,8 +259,8 @@ fn test_multiline_comment_counts_lines_correctly() {
         Err(msg) => {
             // We check if the error message reports the correct line number.
             assert!(
-                msg.contains("Line 5"),
-                "Expected error on Line 5, but got: {}",
+                msg.contains("line: 5"),
+                "Expected error on line 5, but got: {}",
                 msg
             );
         }
@@ -4781,4 +4783,418 @@ fn test_array_find_predicate_must_return_bool() {
     "#;
     let result = eval(code);
     assert!(result.is_err(), "Expected error, got {:?}", result);
+}
+
+// ============================================================
+// Diagnostic tests: span accuracy, source display, hints
+// ============================================================
+
+/// Runs source through the full pipeline and returns the rendered diagnostic string on error.
+fn eval_diagnostic(source: &str) -> Result<Value, String> {
+    let keywords = load_keywords(None).map_err(|e| e.to_string())?;
+    let mut resolver = Resolver::new();
+    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default());
+
+    let scanner = Scanner::new(source, &keywords);
+    match scanner.scan_tokens() {
+        Err(errors) => {
+            let e = &errors[0];
+            let hint = diagnostics::suggest_hint(&e.message);
+            return Err(diagnostics::render(
+                source,
+                "scan",
+                e.span,
+                &e.message,
+                hint.as_deref(),
+            ));
+        }
+        Ok(tokens) => {
+            let parser = Parser::new(tokens);
+            match parser.parse() {
+                Err(errors) => {
+                    let e = &errors[0];
+                    return Err(diagnostics::render(
+                        source,
+                        "parse",
+                        e.span,
+                        &e.message,
+                        None,
+                    ));
+                }
+                Ok(mut program) => {
+                    if let Err(e) = resolver.resolve(&mut program) {
+                        let hint = diagnostics::suggest_hint(&e.message);
+                        return Err(diagnostics::render(
+                            source,
+                            "resolve",
+                            e.span,
+                            &e.message,
+                            hint.as_deref(),
+                        ));
+                    }
+                    match interpreter.interpret(program) {
+                        Ok(v) => Ok(v),
+                        Err(e) => {
+                            let hint = diagnostics::suggest_hint(&e.message);
+                            Err(diagnostics::render(
+                                source,
+                                "runtime",
+                                e.span,
+                                &e.message,
+                                hint.as_deref(),
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Returns the Span from the first error (scan/parse/resolve/runtime).
+fn eval_span(source: &str) -> Option<Span> {
+    let keywords = load_keywords(None).ok()?;
+    let mut resolver = Resolver::new();
+    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default());
+
+    let scanner = Scanner::new(source, &keywords);
+    match scanner.scan_tokens() {
+        Err(errors) => return Some(errors[0].span),
+        Ok(tokens) => {
+            let parser = Parser::new(tokens);
+            match parser.parse() {
+                Err(errors) => return Some(errors[0].span),
+                Ok(mut program) => {
+                    if let Err(e) = resolver.resolve(&mut program) {
+                        return Some(e.span);
+                    }
+                    if let Err(e) = interpreter.interpret(program) {
+                        return Some(e.span);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+// --- Span/column accuracy tests ---
+
+#[test]
+fn test_error_span_simple_token() {
+    let span = eval_span("x").unwrap();
+    assert_eq!(span.line, 1);
+    assert_eq!(span.col, 1);
+    assert_eq!(span.length, 1);
+}
+
+#[test]
+fn test_error_span_multi_char_token() {
+    let span = eval_span("foobar").unwrap();
+    assert_eq!(span.line, 1);
+    assert_eq!(span.col, 1);
+    assert_eq!(span.length, 6);
+}
+
+#[test]
+fn test_error_span_mid_line() {
+    // 'y' is undefined
+    let span = eval_span("let x = y").unwrap();
+    assert_eq!(span.col, 9);
+    assert_eq!(span.length, 1);
+}
+
+#[test]
+fn test_error_span_second_line() {
+    let span = eval_span("let x = 1\nx + y").unwrap();
+    assert_eq!(span.line, 2);
+    // 'y' is at col 5
+    assert_eq!(span.col, 5);
+}
+
+#[test]
+fn test_error_span_in_expression() {
+    // type mismatch on '+' operator
+    let span = eval_span("1 + true").unwrap();
+    assert_eq!(span.line, 1);
+    // The '+' token is at col 3
+    assert_eq!(span.col, 3);
+}
+
+// --- Unicode column tests ---
+
+#[test]
+fn test_error_span_unicode_before() {
+    // 'café' (with precomposed é) is defined but 'café + true' fails at the operator
+    let span = eval_span("let caf\u{00e9} = 1\ncaf\u{00e9} + true").unwrap();
+    assert_eq!(span.line, 2);
+}
+
+#[test]
+fn test_error_span_unicode_identifier() {
+    let span = eval_span("let \u{53d8}\u{91cf} = 1\n\u{53d8}\u{91cf} + true").unwrap();
+    assert_eq!(span.line, 2);
+}
+
+#[test]
+fn test_error_span_mixed_unicode() {
+    // α and β are defined, but adding α + "str" fails
+    let span = eval_span("let \u{03b1} = 1\nlet \u{03b2} = \u{03b1} + \"str\"").unwrap();
+    assert_eq!(span.line, 2);
+}
+
+// --- Source line display tests ---
+
+#[test]
+fn test_error_shows_source_line() {
+    let err = eval_diagnostic("x").unwrap_err();
+    // The source line "x" should appear in the output
+    assert!(err.contains("| x"), "Expected source line in output, got:\n{}", err);
+}
+
+#[test]
+fn test_error_shows_pointer() {
+    let err = eval_diagnostic("x").unwrap_err();
+    assert!(err.contains("^"), "Expected '^' pointer in output, got:\n{}", err);
+}
+
+#[test]
+fn test_error_shows_multichar_pointer() {
+    let err = eval_diagnostic("foobar").unwrap_err();
+    assert!(
+        err.contains("^^^^^^"),
+        "Expected 6-char pointer in output, got:\n{}",
+        err
+    );
+}
+
+// --- Hint tests ---
+
+#[test]
+fn test_hint_str_plus_num() {
+    let err = eval_diagnostic("\"hello\" + 1").unwrap_err();
+    assert!(
+        err.contains(".to_str()"),
+        "Expected .to_str() hint, got:\n{}",
+        err
+    );
+}
+
+#[test]
+fn test_hint_immutable_assign() {
+    let err = eval_diagnostic("let x = 1\nx = 2").unwrap_err();
+    assert!(
+        err.contains("var"),
+        "Expected 'var' hint, got:\n{}",
+        err
+    );
+}
+
+#[test]
+fn test_hint_undefined_did_you_mean() {
+    let err = eval_diagnostic("let count = 1\ncont + 1").unwrap_err();
+    assert!(
+        err.contains("did you mean"),
+        "Expected 'did you mean' suggestion, got:\n{}",
+        err
+    );
+    assert!(
+        err.contains("count"),
+        "Expected suggestion 'count', got:\n{}",
+        err
+    );
+}
+
+#[test]
+fn test_hint_undefined_no_suggestion() {
+    let err = eval_diagnostic("foobar123").unwrap_err();
+    assert!(
+        !err.contains("did you mean"),
+        "Should NOT suggest anything for 'foobar123', got:\n{}",
+        err
+    );
+}
+
+#[test]
+fn test_hint_bool_condition() {
+    let err = eval_diagnostic("if (1 + 2) { }").unwrap_err();
+    assert!(
+        err.contains("bool"),
+        "Expected bool-related error, got:\n{}",
+        err
+    );
+}
+
+// --- Scanner error tests ---
+
+#[test]
+fn test_scan_error_unterminated_string() {
+    let err = eval_diagnostic("\"hello").unwrap_err();
+    assert!(
+        err.contains("Unterminated string"),
+        "Expected unterminated string error, got:\n{}",
+        err
+    );
+    assert!(
+        err.contains("line 1"),
+        "Expected line 1, got:\n{}",
+        err
+    );
+}
+
+#[test]
+fn test_scan_error_unexpected_char() {
+    let err = eval_diagnostic("@").unwrap_err();
+    assert!(
+        err.contains("Unexpected character"),
+        "Expected unexpected char error, got:\n{}",
+        err
+    );
+    assert!(
+        err.contains("line 1:1"),
+        "Expected col 1, got:\n{}",
+        err
+    );
+}
+
+#[test]
+fn test_scan_error_unterminated_comment() {
+    let err = eval_diagnostic("/* hello").unwrap_err();
+    assert!(
+        err.contains("Unterminated multi-line comment"),
+        "Expected unterminated comment error, got:\n{}",
+        err
+    );
+}
+
+// --- Edge cases ---
+
+#[test]
+fn test_error_on_first_line() {
+    let err = eval_diagnostic("x").unwrap_err();
+    assert!(
+        err.contains("line 1:1"),
+        "Expected line 1:1 in output, got:\n{}",
+        err
+    );
+}
+
+#[test]
+fn test_error_on_last_line_no_newline() {
+    let err = eval_diagnostic("let x = 1\ny").unwrap_err();
+    // Should render correctly even without trailing newline
+    assert!(
+        err.contains("line 2"),
+        "Expected error on line 2, got:\n{}",
+        err
+    );
+    assert!(
+        err.contains("| y"),
+        "Expected source line 'y', got:\n{}",
+        err
+    );
+}
+
+#[test]
+fn test_error_empty_line_before() {
+    let err = eval_diagnostic("\n\nx").unwrap_err();
+    assert!(
+        err.contains("line 3"),
+        "Expected error on line 3, got:\n{}",
+        err
+    );
+}
+
+// --- Unicode / emoji stress tests ---
+
+#[test]
+fn test_unicode_emoji_rejected_as_identifier() {
+    let err = eval_diagnostic("let \u{1f389} = 1").unwrap_err();
+    assert!(err.contains("Unexpected character"), "got:\n{}", err);
+    assert!(err.contains("line 1:5"), "Expected col 5, got:\n{}", err);
+}
+
+#[test]
+fn test_unicode_emoji_in_string_type_error() {
+    let err =
+        eval_diagnostic("let x = \"\u{1f389}\u{1f525}\"\nx + 1").unwrap_err();
+    assert!(err.contains("line 2"), "Expected line 2, got:\n{}", err);
+    assert!(
+        err.contains(".to_str()"),
+        "Expected hint, got:\n{}",
+        err
+    );
+}
+
+#[test]
+fn test_unicode_accented_identifiers() {
+    let err =
+        eval_diagnostic("let caf\u{00e9} = 42\nlet na\u{00ef}ve = caf\u{00e9} + \"oops\"")
+            .unwrap_err();
+    assert!(err.contains("line 2"), "Expected line 2, got:\n{}", err);
+    assert!(err.contains(".to_str()"), "Expected hint, got:\n{}", err);
+}
+
+#[test]
+fn test_unicode_cjk_identifiers() {
+    let err =
+        eval_diagnostic("let \u{53d8}\u{91cf} = 10\nlet \u{7ed3}\u{679c} = \u{53d8}\u{91cf} + \"\u{6587}\u{5b57}\"")
+            .unwrap_err();
+    assert!(err.contains("line 2"), "Expected line 2, got:\n{}", err);
+    assert!(err.contains(".to_str()"), "Expected hint, got:\n{}", err);
+}
+
+#[test]
+fn test_unicode_greek_letters() {
+    let err = eval_diagnostic(
+        "let \u{03b1} = 1\nlet \u{03b2} = 2\nlet \u{03b3} = \u{03b1} + \u{03b2} + \"\u{1f4a5}\"",
+    )
+    .unwrap_err();
+    assert!(err.contains("line 3"), "Expected line 3, got:\n{}", err);
+    assert!(err.contains(".to_str()"), "Expected hint, got:\n{}", err);
+}
+
+#[test]
+fn test_unicode_did_you_mean_accented() {
+    let err =
+        eval_diagnostic("let donn\u{00e9}es = 100\nlet r\u{00e9}sultat = donnees + 1")
+            .unwrap_err();
+    assert!(
+        err.contains("did you mean"),
+        "Expected suggestion, got:\n{}",
+        err
+    );
+    assert!(
+        err.contains("donn\u{00e9}es"),
+        "Expected 'donn\u{00e9}es' in suggestion, got:\n{}",
+        err
+    );
+}
+
+#[test]
+fn test_unicode_japanese_string_type_error() {
+    let err = eval_diagnostic(
+        "let \u{65e5}\u{672c}\u{8a9e} = \"\u{3053}\u{3093}\u{306b}\u{3061}\u{306f}\"\n\u{65e5}\u{672c}\u{8a9e} + 42",
+    )
+    .unwrap_err();
+    assert!(err.contains("line 2"), "Expected line 2, got:\n{}", err);
+    assert!(err.contains(".to_str()"), "Expected hint, got:\n{}", err);
+}
+
+#[test]
+fn test_unicode_multichar_pointer_cjk() {
+    // CJK identifier is 2 chars, pointer should be ^^
+    let err = eval_diagnostic("\u{53d8}\u{91cf}").unwrap_err();
+    assert!(err.contains("^^"), "Expected 2-char pointer, got:\n{}", err);
+}
+
+#[test]
+fn test_unicode_accented_pointer_length() {
+    // 'café' is 4 chars (with precomposed é), pointer should be ^^^^
+    let err = eval_diagnostic("caf\u{00e9}").unwrap_err();
+    assert!(
+        err.contains("^^^^"),
+        "Expected 4-char pointer for 'caf\u{00e9}', got:\n{}",
+        err
+    );
 }

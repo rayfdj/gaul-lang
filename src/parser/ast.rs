@@ -1,4 +1,5 @@
 use crate::scanner::token::Token;
+use crate::span::Span;
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
@@ -9,7 +10,7 @@ pub struct Program {
 #[derive(Debug, Clone)]
 pub struct Declaration {
     pub kind: DeclarationKind,
-    pub line: usize,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -33,7 +34,7 @@ pub enum DeclarationKind {
 #[derive(Debug, Clone)]
 pub struct Expr {
     pub kind: ExprKind,
-    pub line: usize,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]

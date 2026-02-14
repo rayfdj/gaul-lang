@@ -8,11 +8,12 @@ use crate::parser::ast::ExprKind::{
 use crate::parser::ast::{Declaration, Expr};
 use crate::parser::ast::{ExprKind, Program};
 use crate::scanner::token::{Token, TokenType};
+use crate::span::Span;
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct ParseError {
-    pub line: usize,
+    pub span: Span,
     pub message: String,
 }
 
@@ -71,7 +72,7 @@ impl Parser {
             String::new()
         };
         ParseError {
-            line: current.line,
+            span: current.span,
             message: format!(
                 "Expected {}{}, got {:?}",
                 expected, context, current.token_type
@@ -167,7 +168,7 @@ impl Parser {
     }
 
     fn binding_decl(&mut self, is_mutable: bool) -> Result<Declaration, ParseError> {
-        let line = self.peek().line; // capture before consuming
+        let span = self.peek().span; // capture before consuming
         self.advance(); // consume let/var
         let name = self
             .consume(TokenType::Identifier, "identifier")?
@@ -185,11 +186,11 @@ impl Parser {
             Let { name, initializer }
         };
 
-        Ok(Declaration { kind, line })
+        Ok(Declaration { kind, span })
     }
 
     fn fn_decl(&mut self) -> Result<Declaration, ParseError> {
-        let line = self.peek().line;
+        let span = self.peek().span;
         self.advance(); // consume fn
 
         let name = self
@@ -221,12 +222,12 @@ impl Parser {
 
         Ok(Declaration {
             kind: Fn { name, params, body },
-            line,
+            span,
         })
     }
 
     fn expr_stmt(&mut self) -> Result<Declaration, ParseError> {
-        let line = self.peek().line;
+        let span = self.peek().span;
         let expr = self.expression()?;
         if !self.match_any(&[TokenType::Newline, TokenType::Eof]) {
             return Err(self.error_expected("newline or eof"));
@@ -234,7 +235,7 @@ impl Parser {
 
         Ok(Declaration {
             kind: ExprStmt(expr),
-            line,
+            span,
         })
     }
 
@@ -253,7 +254,7 @@ impl Parser {
     }
 
     fn if_expr(&mut self) -> Result<Expr, ParseError> {
-        let line = self.peek().line;
+        let span = self.peek().span;
         self.advance(); // consume if
 
         self.consume(TokenType::LeftParen, "(")?;
@@ -291,12 +292,12 @@ impl Parser {
                 then_branch,
                 else_branch,
             },
-            line,
+            span,
         })
     }
 
     fn while_expr(&mut self) -> Result<Expr, ParseError> {
-        let line = self.peek().line;
+        let span = self.peek().span;
         self.advance(); // consume while
         self.consume(TokenType::LeftParen, "(")?;
         let condition = Box::new(self.expression()?);
@@ -305,12 +306,12 @@ impl Parser {
 
         Ok(Expr {
             kind: While { condition, body },
-            line,
+            span,
         })
     }
 
     fn for_expr(&mut self) -> Result<Expr, ParseError> {
-        let line = self.peek().line;
+        let span = self.peek().span;
         self.advance(); // consume for
         self.consume(TokenType::LeftParen, "(")?;
         let variable = self
@@ -328,12 +329,12 @@ impl Parser {
                 iterable,
                 body,
             },
-            line,
+            span,
         })
     }
 
     fn return_expr(&mut self) -> Result<Expr, ParseError> {
-        let line = self.peek().line;
+        let span = self.peek().span;
         self.advance(); // consume return
         let returnee = if self.check(TokenType::Newline)
             || self.check(TokenType::RightBrace)
@@ -346,7 +347,7 @@ impl Parser {
 
         Ok(Expr {
             kind: Return(returnee),
-            line,
+            span,
         })
     }
 
@@ -354,7 +355,7 @@ impl Parser {
         let expr = self.logic_or()?;
 
         if self.check(TokenType::Assign) {
-            let line = self.peek().line;
+            let span = self.peek().span;
             self.advance();
             let value = Box::new(self.expression()?); // right-associative
 
@@ -364,10 +365,10 @@ impl Parser {
                         target: Box::new(expr),
                         value,
                     },
-                    line,
+                    span,
                 }),
                 _ => Err(ParseError {
-                    line,
+                    span,
                     message: "Invalid assignment target".to_string(),
                 }),
             }
@@ -391,7 +392,7 @@ impl Parser {
         // Loop as long as we see one of our operators
         while self.match_any(tokens) {
             let operator = self.previous().clone();
-            let line = operator.line;
+            let span = operator.span;
 
             // Skip newlines after the operator
             self.skip_newlines();
@@ -406,7 +407,7 @@ impl Parser {
                     operator,
                     right: Box::new(right),
                 },
-                line,
+                span,
             };
         }
 
@@ -448,7 +449,7 @@ impl Parser {
         let mut left = self.term()?;
 
         if self.check(TokenType::Range) {
-            let line = self.peek().line;
+            let span = self.peek().span;
             self.advance();
             let right = self.term()?;
             left = Expr {
@@ -456,7 +457,7 @@ impl Parser {
                     start: Box::new(left),
                     end: Box::new(right),
                 },
-                line,
+                span,
             };
         }
 
@@ -474,14 +475,14 @@ impl Parser {
     fn unary(&mut self) -> Result<Expr, ParseError> {
         if self.match_any(&[TokenType::Bang, TokenType::Minus]) {
             let operator = self.previous().clone();
-            let line = operator.line;
+            let span = operator.span;
             let operand = self.unary()?; // recursive for chained unary: --x
             Ok(Expr {
                 kind: Unary {
                     operator,
                     operand: Box::new(operand),
                 },
-                line,
+                span,
             })
         } else {
             self.call()
@@ -504,7 +505,7 @@ impl Parser {
                     }
                 }
 
-                let line = self.peek().line;
+                let span = self.peek().span;
                 self.consume(TokenType::RightParen, ")")?;
 
                 expr = Expr {
@@ -512,7 +513,7 @@ impl Parser {
                         callee: Box::new(expr),
                         arguments,
                     },
-                    line,
+                    span,
                 };
             } else if self.check(TokenType::Dot) {
                 self.advance();
@@ -520,14 +521,14 @@ impl Parser {
                     .consume(TokenType::Identifier, "property name")?
                     .lexeme
                     .clone();
-                let line = self.previous().line;
+                let span = self.previous().span;
 
                 expr = Expr {
                     kind: Get {
                         object: Box::new(expr),
                         name,
                     },
-                    line,
+                    span,
                 };
             } else {
                 break;
@@ -539,7 +540,7 @@ impl Parser {
 
     fn primary(&mut self) -> Result<Expr, ParseError> {
         let token = self.peek().clone();
-        let line = token.line;
+        let span = token.span;
 
         match &token.token_type {
             TokenType::Number(n) => {
@@ -547,7 +548,7 @@ impl Parser {
                 self.advance();
                 Ok(Expr {
                     kind: Num(value),
-                    line,
+                    span,
                 })
             }
             TokenType::String(s) => {
@@ -555,26 +556,26 @@ impl Parser {
                 self.advance();
                 Ok(Expr {
                     kind: Str(value),
-                    line,
+                    span,
                 })
             }
             TokenType::True => {
                 self.advance();
                 Ok(Expr {
                     kind: Bool(true),
-                    line,
+                    span,
                 })
             }
             TokenType::False => {
                 self.advance();
                 Ok(Expr {
                     kind: Bool(false),
-                    line,
+                    span,
                 })
             }
             TokenType::Null => {
                 self.advance();
-                Ok(Expr { kind: Null, line })
+                Ok(Expr { kind: Null, span })
             }
             TokenType::Identifier => {
                 let name = token.lexeme.clone();
@@ -584,7 +585,7 @@ impl Parser {
                         name,
                         resolved: None,
                     },
-                    line,
+                    span,
                 })
             }
             TokenType::LeftParen => {
@@ -599,14 +600,14 @@ impl Parser {
                 self.advance();
                 Ok(Expr {
                     kind: ExprKind::Break,
-                    line,
+                    span,
                 })
             }
             TokenType::Continue => {
                 self.advance();
                 Ok(Expr {
                     kind: ExprKind::Continue,
-                    line,
+                    span,
                 })
             }
             // Remember that lambda (or anonymous function) is NOT a declaration, and not a call
@@ -640,18 +641,18 @@ impl Parser {
                         params: arguments,
                         body,
                     },
-                    line,
+                    span,
                 })
             }
             _ => Err(ParseError {
-                line,
+                span,
                 message: format!("Unexpected token: {:?}", token.token_type),
             }),
         }
     }
 
     fn array(&mut self) -> Result<Expr, ParseError> {
-        let line = self.peek().line;
+        let span = self.peek().span;
         self.consume(TokenType::LeftBracket, "[")?;
 
         // [] → empty array
@@ -659,7 +660,7 @@ impl Parser {
             self.advance();
             return Ok(Expr {
                 kind: ExprKind::Array { elements: vec![] },
-                line,
+                span,
             });
         }
 
@@ -669,7 +670,7 @@ impl Parser {
             self.consume(TokenType::RightBracket, "]")?;
             return Ok(Expr {
                 kind: ExprKind::Map { pairs: vec![] },
-                line,
+                span,
             });
         }
 
@@ -696,7 +697,7 @@ impl Parser {
             self.consume(TokenType::RightBracket, "]")?;
             Ok(Expr {
                 kind: ExprKind::Map { pairs },
-                line,
+                span,
             })
         } else {
             // It's an array: [expr, ...]
@@ -713,7 +714,7 @@ impl Parser {
             self.consume(TokenType::RightBracket, "]")?;
             Ok(Expr {
                 kind: ExprKind::Array { elements },
-                line,
+                span,
             })
         }
     }
@@ -722,7 +723,7 @@ impl Parser {
         // Skip newlines to support Allman style (braces on next line)
         self.skip_newlines();
 
-        let line = self.peek().line;
+        let span = self.peek().span;
         self.consume(TokenType::LeftBrace, "{")?;
 
         let mut declarations = Vec::new();
@@ -750,14 +751,14 @@ impl Parser {
                     self.advance();
                     // skip any extra newlines
                     self.skip_newlines();
-                    let expr_line = expr.line;
+                    let expr_span = expr.span;
                     if self.check(TokenType::RightBrace) {
                         final_expr = Some(Box::new(expr));
                     } else {
                         // there's more stuff, so this was a statement
                         declarations.push(Declaration {
                             kind: ExprStmt(expr),
-                            line: expr_line,
+                            span: expr_span,
                         });
                     }
                 } else if self.check(TokenType::RightBrace) {
@@ -775,7 +776,7 @@ impl Parser {
                 declarations,
                 expr: final_expr,
             },
-            line,
+            span,
         })
     }
 

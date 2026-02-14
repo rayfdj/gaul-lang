@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Parser as ClapParser;
 use gaul_lang::config::DEFAULT_JAM_KARET_STR;
 use gaul_lang::config::{DEFAULT_JAM_KARET_NUM, RuntimeConfig};
+use gaul_lang::diagnostics;
 use gaul_lang::interpreter::Interpreter;
 use gaul_lang::interpreter::environment::Environment;
 use gaul_lang::interpreter::value::Value;
@@ -168,31 +169,63 @@ fn run(
 
     match scanner.scan_tokens() {
         Ok(tokens) => {
-            // tokens.iter().for_each(|token| println!("{:?}", token));
-
             let parser = Parser::new(tokens);
             match parser.parse() {
                 Ok(mut program) => {
                     match resolver.resolve(&mut program) {
                         Ok(()) => {}
                         Err(e) => {
-                            eprintln!("Resolver error: {:?}", e);
+                            let hint = diagnostics::suggest_hint(&e.message);
+                            eprint!(
+                                "{}",
+                                diagnostics::render(
+                                    source,
+                                    "resolve",
+                                    e.span,
+                                    &e.message,
+                                    hint.as_deref()
+                                )
+                            );
                             return Ok(());
                         }
                     }
 
-                    // println!("Parsed: {:?}", program);
                     match interpreter.interpret(program) {
                         Ok(Value::Null) => {}
-                        Ok(value) => println!("Value: {:?}", value),
-                        Err(e) => eprintln!("Runtime error: {:?}", e),
+                        Ok(value) => println!("{}", value),
+                        Err(e) => {
+                            let hint = diagnostics::suggest_hint(&e.message);
+                            eprint!(
+                                "{}",
+                                diagnostics::render(
+                                    source,
+                                    "runtime",
+                                    e.span,
+                                    &e.message,
+                                    hint.as_deref()
+                                )
+                            );
+                        }
                     }
                 }
-                Err(e) => eprintln!("Parse error: {:?}", e),
+                Err(errors) => {
+                    for e in &errors {
+                        eprint!(
+                            "{}",
+                            diagnostics::render(source, "parse", e.span, &e.message, None)
+                        );
+                    }
+                }
             }
         }
         Err(errors) => {
-            errors.iter().for_each(|e| eprintln!("{}", e));
+            for e in &errors {
+                let hint = diagnostics::suggest_hint(&e.message);
+                eprint!(
+                    "{}",
+                    diagnostics::render(source, "scan", e.span, &e.message, hint.as_deref())
+                );
+            }
         }
     }
 

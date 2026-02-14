@@ -1,6 +1,7 @@
 pub mod token;
 
 use crate::scanner::token::{Token, TokenType};
+use crate::span::Span;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10,13 +11,20 @@ enum Nesting {
     Bracket, // [...] - Suppresses newlines
 }
 
+#[derive(Debug, Clone)]
+pub struct ScanError {
+    pub span: Span,
+    pub message: String,
+}
+
 pub struct Scanner {
     source: Vec<char>,
     tokens: Vec<Token>,
-    errors: Vec<String>,
+    errors: Vec<ScanError>,
     start: usize,
     current: usize,
     line: usize,
+    line_start: usize,
     keywords: HashMap<String, TokenType>,
     nesting: Vec<Nesting>, // turn out we need to track nesting... not only depths
 }
@@ -30,6 +38,7 @@ impl Scanner {
             start: 0,
             current: 0,
             line: 1,
+            line_start: 0,
             keywords: keywords.clone(),
             nesting: Vec::new(),
         }
@@ -39,13 +48,18 @@ impl Scanner {
         self.current >= self.source.len()
     }
 
-    pub fn scan_tokens(mut self) -> Result<Vec<Token>, Vec<String>> {
+    pub fn scan_tokens(mut self) -> Result<Vec<Token>, Vec<ScanError>> {
         while !self.is_at_end() {
             self.start = self.current;
             self.scan_token();
         }
 
-        self.tokens.push(Token::new(TokenType::Eof, "", self.line));
+        let eof_span = Span {
+            line: self.line,
+            col: self.current - self.line_start + 1,
+            length: 0,
+        };
+        self.tokens.push(Token::new(TokenType::Eof, "", eof_span));
         if self.errors.is_empty() {
             Ok(self.tokens)
         } else {
@@ -64,8 +78,7 @@ impl Scanner {
                 if let Some(Nesting::Paren) = self.nesting.last() {
                     self.nesting.pop();
                 } else {
-                    self.errors
-                        .push(format!("Unmatched ')' at line {}", self.line));
+                    self.report_error("Unmatched ')'");
                 }
                 self.add_token(TokenType::RightParen)
             }
@@ -88,8 +101,7 @@ impl Scanner {
                 if let Some(Nesting::Bracket) = self.nesting.last() {
                     self.nesting.pop();
                 } else {
-                    self.errors
-                        .push(format!("Unmatched ']' at line {}", self.line));
+                    self.report_error("Unmatched ']'");
                 }
                 self.add_token(TokenType::RightBracket)
             }
@@ -171,6 +183,9 @@ impl Scanner {
 
                         if self.peek() == Some('\n') {
                             self.line += 1;
+                            self.advance();
+                            self.line_start = self.current;
+                            continue;
                         }
 
                         if self.peek() == Some('*') && self.peek_next() == Some('/') {
@@ -191,7 +206,15 @@ impl Scanner {
 
             // Newlines - significant in Gaul Lang!
             '\n' => {
+                // Capture span before updating line tracking (the \n belongs to the old line)
+                let newline_span = Span {
+                    line: self.line,
+                    col: self.start - self.line_start + 1,
+                    length: 1,
+                };
+
                 self.line += 1;
+                self.line_start = self.current;
 
                 // Only suppress if the TOP of the stack is Paren or Bracket.
                 // If top is Brace (or stack empty), we emit newline.
@@ -210,7 +233,11 @@ impl Scanner {
                     .map(|t| t.token_type != TokenType::Newline)
                     .unwrap_or(true);
                 if should_emit {
-                    self.add_token(TokenType::Newline);
+                    let text = self.source[self.start..self.current]
+                        .iter()
+                        .collect::<String>();
+                    self.tokens
+                        .push(Token::new(TokenType::Newline, text, newline_span));
                 }
             }
 
@@ -274,6 +301,9 @@ impl Scanner {
         while self.peek() != Some('"') && !self.is_at_end() {
             if self.peek() == Some('\n') {
                 self.line += 1;
+                self.advance();
+                self.line_start = self.current;
+                continue;
             }
             self.advance();
         }
@@ -474,11 +504,39 @@ impl Scanner {
         let text = self.source[self.start..self.current]
             .iter()
             .collect::<String>();
-        self.tokens.push(Token::new(t, text, self.line));
+        // For multi-line tokens (strings, comments), start may be on a previous line.
+        // In that case, col relative to line_start doesn't make sense, so use 1.
+        let col = if self.start >= self.line_start {
+            self.start - self.line_start + 1
+        } else {
+            1
+        };
+        let span = Span {
+            line: self.line,
+            col,
+            length: self.current - self.start,
+        };
+        self.tokens.push(Token::new(t, text, span));
     }
 
     fn report_error(&mut self, message: impl Into<String>) {
-        let error = format!("Line {}: {}", self.line, message.into());
-        self.errors.push(error);
+        let col = if self.start >= self.line_start {
+            self.start - self.line_start + 1
+        } else {
+            1
+        };
+        let span = Span {
+            line: self.line,
+            col,
+            length: if self.current > self.start {
+                self.current - self.start
+            } else {
+                1
+            },
+        };
+        self.errors.push(ScanError {
+            span,
+            message: message.into(),
+        });
     }
 }
