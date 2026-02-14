@@ -8,6 +8,7 @@ use crate::parser::ast::ExprKind::{
 use crate::parser::ast::{Declaration, Expr};
 use crate::parser::ast::{ExprKind, Program};
 use crate::scanner::token::{Token, TokenType};
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct ParseError {
@@ -216,7 +217,7 @@ impl Parser {
         }
         self.consume(TokenType::RightParen, ")")?;
 
-        let body = self.block()?;
+        let body = Rc::new(self.block()?);
 
         Ok(Declaration {
             kind: Fn { name, params, body },
@@ -632,12 +633,12 @@ impl Parser {
                 }
                 self.consume(TokenType::RightParen, ")")?;
 
-                let body = self.block()?;
+                let body = Rc::new(self.block()?);
 
                 Ok(Expr {
                     kind: ExprKind::Lambda {
                         params: arguments,
-                        body: Box::new(body),
+                        body,
                     },
                     line,
                 })

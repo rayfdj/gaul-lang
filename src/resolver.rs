@@ -1,6 +1,7 @@
 use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct ResolveError {
@@ -94,6 +95,7 @@ impl Resolver {
                 self.push_scope();
                 self.function_depth += 1;
 
+                let body = Rc::get_mut(body).expect("Rc<Expr> should be unique during resolution");
                 let result = (|| {
                     for param in params {
                         self.define(param, line)?;
@@ -139,20 +141,28 @@ impl Resolver {
                 Ok(())
             }
             ExprKind::Block { declarations, expr } => {
-                self.push_scope();
-
-                let result = (|| {
-                    for declaration in declarations {
-                        self.resolve_declaration(declaration)?;
-                    }
+                if declarations.is_empty() {
+                    // No declarations means no new scope at runtime, so don't push one here either
                     match expr {
                         Some(e) => self.resolve_expression(e),
                         None => Ok(()),
                     }
-                })();
+                } else {
+                    self.push_scope();
 
-                self.pop_scope();
-                result
+                    let result = (|| {
+                        for declaration in declarations {
+                            self.resolve_declaration(declaration)?;
+                        }
+                        match expr {
+                            Some(e) => self.resolve_expression(e),
+                            None => Ok(()),
+                        }
+                    })();
+
+                    self.pop_scope();
+                    result
+                }
             }
             ExprKind::Array { elements } => {
                 for element in elements {
@@ -250,6 +260,7 @@ impl Resolver {
                 self.push_scope();
                 self.function_depth += 1;
 
+                let body = Rc::get_mut(body).expect("Rc<Expr> should be unique during resolution");
                 let result = (|| {
                     for param in params {
                         self.define(param, line)?;

@@ -130,7 +130,7 @@ impl Interpreter {
                 let fun_rc = Rc::new(Function {
                     name: Rc::from(name.as_str()),
                     params: params.iter().map(|p| Rc::<str>::from(p.as_str())).collect(),
-                    body: Rc::new(body.clone()),
+                    body: Rc::clone(body),
                     closure,
                 });
 
@@ -326,24 +326,29 @@ impl Interpreter {
             }
 
             ExprKind::Block { declarations, expr } => {
-                // we used to push_scope here. Now instead, we're gonna create a new scope that has
-                // the current scope as its parent
-                let previous = self.env.clone();
-                self.env = Rc::new(Environment::new_with_enclosing(previous.clone()));
-
-                let result = (|| {
-                    for declaration in declarations {
-                        prop!(self.execute_declaration(declaration));
-                    }
+                if declarations.is_empty() {
+                    // No declarations means no new bindings, so skip the Environment allocation
                     match expr {
                         Some(e) => self.evaluate_expression(e.as_ref()),
                         None => Ok(Value::Null.into()),
                     }
-                })();
+                } else {
+                    let previous = self.env.clone();
+                    self.env = Rc::new(Environment::new_with_enclosing(previous.clone()));
 
-                // no more pop_scope. We just restore the head
-                self.env = previous;
-                result
+                    let result = (|| {
+                        for declaration in declarations {
+                            prop!(self.execute_declaration(declaration));
+                        }
+                        match expr {
+                            Some(e) => self.evaluate_expression(e.as_ref()),
+                            None => Ok(Value::Null.into()),
+                        }
+                    })();
+
+                    self.env = previous;
+                    result
+                }
             }
 
             ExprKind::Array { elements } => {
@@ -693,9 +698,9 @@ impl Interpreter {
 
                 // Create the anonymous function object
                 let function = Function {
-                    name: Rc::from("<lambda>"), // We give it a dummy name for debugging
+                    name: Rc::from("<lambda>"),
                     params: params.iter().map(|p| Rc::from(p.as_str())).collect(),
-                    body: Rc::from(body.as_ref().clone()), // Clone the AST node (Expr)
+                    body: Rc::clone(body),
                     closure,
                 };
 

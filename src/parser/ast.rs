@@ -1,4 +1,5 @@
 use crate::scanner::token::Token;
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct Program {
@@ -24,7 +25,7 @@ pub enum DeclarationKind {
     Fn {
         name: String,
         params: Vec<String>,
-        body: Expr,
+        body: Rc<Expr>,
     },
     ExprStmt(Expr),
 }
@@ -112,6 +113,6 @@ pub enum ExprKind {
     // Lambda
     Lambda {
         params: Vec<String>,
-        body: Box<Expr>,
+        body: Rc<Expr>,
     },
 }
