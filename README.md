@@ -99,6 +99,21 @@ for(I : 1..10) {
 }
 ```
 
+### Operators
+
+Gaul has the usual arithmetic (`+`, `-`, `*`, `/`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), and logical (`and`, `or`, `!`) operators, plus bitwise operators for integer-level manipulation:
+
+```gaul
+5 & 3      // 1 (AND)
+5 | 3      // 7 (OR)
+5 ^ 3      // 6 (XOR)
+1 << 3     // 8 (left shift)
+8 >> 2     // 2 (right shift)
+~5         // -6 (bitwise NOT)
+```
+
+Modulo is a method: `10.mod(3)` instead of `10 % 3`.
+
 ### Functional Programming
 
 Gaul supports first-class functions, closures, and the holy trinity of functional programming:

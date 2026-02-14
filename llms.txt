@@ -11,6 +11,8 @@ Gaul (from Indonesian "bahasa gaul" — slang language) challenges conventions: 
 - **Custom keywords**: Program in French, Mandarin, Indonesian via JSON mapping
 - **Jam Karet operator** (`~=`): Fuzzy equality for numbers (5% tolerance) and strings (Levenshtein distance)
 - **Boolean operators**: `and`, `or`, `!` (not `&&`, `||`) — MUST parenthesize and/or operands: `(A > 0) and (B < 10)`
+- **Bitwise operators**: `&`, `|`, `^`, `<<`, `>>`, `~` for integer-level bit manipulation
+- **Maps**: Key-value dictionaries with `["key": val]` syntax, `[:]` for empty
 - **No semicolons**: Newlines and expression boundaries are sufficient
 - **Multiline chains need parens**: `(Items.map(...).filter(...))` — wrap in `()` or parser won't see line continuations
 

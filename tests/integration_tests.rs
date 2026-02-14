@@ -1,9 +1,11 @@
+use std::collections::{HashMap, HashSet};
+
 use gaul_lang::config::RuntimeConfig;
 use gaul_lang::diagnostics;
 use gaul_lang::interpreter::Interpreter;
 use gaul_lang::interpreter::environment::Environment;
 use gaul_lang::interpreter::value::Value;
-use gaul_lang::keywords::load_keywords;
+use gaul_lang::keywords::{default_keywords, load_keywords};
 use gaul_lang::parser::Parser;
 use gaul_lang::resolver::Resolver;
 use gaul_lang::scanner::Scanner;
@@ -5340,4 +5342,109 @@ fn test_approx_equal_still_works() {
     // Make sure ~= (approximate equality) still works after adding bare ~
     assert_eq!(eval("1.0 ~= 1.0001").unwrap(), Value::Bool(true));
     assert_eq!(eval("1.0 ~= 2.0").unwrap(), Value::Bool(false));
+}
+
+// --- DRIFT VALIDATION TESTS ---
+
+#[test]
+fn test_keyword_jsons_match_default_keywords() {
+    let concept_words: HashSet<String> = default_keywords().keys().cloned().collect();
+
+    let json_dir = std::path::Path::new("src/samples/custom_keywords");
+    let json_files: Vec<_> = std::fs::read_dir(json_dir)
+        .expect("custom_keywords directory should exist")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
+        .collect();
+
+    assert!(
+        !json_files.is_empty(),
+        "should find at least one keyword JSON file"
+    );
+
+    for entry in &json_files {
+        let path = entry.path();
+        let contents = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+        let map: HashMap<String, String> = serde_json::from_str(&contents)
+            .unwrap_or_else(|e| panic!("failed to parse {}: {}", path.display(), e));
+
+        let json_keys: HashSet<String> = map.keys().cloned().collect();
+
+        let missing_from_json: Vec<_> = concept_words.difference(&json_keys).collect();
+        let extra_in_json: Vec<_> = json_keys.difference(&concept_words).collect();
+
+        assert!(
+            missing_from_json.is_empty(),
+            "{}: missing concept words: {:?}",
+            path.display(),
+            missing_from_json
+        );
+        assert!(
+            extra_in_json.is_empty(),
+            "{}: has extra keys not in default_keywords: {:?}",
+            path.display(),
+            extra_in_json
+        );
+    }
+}
+
+#[test]
+fn test_llms_full_documents_all_native_methods() {
+    let doc = std::fs::read_to_string("llms-full.txt").expect("llms-full.txt should exist");
+
+    // Every native method from native_method.rs should be mentioned somewhere in the doc.
+    // Grouped by receiver type for clearer error messages.
+    let string_methods = [
+        "len", "char_at", "substring", "split", "lines", "trim", "contains", "starts_with",
+        "ends_with", "to_num", "chars", "replace", "index_of", "to_upper", "to_lower", "repeat",
+    ];
+    let number_methods = [
+        "to_str", "abs", "floor", "ceil", "round", "pow", "sqrt", "mod", "floor_div",
+    ];
+    let bool_methods = ["to_str"];
+    let array_methods = [
+        "len", "get", "first", "last", "push", "pop", "set", "remove", "contains", "reverse",
+        "is_empty", "join", "sum", "min", "max", "sort", "slice", "index_of",
+    ];
+    let map_methods = [
+        "get", "get_or", "set", "has", "remove", "keys", "values", "entries", "len", "is_empty",
+    ];
+    let range_methods = ["to_array"];
+
+    let all_groups: &[(&str, &[&str])] = &[
+        ("String", &string_methods),
+        ("Number", &number_methods),
+        ("Bool", &bool_methods),
+        ("Array", &array_methods),
+        ("Map", &map_methods),
+        ("Range", &range_methods),
+    ];
+
+    let mut missing = Vec::new();
+    for (type_name, methods) in all_groups {
+        for method in *methods {
+            // Look for ".method_name(" or ".method_name)" in the doc
+            let pattern = format!(".{}(", method);
+            if !doc.contains(&pattern) {
+                missing.push(format!("{}.{}()", type_name, method));
+            }
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "llms-full.txt is missing documentation for these native methods: {:?}",
+        missing
+    );
+
+    // Also verify bitwise operators are documented
+    let bitwise_ops = ["& ", "| ", "^ ", "<< ", ">> ", "~"];
+    for op in bitwise_ops {
+        assert!(
+            doc.contains(op),
+            "llms-full.txt should document bitwise operator '{}'",
+            op.trim()
+        );
+    }
 }

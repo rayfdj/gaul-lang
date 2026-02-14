@@ -23,7 +23,7 @@ pub fn load_keywords(path: Option<&str>) -> Result<HashMap<String, TokenType>> {
     Ok(keywords)
 }
 
-fn default_keywords() -> HashMap<String, String> {
+pub fn default_keywords() -> HashMap<String, String> {
     // The default mapping, from "concept words" to "keywords"
     // For example, "function" is a concept, but by default the keyword we're using in Gaul is "fn"
     // If you're customizing the keywords, say you want to use "fungsi", then you'll map
