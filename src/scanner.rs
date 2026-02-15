@@ -321,14 +321,37 @@ impl Scanner {
     }
 
     fn handle_string(&mut self) {
+        let mut value = String::new();
+
         while self.peek() != Some('"') && !self.is_at_end() {
             if self.peek() == Some('\n') {
                 self.line += 1;
                 self.advance();
+                value.push('\n');
                 self.line_start = self.current;
                 continue;
             }
-            self.advance();
+            if self.peek() == Some('\\') {
+                self.advance(); // consume the backslash
+                if self.is_at_end() {
+                    self.report_error(String::from("Unterminated string"));
+                    return;
+                }
+                let escaped = self.advance();
+                match escaped {
+                    'n' => value.push('\n'),
+                    't' => value.push('\t'),
+                    'r' => value.push('\r'),
+                    '\\' => value.push('\\'),
+                    '"' => value.push('"'),
+                    _ => {
+                        self.report_error(format!("Invalid escape sequence: \\{}", escaped));
+                        return;
+                    }
+                }
+                continue;
+            }
+            value.push(self.advance());
         }
 
         if self.is_at_end() {
@@ -336,12 +359,7 @@ impl Scanner {
             return;
         }
 
-        self.advance();
-
-        // remember this is the string value, not the lexeme, so we're excluding the double quotation marks
-        let value = self.source[self.start + 1..self.current - 1]
-            .iter()
-            .collect::<String>();
+        self.advance(); // closing quote
         self.add_token(TokenType::String(value));
     }
 

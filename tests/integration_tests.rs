@@ -6252,3 +6252,427 @@ fn test_var_lambda_reassigned_after_self_ref() {
     "#;
     assert_eq!(eval(code).unwrap(), Value::Str("first second".into()));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// String escape sequences (#20)
+// ═══════════════════════════════════════════════════════════════════════
+
+// --- Basic escape sequences ---
+
+#[test]
+fn test_escape_newline() {
+    let result = eval(r#""\n""#);
+    assert_eq!(result.unwrap(), Value::Str("\n".into()));
+}
+
+#[test]
+fn test_escape_tab() {
+    let result = eval(r#""\t""#);
+    assert_eq!(result.unwrap(), Value::Str("\t".into()));
+}
+
+#[test]
+fn test_escape_carriage_return() {
+    let result = eval(r#""\r""#);
+    assert_eq!(result.unwrap(), Value::Str("\r".into()));
+}
+
+#[test]
+fn test_escape_backslash() {
+    let result = eval(r#""\\""#);
+    assert_eq!(result.unwrap(), Value::Str("\\".into()));
+}
+
+#[test]
+fn test_escape_double_quote() {
+    let result = eval(r#""\"""#);
+    assert_eq!(result.unwrap(), Value::Str("\"".into()));
+}
+
+// --- Multiple escapes in one string ---
+
+#[test]
+fn test_escape_multiple_newlines() {
+    let result = eval(r#""\n\n\n""#);
+    assert_eq!(result.unwrap(), Value::Str("\n\n\n".into()));
+}
+
+#[test]
+fn test_escape_mixed_escapes() {
+    let result = eval(r#""hello\tworld\n""#);
+    assert_eq!(result.unwrap(), Value::Str("hello\tworld\n".into()));
+}
+
+#[test]
+fn test_escape_all_types_together() {
+    let result = eval(r#""\t\r\n\\\"""#);
+    assert_eq!(result.unwrap(), Value::Str("\t\r\n\\\"".into()));
+}
+
+// --- Escapes mixed with regular text ---
+
+#[test]
+fn test_escape_at_start() {
+    let result = eval(r#""\nhello""#);
+    assert_eq!(result.unwrap(), Value::Str("\nhello".into()));
+}
+
+#[test]
+fn test_escape_at_end() {
+    let result = eval(r#""hello\n""#);
+    assert_eq!(result.unwrap(), Value::Str("hello\n".into()));
+}
+
+#[test]
+fn test_escape_in_middle() {
+    let result = eval(r#""hello\nworld""#);
+    assert_eq!(result.unwrap(), Value::Str("hello\nworld".into()));
+}
+
+#[test]
+fn test_escape_adjacent_to_each_other() {
+    let result = eval(r#""a\n\tb""#);
+    assert_eq!(result.unwrap(), Value::Str("a\n\tb".into()));
+}
+
+// --- Escaped double quotes ---
+
+#[test]
+fn test_escape_double_quote_only() {
+    // String containing just a double quote
+    let result = eval(r#""\"""#);
+    assert_eq!(result.unwrap(), Value::Str("\"".into()));
+}
+
+#[test]
+fn test_escape_double_quote_in_text() {
+    let result = eval(r#""she said \"hi\"""#);
+    assert_eq!(result.unwrap(), Value::Str("she said \"hi\"".into()));
+}
+
+#[test]
+fn test_escape_double_quote_at_start() {
+    let result = eval(r#""\"hello""#);
+    assert_eq!(result.unwrap(), Value::Str("\"hello".into()));
+}
+
+#[test]
+fn test_escape_double_quote_at_end() {
+    let result = eval(r#""hello\"""#);
+    assert_eq!(result.unwrap(), Value::Str("hello\"".into()));
+}
+
+#[test]
+fn test_escape_consecutive_double_quotes() {
+    let result = eval(r#""\"\"""#);
+    assert_eq!(result.unwrap(), Value::Str("\"\"".into()));
+}
+
+// --- Escaped backslashes ---
+
+#[test]
+fn test_escape_backslash_only() {
+    let result = eval(r#""\\""#);
+    assert_eq!(result.unwrap(), Value::Str("\\".into()));
+}
+
+#[test]
+fn test_escape_double_backslash() {
+    let result = eval(r#""\\\\""#);
+    assert_eq!(result.unwrap(), Value::Str("\\\\".into()));
+}
+
+#[test]
+fn test_escape_backslash_before_n() {
+    // \\n should produce a literal backslash followed by the letter n
+    let result = eval(r#""\\n""#);
+    assert_eq!(result.unwrap(), Value::Str("\\n".into()));
+}
+
+#[test]
+fn test_escape_backslash_before_t() {
+    // \\t should produce a literal backslash followed by the letter t
+    let result = eval(r#""\\t""#);
+    assert_eq!(result.unwrap(), Value::Str("\\t".into()));
+}
+
+#[test]
+fn test_escape_backslash_before_quote() {
+    // \\" should produce a literal backslash followed by a double quote
+    let result = eval(r#""\\\"ok""#);
+    assert_eq!(result.unwrap(), Value::Str("\\\"ok".into()));
+}
+
+// --- String length with escapes ---
+
+#[test]
+fn test_escape_newline_len() {
+    // \n is one character
+    let result = eval(r#""\n".len()"#);
+    assert_eq!(result.unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_escape_tab_len() {
+    let result = eval(r#""\t".len()"#);
+    assert_eq!(result.unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_escape_backslash_len() {
+    let result = eval(r#""\\".len()"#);
+    assert_eq!(result.unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_escape_quote_len() {
+    let result = eval(r#""\"".len()"#);
+    assert_eq!(result.unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_escape_mixed_len() {
+    // "a\nb" = 'a', '\n', 'b' = 3 chars
+    let result = eval(r#""a\nb".len()"#);
+    assert_eq!(result.unwrap(), Value::Num(3.0));
+}
+
+// --- String operations with escaped content ---
+
+#[test]
+fn test_escape_in_concatenation() {
+    let result = eval(r#""hello\n" + "world\n""#);
+    assert_eq!(result.unwrap(), Value::Str("hello\nworld\n".into()));
+}
+
+#[test]
+fn test_escape_in_comparison() {
+    let result = eval(r#""\n" == "\n""#);
+    assert_eq!(result.unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_escape_different_escapes_not_equal() {
+    let result = eval(r#""\n" == "\t""#);
+    assert_eq!(result.unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn test_escape_split_on_escaped_char() {
+    // Split on tab character
+    let result = eval(r#""a\tb\tc".split("\t")"#);
+    match result.unwrap() {
+        Value::Array(arr) => {
+            let arr = arr.borrow();
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0], Value::Str("a".into()));
+            assert_eq!(arr[1], Value::Str("b".into()));
+            assert_eq!(arr[2], Value::Str("c".into()));
+        }
+        other => panic!("Expected array, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_escape_contains_escaped_char() {
+    let result = eval(r#""hello\nworld".contains("\n")"#);
+    assert_eq!(result.unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_escape_replace_escaped_char() {
+    let result = eval(r#""a\tb".replace("\t", " ")"#);
+    assert_eq!(result.unwrap(), Value::Str("a b".into()));
+}
+
+#[test]
+fn test_escape_trim_with_escaped_whitespace() {
+    let result = eval(r#""\t hello \n".trim()"#);
+    assert_eq!(result.unwrap(), Value::Str("hello".into()));
+}
+
+// --- Escapes in variables and expressions ---
+
+#[test]
+fn test_escape_in_variable() {
+    let code = r#"
+    let s = "line1\nline2"
+    s
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("line1\nline2".into()));
+}
+
+#[test]
+fn test_escape_in_function_argument() {
+    let code = r#"
+    fn greet(name) { "Hello,\t" + name }
+    greet("World")
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("Hello,\tWorld".into()));
+}
+
+#[test]
+fn test_escape_in_array() {
+    let code = r#"
+    let arr = ["\n", "\t", "\\"]
+    arr.len()
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(3.0));
+}
+
+#[test]
+fn test_escape_in_array_values() {
+    let code = r#"
+    let arr = ["\n", "\t", "\\"]
+    arr.get(0) + arr.get(1) + arr.get(2)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("\n\t\\".into()));
+}
+
+// --- Edge cases: empty and minimal strings ---
+
+#[test]
+fn test_escape_empty_string_still_works() {
+    let result = eval(r#""""#);
+    assert_eq!(result.unwrap(), Value::Str("".into()));
+}
+
+#[test]
+fn test_escape_string_with_only_escapes() {
+    let result = eval(r#""\n\t\r""#);
+    assert_eq!(result.unwrap(), Value::Str("\n\t\r".into()));
+}
+
+// --- Invalid escape sequences ---
+
+#[test]
+fn test_escape_invalid_sequence_error() {
+    // \a is not a valid escape sequence, should produce an error
+    let result = eval(r#""\a""#);
+    assert!(result.is_err(), "Expected error for invalid escape \\a, got {:?}", result);
+}
+
+#[test]
+fn test_escape_invalid_sequence_z() {
+    let result = eval(r#""\z""#);
+    assert!(result.is_err(), "Expected error for invalid escape \\z, got {:?}", result);
+}
+
+#[test]
+fn test_escape_invalid_sequence_space() {
+    let result = eval(r#""\ ""#);
+    assert!(result.is_err(), "Expected error for invalid escape \\ , got {:?}", result);
+}
+
+#[test]
+fn test_escape_invalid_sequence_digit() {
+    let result = eval(r#""\1""#);
+    assert!(result.is_err(), "Expected error for invalid escape \\1, got {:?}", result);
+}
+
+// --- Backslash at end of string (unterminated escape) ---
+
+#[test]
+fn test_escape_trailing_backslash() {
+    // A lone backslash at the end of a string: "\" - the backslash escapes the
+    // closing quote, making this an unterminated string
+    let result = eval(r#""\""#);
+    assert!(result.is_err(), "Expected error for trailing backslash, got {:?}", result);
+}
+
+// --- Escapes in multiline strings ---
+
+#[test]
+fn test_escape_in_multiline_string() {
+    let code = "\"line1\\nstill line1\nactual line2\"";
+    let result = eval(code);
+    assert_eq!(result.unwrap(), Value::Str("line1\nstill line1\nactual line2".into()));
+}
+
+// --- Unicode content alongside escapes ---
+
+#[test]
+fn test_escape_with_unicode_content() {
+    // Test that regular escapes work next to unicode chars in source
+    let code = "\"caf\u{00e9}\\t100\"";
+    let result = eval(code);
+    assert_eq!(result.unwrap(), Value::Str("caf\u{00e9}\t100".into()));
+}
+
+#[test]
+fn test_escape_with_emoji_content() {
+    let code = "\"\\t\u{1f525}\\n\"";
+    let result = eval(code);
+    assert_eq!(result.unwrap(), Value::Str("\t\u{1f525}\n".into()));
+}
+
+#[test]
+fn test_escape_with_cjk_content() {
+    let code = "\"\u{4f60}\u{597d}\\n\u{4e16}\u{754c}\"";
+    let result = eval(code);
+    assert_eq!(result.unwrap(), Value::Str("\u{4f60}\u{597d}\n\u{4e16}\u{754c}".into()));
+}
+
+// --- Println/output with escapes ---
+
+#[test]
+fn test_escape_in_println_argument() {
+    // Just verify it doesn't crash; the actual newline goes to stdout
+    let code = r#"
+    let msg = "hello\tworld"
+    msg
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("hello\tworld".into()));
+}
+
+// --- Escape sequences interacting with string methods ---
+
+#[test]
+fn test_escape_char_at_on_escaped_char() {
+    let result = eval(r#""a\nb".char_at(1)"#);
+    assert_eq!(result.unwrap(), Value::Str("\n".into()));
+}
+
+#[test]
+fn test_escape_starts_with_escaped_char() {
+    let result = eval(r#""\thello".starts_with("\t")"#);
+    assert_eq!(result.unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_escape_ends_with_escaped_char() {
+    let result = eval(r#""hello\n".ends_with("\n")"#);
+    assert_eq!(result.unwrap(), Value::Bool(true));
+}
+
+// --- Stress / combined tests ---
+
+#[test]
+fn test_escape_many_escapes_in_long_string() {
+    let result = eval(r#""a\tb\tc\td\te\tf\tg""#);
+    assert_eq!(result.unwrap(), Value::Str("a\tb\tc\td\te\tf\tg".into()));
+}
+
+#[test]
+fn test_escape_alternating_text_and_escapes() {
+    let result = eval(r#""x\ny\nz""#);
+    assert_eq!(result.unwrap(), Value::Str("x\ny\nz".into()));
+}
+
+#[test]
+fn test_escape_building_json_like_string() {
+    let result = eval(r#""{\"key\": \"value\"}""#);
+    assert_eq!(result.unwrap(), Value::Str("{\"key\": \"value\"}".into()));
+}
+
+#[test]
+fn test_escape_windows_path() {
+    let result = eval(r#""C:\\Users\\test\\file.txt""#);
+    assert_eq!(result.unwrap(), Value::Str("C:\\Users\\test\\file.txt".into()));
+}
+
+#[test]
+fn test_escape_csv_line() {
+    let result = eval(r#""name\tage\theight\nAlice\t30\t165""#);
+    assert_eq!(result.unwrap(), Value::Str("name\tage\theight\nAlice\t30\t165".into()));
+}
