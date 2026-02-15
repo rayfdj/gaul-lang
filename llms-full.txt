@@ -8,8 +8,8 @@ When generating Gaul code, you MUST follow these conventions:
 
 1. **Use spaced identifiers** - Write `My Variable` not `myVariable` or `my_variable`
 2. **Capitalize words** - Convention is `Title Case With Spaces` for identifiers
-3. **Use `and`/`or` for logic, `!` for negation** - Never use `&&` or `||`, but DO use `!` for not
-4. **ALWAYS parenthesize `and`/`or` operands** - Write `(A > 0) and (B < 10)` NOT `A > 0 and B < 10` (the parser may treat `0 and B` as a spaced identifier!)
+3. **Use `&&`/`||` for logic, `!` for negation** - These are symbol operators, same as most languages
+4. **`&&`/`||` don't need parenthesization** - Unlike the old keyword operators, `A > 0 && B < 10` works fine. Parens still improve readability for complex expressions.
 5. **No semicolons** - Expressions are newline/punctuation-delimited
 6. **Expression-based if** - `if` returns a value: `let X = if(cond) { a } else { b }`
 7. **Parentheses required** - `if(cond)`, `while(cond)`, `for(x : collection)`
@@ -103,26 +103,19 @@ a ~= b     // Approximate equality
 "hello" ~= "world"  // false (too different)
 ```
 
-### Logical (Use `and`, `or`, `!`)
-
-**CRITICAL**: Due to spaced identifiers, you MUST parenthesize each operand around `and`/`or`.
-Otherwise `A > 0 and B` may parse `0 and B` as a single identifier!
+### Logical (`&&`, `||`, `!`)
 
 ```gaul
-true and false      // false
-true or false       // true
+true && false       // false
+true || false       // true
 !true               // false (use ! for negation, not "not")
 
-// CORRECT: Always parenthesize operands
-(A > 0) and (B < 10)
-(X == 1) or (Y == 2)
-(Foo) and (Bar)
-((A > 0) and (B < 10)) or (C == 0)
+// These just work - no special parenthesization needed
+A > 0 && B < 10
+X == 1 || Y == 2
+Foo && Bar
+(A > 0 && B < 10) || C == 0
 !(Is Valid)         // Negation with !
-
-// WRONG: Missing parentheses - WILL CAUSE PARSE ERRORS
-A > 0 and B < 10    // Parser sees "0 and B" as identifier!
-X == 1 or Y == 2    // Parser sees "1 or Y" as identifier!
 ```
 
 ### String Concatenation
@@ -488,7 +481,7 @@ fn calculate_tax_amount(gross_income, tax_rate, deductions) { ... }
 fn Get Cell(Grid, Row, Col) {
     let Rows = Grid.len()
     let Cols = Grid.get(0).len()
-    if((Row >= 0) and (Row < Rows) and (Col >= 0) and (Col < Cols)) {
+    if(Row >= 0 && Row < Rows && Col >= 0 && Col < Cols) {
         Grid.get(Row).get(Col)
     } else {
         null  // or default value
@@ -598,18 +591,9 @@ let Max Item = Items.reduce(Items.first(), fn(Best, Item) {
 ## Common Mistakes to Avoid
 
 ```gaul
-// WRONG: Using && ||
-if(a && b) { ... }              // Use: if((a) and (b))
-if(a || b) { ... }              // Use: if((a) or (b))
-// CORRECT: Using ! for negation
-if(!a) { ... }                  // This IS correct - Gaul uses ! for negation
-
-// WRONG: Missing parentheses around and/or operands (VERY COMMON MISTAKE!)
-if(A > 0 and B < 10) { }        // BROKEN: "0 and B" parsed as identifier
-if(X == 1 or Y == 2) { }        // BROKEN: "1 or Y" parsed as identifier
-// CORRECT:
-if((A > 0) and (B < 10)) { }    // Each operand is parenthesized
-if((X == 1) or (Y == 2)) { }    // Each operand is parenthesized
+// WRONG: Using single & | for logic (those are bitwise!)
+if(A & B) { }                   // & is bitwise AND, use: if(A && B)
+if(A | B) { }                   // | is bitwise OR, use: if(A || B)
 
 // WRONG: Using array subscript or map subscript
 let X = Arr[0]                  // Use: let X = Arr.get(0)
@@ -619,10 +603,6 @@ Map["key"] = 5                  // Use: Map.set("key", 5)
 
 // WRONG: Using % for modulo
 let R = 10 % 3                  // Use: let R = 10.mod(3)
-
-// WRONG: Using & for logical AND
-if(A & B) { }                   // & is bitwise, use: if((A) and (B))
-// & | ^ << >> ~ are bitwise operators for integer math
 
 // WRONG: Missing parentheses in control flow
 if Condition { }                // Use: if(Condition) { }
@@ -671,8 +651,6 @@ Example `français.json`:
   "for": "pour",
   "true": "vrai",
   "false": "faux",
-  "and": "et",
-  "or": "ou",
   "break": "arreter",
   "continue": "continuer"
 }
@@ -703,7 +681,7 @@ fn Parse Grid(Lines) {
 fn Get Cell(Grid, Row, Col) {
     let Rows = Grid.len()
     let Cols = Grid.get(0).len()
-    if((Row >= 0) and (Row < Rows) and (Col >= 0) and (Col < Cols)) {
+    if(Row >= 0 && Row < Rows && Col >= 0 && Col < Cols) {
         Grid.get(Row).get(Col)
     } else {
         "."
@@ -775,7 +753,7 @@ println(Solve(Input))
 | For each | `for(Item : Array) { }` |
 | For range | `for(I : 0..10) { }` |
 | While | `while(cond) { }` |
-| And/Or/Not | `(a) and (b)`, `(a) or (b)`, `!a` (MUST parenthesize and/or operands!) |
+| And/Or/Not | `a && b`, `a \|\| b`, `!a` |
 | Array access | `Arr.get(0)`, `Arr.set(0, val)` |
 | Map literal | `["key": val, ...]`, `[:]` (empty) |
 | Map access | `M.get("key")`, `M.set("key", val)` |

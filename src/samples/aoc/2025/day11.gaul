@@ -37,7 +37,7 @@ fn Parse Graph(Lines) {
     // Returns a map-like structure: [[source, [targets]], ...]
     (Lines
         .map(fn(L) { L.trim() })
-        .filter(fn(L) { (L.len() > 0) and (L.contains(":")) })
+        .filter(fn(L) { (L.len() > 0) && (L.contains(":")) })
         .map(fn(L) {
             let Parts = L.split(":")
             let Source = Parts.get(0).trim()
@@ -90,16 +90,16 @@ fn Count Paths Through Checkpoints(Graph, Start, End, Check1, Check2) {
 
     fn Count With State(Node, Visited1, Visited2) {
         // Update visited status
-        let V1 = (Visited1) or (Node == Check1)
-        let V2 = (Visited2) or (Node == Check2)
+        let V1 = (Visited1) || (Node == Check1)
+        let V2 = (Visited2) || (Node == Check2)
 
         if(Node == End) {
-            if((V1) and (V2)) { return 1 } else { return 0 }
+            if((V1) && (V2)) { return 1 } else { return 0 }
         }
 
         // Check memo
         for(M : Memo) {
-            if((M.get(0) == Node) and (M.get(1) == V1) and (M.get(2) == V2)) {
+            if((M.get(0) == Node) && (M.get(1) == V1) && (M.get(2) == V2)) {
                 return M.get(3)
             }
         }

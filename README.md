@@ -101,7 +101,7 @@ for(I : 1..10) {
 
 ### Operators
 
-Gaul has the usual arithmetic (`+`, `-`, `*`, `/`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), and logical (`and`, `or`, `!`) operators, plus bitwise operators for integer-level manipulation:
+Gaul has the usual arithmetic (`+`, `-`, `*`, `/`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), and logical (`&&`, `||`, `!`) operators, plus bitwise operators for integer-level manipulation:
 
 ```gaul
 5 & 3      // 1 (AND)
@@ -317,7 +317,7 @@ mantra Fizzbuzz Gaul(N) {
         biarin Bisa Bagi 3 = I.mod(3) == 0
         biarin Bisa Bagi 5 = I.mod(5) == 0
 
-        kalo((Bisa Bagi 3) dan (Bisa Bagi 5)) {
+        kalo((Bisa Bagi 3) && (Bisa Bagi 5)) {
             println("✨ Mantul!")
         } eh {
             kalo(Bisa Bagi 3) {
@@ -350,8 +350,6 @@ Indonesian keyword mapping:
   "else": "eh",
   "while": "selama",
   "for": "untuk",
-  "and": "dan",
-  "or": "ato",
   "break": "cabut",
   "continue": "gas"
 }

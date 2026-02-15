@@ -291,11 +291,11 @@ fn test_multiline_expressions_trailing_ops() {
                  20 *
                  3
 
-    let logic = true and
-                false or
+    let logic = true &&
+                false ||
                 true
 
-    if (result == 70 and
+    if (result == 70 &&
         logic == true) {
         1
     } else {
@@ -304,8 +304,8 @@ fn test_multiline_expressions_trailing_ops() {
     "#;
 
     // Math: 10 + (20 * 3) = 10 + 60 = 70
-    // Logic: (true and false) or true -> false or true -> true
-    // If (70 == 70 and true == true) -> Returns 1
+    // Logic: (true && false) || true -> false || true -> true
+    // If (70 == 70 && true == true) -> Returns 1
 
     let result = eval(code);
     match result {
@@ -382,11 +382,11 @@ fn test_binary_grouping_overrides_precedence() {
 
 #[test]
 fn test_logic_precedence() {
-    // 'and' is tighter than 'or'
-    // true or false and false
-    // Should be: true or (false and false) -> true or false -> true
-    // NOT: (true or false) and false -> true and false -> false
-    let code = "true or false and false";
+    // '&&' is tighter than '||'
+    // true || false && false
+    // Should be: true || (false && false) -> true || false -> true
+    // NOT: (true || false) && false -> true && false -> false
+    let code = "true || false && false";
     let result = eval(code);
     match result {
         Ok(Value::Bool(b)) => assert_eq!(b, true),
@@ -3101,7 +3101,7 @@ fn test_pipeline_preserves_closure_context() {
     let scale factor = 10
 
     ([1, 2, 3, 4, 5, 6]
-        .filter(fn(x) { return (x >= min val) and (x <= max val) })
+        .filter(fn(x) { return (x >= min val) && (x <= max val) })
         .map(fn(x) { return x * scale factor })
         .reduce(0, fn(acc, x) { return acc + x }))
     "#;
@@ -3667,7 +3667,7 @@ fn test_jam_karet_strings_in_filter() {
 #[test]
 fn test_jam_karet_precedence_with_and() {
     // ~= should have same precedence as ==
-    let code = "100 ~= 103 and 200 ~= 205";
+    let code = "100 ~= 103 && 200 ~= 205";
     let result = eval(code);
     match result {
         Ok(Value::Bool(b)) => assert!(b),
@@ -3677,7 +3677,7 @@ fn test_jam_karet_precedence_with_and() {
 
 #[test]
 fn test_jam_karet_precedence_with_or() {
-    let code = "100 ~= 150 or 200 ~= 205";
+    let code = "100 ~= 150 || 200 ~= 205";
     let result = eval(code);
     match result {
         Ok(Value::Bool(b)) => assert!(b), // first false, second true
@@ -3811,7 +3811,7 @@ fn test_jam_karet_grade_boundaries() {
     // Flexible grade boundaries
     let code = r#"
     fn is passing(score, threshold) {
-        return (score ~= threshold) or (score > threshold)
+        return (score ~= threshold) || (score > threshold)
     }
     let results = [
         is passing(58, 60),
@@ -5447,4 +5447,210 @@ fn test_llms_full_documents_all_native_methods() {
             op.trim()
         );
     }
+
+    // Verify logical operators are documented as && and ||
+    assert!(
+        doc.contains("&&"),
+        "llms-full.txt should document && operator"
+    );
+    assert!(
+        doc.contains("||"),
+        "llms-full.txt should document || operator"
+    );
+}
+
+// --- LOGICAL OPERATOR TESTS (&&, ||) ---
+
+#[test]
+fn test_logical_and_basic() {
+    assert_eq!(eval("true && true").unwrap(), Value::Bool(true));
+    assert_eq!(eval("true && false").unwrap(), Value::Bool(false));
+    assert_eq!(eval("false && true").unwrap(), Value::Bool(false));
+    assert_eq!(eval("false && false").unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn test_logical_or_basic() {
+    assert_eq!(eval("true || true").unwrap(), Value::Bool(true));
+    assert_eq!(eval("true || false").unwrap(), Value::Bool(true));
+    assert_eq!(eval("false || true").unwrap(), Value::Bool(true));
+    assert_eq!(eval("false || false").unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn test_logical_short_circuit_and() {
+    // false && <anything> should not evaluate the right side
+    // If it did evaluate, this would be a runtime error (calling a non-function)
+    let code = r#"
+    var count = 0
+    fn side effect() { count = count + 1 }
+    false && side effect()
+    count
+    "#;
+    // count should be 0 because the right side was never evaluated
+    assert_eq!(eval(code).unwrap(), Value::Num(0.0));
+}
+
+#[test]
+fn test_logical_short_circuit_or() {
+    // true || <anything> should not evaluate the right side
+    let code = r#"
+    var count = 0
+    fn side effect() { count = count + 1 }
+    true || side effect()
+    count
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(0.0));
+}
+
+#[test]
+fn test_logical_and_requires_bool() {
+    assert!(eval("1 && true").is_err());
+    assert!(eval(r#""hello" && true"#).is_err());
+    assert!(eval("null && true").is_err());
+}
+
+#[test]
+fn test_logical_or_requires_bool() {
+    assert!(eval("1 || false").is_err());
+    assert!(eval(r#""hello" || false"#).is_err());
+    assert!(eval("null || false").is_err());
+}
+
+#[test]
+fn test_logical_precedence_and_tighter_than_or() {
+    // true || false && false
+    // Should be: true || (false && false) -> true || false -> true
+    assert_eq!(eval("true || false && false").unwrap(), Value::Bool(true));
+    // false && true || true
+    // Should be: (false && true) || true -> false || true -> true
+    assert_eq!(eval("false && true || true").unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_logical_with_comparison() {
+    assert_eq!(eval("1 < 2 && 3 < 4").unwrap(), Value::Bool(true));
+    assert_eq!(eval("1 > 2 || 3 < 4").unwrap(), Value::Bool(true));
+    assert_eq!(eval("1 > 2 && 3 < 4").unwrap(), Value::Bool(false));
+    assert_eq!(eval("1 > 2 || 3 > 4").unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn test_logical_with_equality() {
+    assert_eq!(eval("1 == 1 && 2 == 2").unwrap(), Value::Bool(true));
+    assert_eq!(eval("1 == 2 || 2 == 2").unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_logical_with_negation() {
+    assert_eq!(eval("!false && true").unwrap(), Value::Bool(true));
+    assert_eq!(eval("!true || true").unwrap(), Value::Bool(true));
+    assert_eq!(eval("!true && !false").unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn test_logical_chained() {
+    assert_eq!(
+        eval("true && true && true").unwrap(),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        eval("true && true && false").unwrap(),
+        Value::Bool(false)
+    );
+    assert_eq!(
+        eval("false || false || true").unwrap(),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        eval("false || false || false").unwrap(),
+        Value::Bool(false)
+    );
+}
+
+#[test]
+fn test_logical_in_if_condition() {
+    let code = r#"if(true && true) { "yes" } else { "no" }"#;
+    assert_eq!(eval(code).unwrap(), Value::Str("yes".into()));
+
+    let code = r#"if(false || true) { "yes" } else { "no" }"#;
+    assert_eq!(eval(code).unwrap(), Value::Str("yes".into()));
+}
+
+#[test]
+fn test_logical_in_while_condition() {
+    let code = r#"
+    var x = 0
+    while(x < 5 && x >= 0) {
+        x = x + 1
+    }
+    x
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(5.0));
+}
+
+#[test]
+fn test_logical_no_parens_needed_with_spaced_identifiers() {
+    // This is the key benefit: no more mandatory parenthesization!
+    // Before (with 'and'/'or' keywords): A > 0 and B < 10 would break
+    // because "0 and B" could be parsed as an identifier.
+    // With &&/||, there's no ambiguity.
+    let code = r#"
+    let My Value = 5
+    let Other Value = 3
+    My Value > 0 && Other Value < 10
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_logical_mixed_with_bitwise() {
+    // Bitwise & and logical && should not be confused
+    assert_eq!(eval("5 & 3").unwrap(), Value::Num(1.0)); // bitwise AND
+    assert_eq!(eval("true && false").unwrap(), Value::Bool(false)); // logical AND
+    assert_eq!(eval("5 | 3").unwrap(), Value::Num(7.0)); // bitwise OR
+    assert_eq!(eval("true || false").unwrap(), Value::Bool(true)); // logical OR
+}
+
+#[test]
+fn test_and_or_are_now_valid_identifiers() {
+    // Since 'and' and 'or' are no longer keywords, they should be valid identifiers
+    let code = r#"
+    let and = 42
+    and
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(42.0));
+
+    let code = r#"
+    let or = 99
+    or
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(99.0));
+}
+
+#[test]
+fn test_spaced_identifiers_with_and_or_words() {
+    // 'and' and 'or' can now be PART of spaced identifiers
+    let code = r#"
+    let salt and pepper = "seasoning"
+    salt and pepper
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("seasoning".into()));
+
+    let code = r#"
+    let win or lose = "choice"
+    win or lose
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("choice".into()));
+}
+
+#[test]
+fn test_logical_multiline_trailing_op() {
+    // && and || at end of line should allow continuation
+    let code = r#"
+    (true &&
+     false ||
+     true)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(true));
 }

@@ -22,7 +22,7 @@ fn Parse Grid(Lines) {
 fn Get Cell(Grid, Row, Col) {
     let Rows = Grid.len()
     let Cols = Grid.get(0).len()
-    if((Row >= 0) and (Row < Rows) and (Col >= 0) and (Col < Cols)) {
+    if((Row >= 0) && (Row < Rows) && (Col >= 0) && (Col < Cols)) {
         Grid.get(Row).get(Col)
     } else {
         "."
@@ -58,7 +58,7 @@ fn Find Accessible Rolls(Grid) {
         .filter(fn(Pos) {
             let Row = Pos.get(0)
             let Col = Pos.get(1)
-            Get Cell(Grid, Row, Col) == "@" and Count Adjacent Rolls(Grid, Row, Col) < 4
+            Get Cell(Grid, Row, Col) == "@" && Count Adjacent Rolls(Grid, Row, Col) < 4
         }))
 }
 

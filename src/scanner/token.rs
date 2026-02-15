@@ -52,6 +52,10 @@ pub enum TokenType {
     LeftShift,  // <<
     RightShift, // >>
 
+    // Logical operators
+    And, // &&
+    Or,  // ||
+
     // Funky operators
     ApproxEqual, // ~= (jam karet!)
     Range,       // ..
@@ -62,7 +66,6 @@ pub enum TokenType {
     Number(f64),    // 123, 45.67
 
     // Keywords
-    And,      // and
     Class,    // class
     Else,     // else
     False,    // false
@@ -70,7 +73,6 @@ pub enum TokenType {
     For,      // for
     If,       // if
     Null,     // null
-    Or,       // or
     Return,   // return
     Super,    // super
     This,     // this

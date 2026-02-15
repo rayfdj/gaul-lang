@@ -32,7 +32,7 @@ fn Normalize Shape(Coords) {
             let A = Normalized.get(J)
             let B = Normalized.get(J + 1)
             let Swap = if(A.get(0) > B.get(0)) { true } else {
-                if((A.get(0) == B.get(0)) and (A.get(1) > B.get(1))) { true } else { false }
+                if((A.get(0) == B.get(0)) && (A.get(1) > B.get(1))) { true } else { false }
             }
             if(Swap) {
                 Normalized.set(J, B)
@@ -73,7 +73,7 @@ fn Generate Variants(Base Shape) {
                     (0..V.len()).to_array().reduce(false, fn(Diff, K) {
                         let P1 = V.get(K)
                         let P2 = U.get(K)
-                        if((P1.get(0) != P2.get(0)) or (P1.get(1) != P2.get(1))) { true } else { Diff }
+                        if((P1.get(0) != P2.get(0)) || (P1.get(1) != P2.get(1))) { true } else { Diff }
                     })
                 }
             }
@@ -104,7 +104,7 @@ fn Parse Input(Lines) {
     }
 
     for(Line : Clean Lines) {
-        if(Line.contains("x") and Line.contains(":")) {
+        if(Line.contains("x") && Line.contains(":")) {
             Save Shape(Current Id, Current Coords, Shapes)
             Current Id = -1
             Regions.push(Line)
@@ -151,7 +151,7 @@ fn Build Move Cache(W, H, All Variants) {
                         if(!Acc) { false } else {
                             let Nr = R + P.get(0)
                             let Nc = C + P.get(1)
-                            if((Nr < 0) or (Nr >= H) or (Nc < 0) or (Nc >= W)) { false } else { true }
+                            if((Nr < 0) || (Nr >= H) || (Nc < 0) || (Nc >= W)) { false } else { true }
                         }
                     })
 

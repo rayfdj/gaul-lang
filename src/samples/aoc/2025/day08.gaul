@@ -123,7 +123,7 @@ fn Quicksort Edges(Edges) {
 
     while(Stack.len() > 0) {
         let Range = Stack.get(Stack.len() - 1)
-        Stack = (Stack.filter(fn(X) { !((X.get(0) == Range.get(0)) and (X.get(1) == Range.get(1))) }))
+        Stack = (Stack.filter(fn(X) { !((X.get(0) == Range.get(0)) && (X.get(1) == Range.get(1))) }))
 
         // Manual pop - remove last element
         var New Stack = []

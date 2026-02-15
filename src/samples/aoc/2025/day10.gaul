@@ -16,7 +16,7 @@ fn Parse Machine(Line) {
 
     // Find target pattern between [ ]
     let Bracket Start = Trimmed.chars().reduce(-1, fn(Acc, C) {
-        if((Acc == -1) and (C == "[")) { 0 } else { Acc }
+        if((Acc == -1) && (C == "[")) { 0 } else { Acc }
     })
 
     var Bracket End = -1
@@ -25,7 +25,7 @@ fn Parse Machine(Line) {
         if(Chars.get(I) == "]") { Bracket End = I }
     }
 
-    if((Bracket Start == -1) or (Bracket End == -1)) { return null }
+    if((Bracket Start == -1) || (Bracket End == -1)) { return null }
 
     let Target Str = Trimmed.substring(Bracket Start + 1, Bracket End)
     let Target = Target Str.chars().map(fn(C) { if(C == "#") { 1 } else { 0 } })
@@ -38,7 +38,7 @@ fn Parse Machine(Line) {
         if(Chars.get(I) == "(") {
             // Find closing paren
             var J = I + 1
-            while((J < Trimmed.len()) and (Chars.get(J) != ")")) {
+            while((J < Trimmed.len()) && (Chars.get(J) != ")")) {
                 J = J + 1
             }
             let Button Str = Trimmed.substring(I + 1, J)
@@ -118,13 +118,13 @@ fn Solve Machine BFS(Target, Buttons, Num Lights) {
 fn Parse Joltage(Line) {
     let Chars = Line.chars()
     var I = 0
-    while((I < Chars.len()) and (Chars.get(I) != "{")) {
+    while((I < Chars.len()) && (Chars.get(I) != "{")) {
         I = I + 1
     }
     if(I >= Chars.len()) { return [] }
 
     var J = I + 1
-    while((J < Chars.len()) and (Chars.get(J) != "}")) {
+    while((J < Chars.len()) && (Chars.get(J) != "}")) {
         J = J + 1
     }
 

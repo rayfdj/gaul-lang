@@ -66,8 +66,8 @@ fn Point On Segment(X, Y, P1, P2) {
     let Y2 = P2.get(1)
 
     // Check if point is in bounding box
-    if((X < Min(X1, X2)) or (X > Max(X1, X2))) { return false }
-    if((Y < Min(Y1, Y2)) or (Y > Max(Y1, Y2))) { return false }
+    if((X < Min(X1, X2)) || (X > Max(X1, X2))) { return false }
+    if((Y < Min(Y1, Y2)) || (Y > Max(Y1, Y2))) { return false }
 
     // For axis-aligned segments (as per puzzle: same row or column)
     if(X1 == X2) { return X == X1 }
@@ -101,7 +101,7 @@ fn Point Inside Polygon(X, Y, Polygon) {
         let Yj = Polygon.get(J).get(1)
 
         // Check if ray from (X,Y) going right crosses edge
-        if(((Yi > Y) != (Yj > Y)) and
+        if(((Yi > Y) != (Yj > Y)) &&
            (X < (Xj - Xi) * (Y - Yi) / (Yj - Yi) + Xi)) {
             Inside = !Inside
         }
@@ -112,7 +112,7 @@ fn Point Inside Polygon(X, Y, Polygon) {
 
 // Check if point is red or green (on polygon or inside it)
 fn Is Red Or Green(X, Y, Polygon) {
-    (Point On Edge(X, Y, Polygon)) or (Point Inside Polygon(X, Y, Polygon))
+    (Point On Edge(X, Y, Polygon)) || (Point Inside Polygon(X, Y, Polygon))
 }
 
 // Check if all tiles in rectangle are red or green
@@ -146,11 +146,11 @@ fn Rectangle All Red Green(X1, Y1, X2, Y2, Polygon) {
             // Vertical edge at X = Ex1
             // Cuts into rectangle interior if Ex1 is strictly inside (MinX, MaxX)
             // and edge's Y range STRICTLY overlaps (MinY, MaxY)
-            if((Ex1 > Min X) and (Ex1 < Max X)) {
+            if((Ex1 > Min X) && (Ex1 < Max X)) {
                 let Edge Min Y = Min(Ey1, Ey2)
                 let Edge Max Y = Max(Ey1, Ey2)
                 // Strict interior overlap: edge enters between MinY and MaxY
-                if((Edge Max Y > Min Y) and (Edge Min Y < Max Y)) {
+                if((Edge Max Y > Min Y) && (Edge Min Y < Max Y)) {
                     return false
                 }
             }
@@ -158,11 +158,11 @@ fn Rectangle All Red Green(X1, Y1, X2, Y2, Polygon) {
             // Horizontal edge at Y = Ey1
             // Cuts into rectangle interior if Ey1 is strictly inside (MinY, MaxY)
             // and edge's X range STRICTLY overlaps (MinX, MaxX)
-            if((Ey1 > Min Y) and (Ey1 < Max Y)) {
+            if((Ey1 > Min Y) && (Ey1 < Max Y)) {
                 let Edge Min X = Min(Ex1, Ex2)
                 let Edge Max X = Max(Ex1, Ex2)
                 // Strict interior overlap
-                if((Edge Max X > Min X) and (Edge Min X < Max X)) {
+                if((Edge Max X > Min X) && (Edge Min X < Max X)) {
                     return false
                 }
             }

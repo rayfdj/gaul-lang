@@ -35,7 +35,7 @@ fn Parse Input(Input) {
 }
 
 fn Is In Range(Id, Range) {
-    (Id >= Range.get(0)) and (Id <= Range.get(1))
+    (Id >= Range.get(0)) && (Id <= Range.get(1))
 }
 
 fn Is Fresh(Id, Ranges) {
@@ -43,7 +43,7 @@ fn Is Fresh(Id, Ranges) {
 }
 
 fn Ranges Overlap(R1, R2) {
-    (R1.get(0) <= R2.get(1) + 1) and (R2.get(0) <= R1.get(1) + 1)
+    (R1.get(0) <= R2.get(1) + 1) && (R2.get(0) <= R1.get(1) + 1)
 }
 
 fn Merge Two Ranges(R1, R2) {

@@ -21,8 +21,8 @@ fn Count Dial At 0(Starting Point, Rotations, Max Dial, Include Dial Passing 0) 
         if(Include Dial Passing 0) {
             Bracket Movement = Unwrapped Ending Point.floor_div(Dial Size).abs()
             // Check if we started on 0 (going left) or ended on 0 (going right)
-            let Is Edge Case = (Sign == -1 and Current Point == 0) or
-                               (Sign == 1 and Ending Point == 0)
+            let Is Edge Case = (Sign == -1 && Current Point == 0) ||
+                               (Sign == 1 && Ending Point == 0)
 
             // Subtract 1 if it's an edge case, otherwise subtract 0
             let Adjustment = if(Is Edge Case) { 1 } else { 0 }

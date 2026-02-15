@@ -42,9 +42,9 @@ fn Find Start(Grid) {
 }
 
 fn Get Cell(Grid, Row, Col) {
-    if((Row < 0) or (Row >= Grid.len())) { return "X" }
+    if((Row < 0) || (Row >= Grid.len())) { return "X" }
     let Line = Grid.get(Row)
-    if((Col < 0) or (Col >= Line.len())) { return "X" }
+    if((Col < 0) || (Col >= Line.len())) { return "X" }
     Line.char_at(Col)
 }
 

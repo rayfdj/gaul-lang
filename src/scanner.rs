@@ -120,9 +120,23 @@ impl Scanner {
                 }
             }
 
-            // Bitwise operators
-            '&' => self.add_token(TokenType::Ampersand),
-            '|' => self.add_token(TokenType::Pipe),
+            // Bitwise and logical operators
+            '&' => {
+                let token_type = if self.match_char('&') {
+                    TokenType::And
+                } else {
+                    TokenType::Ampersand
+                };
+                self.add_token(token_type);
+            }
+            '|' => {
+                let token_type = if self.match_char('|') {
+                    TokenType::Or
+                } else {
+                    TokenType::Pipe
+                };
+                self.add_token(token_type);
+            }
             '^' => self.add_token(TokenType::Caret),
 
             // Tilde: ~= is approximate equality, bare ~ is bitwise NOT

@@ -29,8 +29,6 @@ pub fn default_keywords() -> HashMap<String, String> {
     // If you're customizing the keywords, say you want to use "fungsi", then you'll map
     // "function" to "fungsi" in the keywords file.
     HashMap::from([
-        ("and".into(), "and".into()),
-        ("or".into(), "or".into()),
         ("if".into(), "if".into()),
         ("else".into(), "else".into()),
         ("while".into(), "while".into()),
@@ -54,8 +52,6 @@ fn str_to_token_type(s: &str) -> Option<TokenType> {
     // this is where the concept words (not the actual keywords, those are mapped above) are mapped
     // to Token Type.
     match s {
-        "and" => Some(TokenType::And),
-        "or" => Some(TokenType::Or),
         "if" => Some(TokenType::If),
         "else" => Some(TokenType::Else),
         "while" => Some(TokenType::While),

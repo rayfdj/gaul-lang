@@ -18,7 +18,7 @@ fn Parse And Solve Human Style(Input) {
     let Num Lines = Lines.len()
     let Op Line = Lines.get(Num Lines - 1)
 
-    let Ops = (Op Line.trim().chars().filter(fn(C) { C == "*" or C == "+" }))
+    let Ops = (Op Line.trim().chars().filter(fn(C) { C == "*" || C == "+" }))
 
     var All Numbers = []
     for(i : 0..(Num Lines - 1)) {
@@ -58,7 +58,7 @@ fn Parse And Solve Cephalopod Style(Input) {
 
     // 1. Parse Ops: The problem says "Right-to-Left", so we reverse the operators
     // to match the order we will process the blocks (Rightmost block first).
-    let Ops = (Op Line.trim().chars().filter(fn(C) { C == "*" or C == "+" }).reverse())
+    let Ops = (Op Line.trim().chars().filter(fn(C) { C == "*" || C == "+" }).reverse())
 
     // 2. Build a Grid (List of Lists) for the numbers (excluding Op line)
     let Num Rows = Num Lines - 1
