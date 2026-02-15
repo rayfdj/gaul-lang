@@ -528,6 +528,7 @@ impl Parser {
                     kind: Call {
                         callee: Box::new(expr),
                         arguments,
+                        is_tail_call: false,
                     },
                     span,
                 };

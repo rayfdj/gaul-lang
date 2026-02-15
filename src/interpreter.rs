@@ -25,6 +25,7 @@ enum ControlFlow {
     Break,
     Continue,
     Return(Value),
+    TailCall { callee: Value, args: Args },
 }
 
 // prevent having to wrap all those values with ControlFlow::Value! Annoying. With this, it's
@@ -98,6 +99,7 @@ impl Interpreter {
                     });
                 }
                 ControlFlow::Return(v) => return Ok(v),
+                ControlFlow::TailCall { .. } => unreachable!("TailCall escaped past call_function"),
             }
         }
         Ok(last)
@@ -430,6 +432,7 @@ impl Interpreter {
                             ControlFlow::Continue => continue,
                             ControlFlow::Break => break,
                             ControlFlow::Return(v) => return Ok(ControlFlow::Return(v)),
+                            cf @ ControlFlow::TailCall { .. } => return Ok(cf),
                         },
                         Value::Bool(false) => break,
                         _ => {
@@ -492,6 +495,7 @@ impl Interpreter {
                                     ControlFlow::Continue => continue,
                                     ControlFlow::Break => break,
                                     ControlFlow::Return(v) => return Ok(ControlFlow::Return(v)),
+                                    cf @ ControlFlow::TailCall { .. } => return Ok(cf),
                                 }
                             }
                             Ok(Value::Null.into())
@@ -512,6 +516,7 @@ impl Interpreter {
                                     ControlFlow::Continue => continue,
                                     ControlFlow::Break => break,
                                     ControlFlow::Return(v) => return Ok(ControlFlow::Return(v)),
+                                    cf @ ControlFlow::TailCall { .. } => return Ok(cf),
                                 }
                             }
                             Ok(Value::Null.into())
@@ -535,6 +540,7 @@ impl Interpreter {
                                     ControlFlow::Continue => continue,
                                     ControlFlow::Break => break,
                                     ControlFlow::Return(v) => return Ok(ControlFlow::Return(v)),
+                                    cf @ ControlFlow::TailCall { .. } => return Ok(cf),
                                 }
                             }
                             Ok(Value::Null.into())
@@ -552,7 +558,11 @@ impl Interpreter {
                 }
             }
 
-            ExprKind::Call { callee, arguments } => {
+            ExprKind::Call {
+                callee,
+                arguments,
+                is_tail_call,
+            } => {
                 let mut argument_values = Args::with_capacity(arguments.len());
                 for arg in arguments {
                     argument_values.push(prop_val!(self.evaluate_expression(arg)));
@@ -694,6 +704,14 @@ impl Interpreter {
                 }
 
                 let callee_value = prop_val!(self.evaluate_expression(callee));
+
+                if *is_tail_call {
+                    return Ok(ControlFlow::TailCall {
+                        callee: callee_value,
+                        args: argument_values,
+                    });
+                }
+
                 // refactored this whole thing out to call_function
                 self.call_function(&callee_value, argument_values, expression.span)
                     .map(|v| v.into())
@@ -743,56 +761,69 @@ impl Interpreter {
         args: Args,
         span: Span,
     ) -> Result<Value, RuntimeError> {
-        match callee {
-            Value::Fn(fun) => {
-                if fun.params.len() != args.len() {
+        let mut current_callee = callee.clone();
+        let mut current_args = args;
+
+        loop {
+            match &current_callee {
+                Value::Fn(fun) => {
+                    if fun.params.len() != current_args.len() {
+                        return Err(RuntimeError {
+                            span,
+                            message: format!(
+                                "function '{}' expects {} arguments, but got {}",
+                                fun.name,
+                                fun.params.len(),
+                                current_args.len()
+                            ),
+                        });
+                    }
+
+                    // Try to reuse a recycled environment to avoid heap allocation
+                    let function_env = if let Some(mut recycled) = self.env_pool.pop() {
+                        Rc::get_mut(&mut recycled)
+                            .expect("recycled env has refcount > 1")
+                            .reinit(fun.closure.clone(), current_args);
+                        recycled
+                    } else {
+                        Rc::new(Environment::new_for_call(fun.closure.clone(), current_args))
+                    };
+
+                    let previous = std::mem::replace(&mut self.env, function_env);
+                    let result = self.evaluate_expression(fun.body.as_ref());
+                    let used_env = std::mem::replace(&mut self.env, previous);
+
+                    // Recycle if nobody else holds a reference (no closure captured it)
+                    if Rc::strong_count(&used_env) == 1 && self.env_pool.len() < 8 {
+                        self.env_pool.push(used_env);
+                    }
+
+                    match result? {
+                        ControlFlow::TailCall { callee, args } => {
+                            current_callee = callee;
+                            current_args = args;
+                            continue;
+                        }
+                        ControlFlow::Return(v) | ControlFlow::Value(v) => return Ok(v),
+                        ControlFlow::Break | ControlFlow::Continue => {
+                            return Err(RuntimeError {
+                                span,
+                                message: "break/continue outside loop".into(),
+                            });
+                        }
+                    }
+                }
+                Value::NativeFn(native_fun) => {
+                    return (native_fun.func)(&current_args)
+                        .map_err(|msg| RuntimeError { span, message: msg });
+                }
+                _ => {
                     return Err(RuntimeError {
                         span,
-                        message: format!(
-                            "function '{}' expects {} arguments, but got {}",
-                            fun.name,
-                            fun.params.len(),
-                            args.len()
-                        ),
+                        message: format!("'{}' is not callable", current_callee),
                     });
                 }
-
-                // Try to reuse a recycled environment to avoid heap allocation
-                let function_env = if let Some(mut recycled) = self.env_pool.pop() {
-                    // We only push envs with strong_count==1, so get_mut will succeed
-                    Rc::get_mut(&mut recycled)
-                        .expect("recycled env has refcount > 1")
-                        .reinit(fun.closure.clone(), args);
-                    recycled
-                } else {
-                    Rc::new(Environment::new_for_call(fun.closure.clone(), args))
-                };
-
-                let previous = std::mem::replace(&mut self.env, function_env);
-                let result = self.evaluate_expression(fun.body.as_ref());
-                let used_env = std::mem::replace(&mut self.env, previous);
-
-                // Recycle if nobody else holds a reference (no closure captured it)
-                if Rc::strong_count(&used_env) == 1 && self.env_pool.len() < 8 {
-                    self.env_pool.push(used_env);
-                }
-
-                match result? {
-                    ControlFlow::Return(v) => Ok(v),
-                    ControlFlow::Break | ControlFlow::Continue => Err(RuntimeError {
-                        span,
-                        message: "break/continue outside loop".into(),
-                    }),
-                    ControlFlow::Value(v) => Ok(v),
-                }
             }
-            Value::NativeFn(native_fun) => {
-                (native_fun.func)(&args).map_err(|msg| RuntimeError { span, message: msg })
-            }
-            _ => Err(RuntimeError {
-                span,
-                message: format!("'{}' is not callable", callee),
-            }),
         }
     }
 }

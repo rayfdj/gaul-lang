@@ -118,7 +118,7 @@ impl Resolver {
                     for param in params {
                         self.define(param, span)?;
                     }
-                    self.resolve_expression(body)
+                    self.resolve_tail_expression(body)
                 })();
 
                 self.function_depth -= 1;
@@ -231,7 +231,11 @@ impl Resolver {
                 self.pop_scope();
                 result
             }
-            ExprKind::Call { callee, arguments } => {
+            ExprKind::Call {
+                callee,
+                arguments,
+                ..
+            } => {
                 self.resolve_expression(callee)?;
                 for arg in arguments {
                     self.resolve_expression(arg)?;
@@ -284,7 +288,7 @@ impl Resolver {
                     for param in params {
                         self.define(param, span)?;
                     }
-                    self.resolve_expression(body)
+                    self.resolve_tail_expression(body)
                 })();
 
                 self.function_depth -= 1;
@@ -299,6 +303,74 @@ impl Resolver {
                 Ok(())
             }
             ExprKind::Num(_) | ExprKind::Str(_) | ExprKind::Bool(_) | ExprKind::Null => Ok(()),
+        }
+    }
+
+    fn resolve_tail_expression(&mut self, expression: &mut Expr) -> Result<(), ResolveError> {
+        match &mut expression.kind {
+            ExprKind::Call {
+                callee,
+                arguments,
+                is_tail_call,
+            } => {
+                // Don't mark method calls (Get callee) as tail calls
+                if !matches!(callee.kind, ExprKind::Get { .. }) {
+                    *is_tail_call = true;
+                }
+                self.resolve_expression(callee)?;
+                for arg in arguments {
+                    self.resolve_expression(arg)?;
+                }
+                Ok(())
+            }
+            ExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.resolve_expression(condition)?;
+                self.resolve_tail_expression(then_branch)?;
+                if let Some(else_branch) = else_branch {
+                    self.resolve_tail_expression(else_branch)?;
+                }
+                Ok(())
+            }
+            ExprKind::Block { declarations, expr } => {
+                if declarations.is_empty() {
+                    match expr {
+                        Some(e) => self.resolve_tail_expression(e),
+                        None => Ok(()),
+                    }
+                } else {
+                    self.push_scope();
+                    let result = (|| {
+                        for declaration in declarations {
+                            self.resolve_declaration(declaration)?;
+                        }
+                        match expr {
+                            Some(e) => self.resolve_tail_expression(e),
+                            None => Ok(()),
+                        }
+                    })();
+                    self.pop_scope();
+                    result
+                }
+            }
+            ExprKind::Return(value) => {
+                if self.function_depth == 0 {
+                    Err(ResolveError {
+                        span: expression.span,
+                        message: "'return' outside of function".into(),
+                    })
+                } else {
+                    if let Some(expr) = value {
+                        self.resolve_tail_expression(expr)?;
+                    }
+                    Ok(())
+                }
+            }
+            // Everything else: delegate to normal resolution
+            _ => self.resolve_expression(expression),
         }
     }
 }

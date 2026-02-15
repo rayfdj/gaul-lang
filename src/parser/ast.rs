@@ -79,6 +79,7 @@ pub enum ExprKind {
     Call {
         callee: Box<Expr>,
         arguments: Vec<Expr>,
+        is_tail_call: bool,
     },
     Get {
         object: Box<Expr>,

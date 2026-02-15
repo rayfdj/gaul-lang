@@ -5654,3 +5654,383 @@ fn test_logical_multiline_trailing_op() {
     "#;
     assert_eq!(eval(code).unwrap(), Value::Bool(true));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Tail Call Optimization (TCO) tests
+// ═══════════════════════════════════════════════════════════════════════
+
+// --- TCO should eliminate stack growth ---
+
+#[test]
+fn test_tco_simple_countdown() {
+    // The most basic tail call: last thing the function does is call itself
+    let code = r#"
+    fn countdown(n) {
+        if (n <= 0) { "done" }
+        else { countdown(n - 1) }
+    }
+    countdown(100000)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("done".into()));
+}
+
+#[test]
+fn test_tco_factorial_accumulator() {
+    // Classic accumulator pattern
+    let code = r#"
+    fn factorial(n, acc) {
+        if (n <= 1) { acc }
+        else { factorial(n - 1, n * acc) }
+    }
+    factorial(20, 1)
+    "#;
+    match eval(code) {
+        Ok(Value::Num(n)) => assert_eq!(n, 2432902008176640000.0),
+        other => panic!("Expected factorial result, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_tco_deep_recursion_does_not_overflow() {
+    // This would blow the stack (~2500 frame limit) without TCO
+    let code = r#"
+    fn count up(n, target) {
+        if (n >= target) { n }
+        else { count up(n + 1, target) }
+    }
+    count up(0, 100000)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(100000.0));
+}
+
+#[test]
+fn test_tco_sum_accumulator() {
+    // Sum 1..N with accumulator, deep enough to need TCO
+    let code = r#"
+    fn sum(n, acc) {
+        if (n <= 0) { acc }
+        else { sum(n - 1, acc + n) }
+    }
+    sum(50000, 0)
+    "#;
+    // sum(50000) = 50000 * 50001 / 2 = 1250025000
+    assert_eq!(eval(code).unwrap(), Value::Num(1250025000.0));
+}
+
+#[test]
+fn test_tco_through_if_then_branch() {
+    // Tail call is in the then branch of an if
+    let code = r#"
+    fn loop it(n) {
+        if (n <= 0) { "end" }
+        else { loop it(n - 1) }
+    }
+    loop it(50000)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("end".into()));
+}
+
+#[test]
+fn test_tco_through_if_else_branch() {
+    // Tail call is in the else branch
+    let code = r#"
+    fn go(n) {
+        if (n > 0) { go(n - 1) }
+        else { "reached zero" }
+    }
+    go(50000)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("reached zero".into()));
+}
+
+#[test]
+fn test_tco_through_nested_if() {
+    // Tail call through nested if/else
+    let code = r#"
+    fn classify(n) {
+        if (n <= 0) { "done" }
+        else {
+            if (n > 100) { classify(n - 2) }
+            else { classify(n - 1) }
+        }
+    }
+    classify(50000)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("done".into()));
+}
+
+#[test]
+fn test_tco_through_block() {
+    // Tail call as the final expression of a block
+    let code = r#"
+    fn go(n) {
+        if (n <= 0) { "done" }
+        else {
+            let next = n - 1
+            go(next)
+        }
+    }
+    go(50000)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("done".into()));
+}
+
+#[test]
+fn test_tco_return_statement() {
+    // Tail call via explicit return
+    let code = r#"
+    fn go(n) {
+        if (n <= 0) { return "done" }
+        return go(n - 1)
+    }
+    go(50000)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("done".into()));
+}
+
+#[test]
+fn test_tco_lambda_tail_call() {
+    // Lambda body has a tail call
+    let code = r#"
+    var go = null
+    go = fn(n) {
+        if (n <= 0) { "lambda done" }
+        else { go(n - 1) }
+    }
+    go(50000)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("lambda done".into()));
+}
+
+#[test]
+fn test_tco_tail_call_to_different_function() {
+    // Tail call to a different function (not self-recursion)
+    let code = r#"
+    fn finish(n) { n }
+    fn go(n) {
+        if (n <= 0) { finish(42) }
+        else { go(n - 1) }
+    }
+    go(50000)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(42.0));
+}
+
+#[test]
+fn test_tco_tail_call_to_helper() {
+    // Tail call from one function to another (not self-recursion)
+    // The helper does the heavy recursion, caller just delegates
+    let code = r#"
+    fn helper(n, acc) {
+        if (n <= 0) { acc }
+        else { helper(n - 1, acc + n) }
+    }
+    fn compute(n) {
+        helper(n, 0)
+    }
+    compute(50000)
+    "#;
+    // sum(50000) = 1250025000
+    assert_eq!(eval(code).unwrap(), Value::Num(1250025000.0));
+}
+
+#[test]
+fn test_tco_zero_arguments() {
+    // Tail call with no arguments (just recurse a counter via closure)
+    let code = r#"
+    var counter = 50000
+    fn go() {
+        if (counter <= 0) { "done" }
+        else {
+            counter = counter - 1
+            go()
+        }
+    }
+    go()
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("done".into()));
+}
+
+#[test]
+fn test_tco_many_arguments() {
+    // Tail call with multiple arguments
+    let code = r#"
+    fn go(a, b, c, n) {
+        if (n <= 0) { a + b + c }
+        else { go(a + 1, b + 1, c + 1, n - 1) }
+    }
+    go(0, 0, 0, 50000)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(150000.0));
+}
+
+// --- TCO must NOT be applied in these cases ---
+
+#[test]
+fn test_tco_not_applied_binary_expression() {
+    // fib: calls are NOT in tail position because of the +
+    // This should still work correctly (just without TCO)
+    let code = r#"
+    fn fib(n) {
+        if (n < 2) { n }
+        else { fib(n - 1) + fib(n - 2) }
+    }
+    fib(10)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(55.0));
+}
+
+#[test]
+fn test_tco_not_applied_unary_expression() {
+    // Call result used in unary: not a tail call
+    let code = r#"
+    fn is zero(n) {
+        if (n == 0) { true }
+        else { false }
+    }
+    !is zero(5)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_tco_not_applied_call_as_argument() {
+    // Call result passed as argument to another call: not a tail call
+    let code = r#"
+    fn double(n) { n * 2 }
+    fn add one(n) { n + 1 }
+    add one(double(5))
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(11.0));
+}
+
+#[test]
+fn test_tco_not_applied_non_final_in_block() {
+    // Call is NOT the last expression in the block
+    let code = r#"
+    fn go(n) {
+        if (n <= 0) { 0 }
+        else {
+            go(n - 1)
+            42
+        }
+    }
+    go(5)
+    "#;
+    // The go(n-1) result is discarded; block returns 42
+    assert_eq!(eval(code).unwrap(), Value::Num(42.0));
+}
+
+// --- Correctness: return values must be right ---
+
+#[test]
+fn test_tco_preserves_return_value() {
+    let code = r#"
+    fn last element(arr, i) {
+        if (i >= arr.len() - 1) { arr.get(i) }
+        else { last element(arr, i + 1) }
+    }
+    last element([10, 20, 30, 40, 50], 0)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(50.0));
+}
+
+#[test]
+fn test_tco_accumulator_string_building() {
+    let code = r#"
+    fn repeat(s, n, acc) {
+        if (n <= 0) { acc }
+        else { repeat(s, n - 1, acc + s) }
+    }
+    repeat("ab", 4, "")
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("abababab".into()));
+}
+
+#[test]
+fn test_tco_multiple_base_cases() {
+    // Different return values depending on how we reach the base case
+    let code = r#"
+    fn collatz steps(n, steps) {
+        if (n == 1) { steps }
+        else {
+            if (n.mod(2) == 0) { collatz steps(n / 2, steps + 1) }
+            else { collatz steps(3 * n + 1, steps + 1) }
+        }
+    }
+    collatz steps(6, 0)
+    "#;
+    // Collatz sequence for 6: 6->3->10->5->16->8->4->2->1 = 8 steps
+    assert_eq!(eval(code).unwrap(), Value::Num(8.0));
+}
+
+#[test]
+fn test_tco_with_closure_capture() {
+    // The tail-recursive function captures a variable from outer scope
+    let code = r#"
+    let target = 10
+    fn go(n) {
+        if (n >= target) { n }
+        else { go(n + 1) }
+    }
+    go(0)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(10.0));
+}
+
+#[test]
+fn test_tco_alternating_branches() {
+    // Tail call alternates between two code paths within same function
+    let code = r#"
+    fn alternate(n, flag) {
+        if (n <= 0) { flag }
+        else {
+            if (flag) { alternate(n - 1, false) }
+            else { alternate(n - 1, true) }
+        }
+    }
+    alternate(50000, true)
+    "#;
+    // 50000 is even, so flag flips back to the starting value
+    assert_eq!(eval(code).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_tco_non_tail_followed_by_tail() {
+    // First call is NOT in tail position, second IS
+    // Using small depth so it works even without TCO in debug mode
+    let code = r#"
+    var side effect count = 0
+    fn do work(n) {
+        side effect count = side effect count + 1
+        null
+    }
+    fn go(n) {
+        if (n <= 0) { side effect count }
+        else {
+            do work(n)
+            go(n - 1)
+        }
+    }
+    go(10)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(10.0));
+}
+
+#[test]
+fn test_tco_deeply_nested_if_else() {
+    // Tail call buried in deeply nested if/else
+    let code = r#"
+    fn go(n) {
+        if (n <= 0) { "done" }
+        else {
+            if (n > 1000) {
+                if (n > 2000) { go(n - 3) }
+                else { go(n - 2) }
+            } else { go(n - 1) }
+        }
+    }
+    go(50000)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("done".into()));
+}
