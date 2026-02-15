@@ -10,9 +10,6 @@
   "null": "rien",
   "let": "soit",
   "var": "mut",
-  "class": "classe",
-  "this": "moi",
-  "super": "parent",
   "break": "stop",
   "continue": "suite"
 }

@@ -66,7 +66,6 @@ pub enum TokenType {
     Number(f64),    // 123, 45.67
 
     // Keywords
-    Class,    // class
     Else,     // else
     False,    // false
     Function, // fn
@@ -74,8 +73,6 @@ pub enum TokenType {
     If,       // if
     Null,     // null
     Return,   // return
-    Super,    // super
-    This,     // this
     True,     // true
     Let,      // let (immutable binding)
     Var,      // var (mutable binding)
