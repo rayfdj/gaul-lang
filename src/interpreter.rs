@@ -114,16 +114,20 @@ impl Interpreter {
                 name: _name,
                 initializer,
             } => {
+                let slot = self.env.current_scope_len();
+                self.env.define(Value::Null, false);
                 let value = prop_val!(self.evaluate_expression(initializer));
-                self.env.define(value, false);
+                self.env.set_at(0, slot, value);
                 Ok(Value::Null.into())
             }
             DeclarationKind::Var {
                 name: _name,
                 initializer,
             } => {
+                let slot = self.env.current_scope_len();
+                self.env.define(Value::Null, true);
                 let value = prop_val!(self.evaluate_expression(initializer));
-                self.env.define(value, true);
+                self.env.set_at(0, slot, value);
                 Ok(Value::Null.into())
             }
             DeclarationKind::Fn { name, params, body } => {

@@ -6034,3 +6034,160 @@ fn test_tco_deeply_nested_if_else() {
     "#;
     assert_eq!(eval(code).unwrap(), Value::Str("done".into()));
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Self-referencing let/var initializers (#18)
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_let_lambda_self_reference() {
+    // The core case: let binding a lambda that calls itself
+    let code = r#"
+    let go = fn(n) {
+        if (n <= 0) { "done" }
+        else { go(n - 1) }
+    }
+    go(10)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("done".into()));
+}
+
+#[test]
+fn test_var_lambda_self_reference() {
+    // Same with var
+    let code = r#"
+    var go = fn(n) {
+        if (n <= 0) { "done" }
+        else { go(n - 1) }
+    }
+    go(10)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("done".into()));
+}
+
+#[test]
+fn test_let_lambda_self_reference_with_accumulator() {
+    // Self-referencing lambda with accumulator pattern
+    let code = r#"
+    let sum = fn(n, acc) {
+        if (n <= 0) { acc }
+        else { sum(n - 1, acc + n) }
+    }
+    sum(100, 0)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(5050.0));
+}
+
+#[test]
+fn test_let_lambda_self_reference_deep_recursion() {
+    // Deep enough to need TCO, verifying self-ref + TCO work together
+    let code = r#"
+    let countdown = fn(n) {
+        if (n <= 0) { "deep done" }
+        else { countdown(n - 1) }
+    }
+    countdown(50000)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("deep done".into()));
+}
+
+#[test]
+fn test_let_lambda_self_reference_in_block() {
+    // Self-referencing lambda inside a block scope
+    let code = r#"
+    {
+        let fac = fn(n, acc) {
+            if (n <= 1) { acc }
+            else { fac(n - 1, n * acc) }
+        }
+        fac(10, 1)
+    }
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(3628800.0));
+}
+
+#[test]
+fn test_let_lambda_self_reference_nested() {
+    // Two self-referencing lambdas, inner references outer
+    let code = r#"
+    let outer = fn(n) {
+        let inner = fn(m) {
+            if (m <= 0) { n }
+            else { inner(m - 1) }
+        }
+        inner(5)
+    }
+    outer(42)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(42.0));
+}
+
+#[test]
+fn test_let_non_lambda_still_works() {
+    // Regular let bindings should still work fine
+    let code = r#"
+    let x = 10
+    let y = x + 5
+    y
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(15.0));
+}
+
+#[test]
+fn test_let_self_reference_non_lambda_sees_null() {
+    // If someone references the variable in a non-lambda initializer,
+    // it resolves to null (the placeholder). This is a weird edge case
+    // but shouldn't crash.
+    let code = r#"
+    let x = x
+    x
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Null);
+}
+
+#[test]
+fn test_let_lambda_captures_outer_and_self() {
+    // Lambda captures both an outer variable and references itself
+    let code = r#"
+    let multiplier = 3
+    let go = fn(n, acc) {
+        if (n <= 0) { acc }
+        else { go(n - 1, acc + multiplier) }
+    }
+    go(5, 0)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(15.0));
+}
+
+#[test]
+fn test_let_lambda_returned_and_called() {
+    // Self-referencing lambda returned from a function
+    let code = r#"
+    fn make counter() {
+        let count = fn(n) {
+            if (n <= 0) { "counted" }
+            else { count(n - 1) }
+        }
+        count
+    }
+    let c = make counter()
+    c(10)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("counted".into()));
+}
+
+#[test]
+fn test_var_lambda_reassigned_after_self_ref() {
+    // var lambda that self-references, then gets reassigned
+    let code = r#"
+    var go = fn(n) {
+        if (n <= 0) { "first" }
+        else { go(n - 1) }
+    }
+    let result1 = go(5)
+    go = fn(n) { "second" }
+    let result2 = go(5)
+    result1 + " " + result2
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("first second".into()));
+}

@@ -105,8 +105,8 @@ impl Resolver {
             // interpreter anyway
             DeclarationKind::Let { name, initializer }
             | DeclarationKind::Var { name, initializer } => {
-                self.resolve_expression(initializer)?;
                 self.define(name, span)?;
+                self.resolve_expression(initializer)?;
             }
             DeclarationKind::Fn { name, params, body } => {
                 self.define(name, span)?;
