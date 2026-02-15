@@ -46,6 +46,15 @@ let Octal = 0o77                   // 63
 let Greeting = "Hello, World!"
 let Unicode = "Bonjour"
 
+// Escape sequences in strings
+let With Newline = "line1\nline2"
+let With Tab = "col1\tcol2"
+let With Quote = "she said \"hi\""
+let With Backslash = "C:\\Users\\file.txt"
+let With CR = "old\rstyle"
+// Supported: \n \t \r \\ \"
+// Invalid escapes (e.g. \a, \z) produce a scanner error
+
 // Booleans
 let Yes = true
 let No = false

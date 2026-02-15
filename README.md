@@ -393,6 +393,16 @@ Days 1-6 were written by hand, days 7-12 with LLM assistance. Check out `src/sam
 
 ## Rich Standard Library
 
+### Strings
+```gaul
+// Escape sequences
+let Line = "hello\nworld"       // newline
+let Tabbed = "col1\tcol2"       // tab
+let Quoted = "she said \"hi\""  // embedded double quote
+let Path = "C:\\Users\\file"    // literal backslash
+// Supported escapes: \n \t \r \\ \"
+```
+
 ### String Methods
 ```gaul
 let S = "Hello, World!"
