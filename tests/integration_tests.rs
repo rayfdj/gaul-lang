@@ -5393,38 +5393,73 @@ fn test_keyword_jsons_match_default_keywords() {
 fn test_llms_full_documents_all_native_methods() {
     let doc = std::fs::read_to_string("llms-full.txt").expect("llms-full.txt should exist");
 
-    // Every native method from native_method.rs should be mentioned somewhere in the doc.
-    // Grouped by receiver type for clearer error messages.
-    let string_methods = [
-        "len", "char_at", "substring", "split", "lines", "trim", "contains", "starts_with",
-        "ends_with", "to_num", "chars", "replace", "index_of", "to_upper", "to_lower", "repeat",
-    ];
-    let number_methods = [
-        "to_str", "abs", "floor", "ceil", "round", "pow", "sqrt", "mod", "floor_div",
-    ];
-    let bool_methods = ["to_str"];
-    let array_methods = [
-        "len", "get", "first", "last", "push", "pop", "set", "remove", "contains", "reverse",
-        "is_empty", "join", "sum", "min", "max", "sort", "slice", "index_of",
-    ];
-    let map_methods = [
-        "get", "get_or", "set", "has", "remove", "keys", "values", "entries", "len", "is_empty",
-    ];
-    let range_methods = ["to_array"];
+    // Extract method names directly from native_method.rs so new methods
+    // automatically fail the test if undocumented.
+    let source = std::fs::read_to_string("src/interpreter/native_method.rs")
+        .expect("native_method.rs should exist");
 
-    let all_groups: &[(&str, &[&str])] = &[
-        ("String", &string_methods),
-        ("Number", &number_methods),
-        ("Bool", &bool_methods),
-        ("Array", &array_methods),
-        ("Map", &map_methods),
-        ("Range", &range_methods),
+    // Pattern in source: (Value::Variant(...), "method_name")
+    // We map Value variant -> type name for error messages.
+    let variant_to_type: &[(&str, &str)] = &[
+        ("Str", "String"),
+        ("Num", "Number"),
+        ("Bool", "Bool"),
+        ("Array", "Array"),
+        ("Map", "Map"),
+        ("Range", "Range"),
     ];
+
+    let mut methods_by_type: HashMap<&str, HashSet<String>> = HashMap::new();
+    for line in source.lines() {
+        let trimmed = line.trim();
+        for (variant, type_name) in variant_to_type {
+            let prefix = format!("(Value::{}(", variant);
+            if let Some(rest) = trimmed.strip_prefix(&prefix) {
+                // rest looks like: s), "method_name") => {  or  ...), "name") =>
+                if let Some(quote_start) = rest.find('"') {
+                    if let Some(quote_end) = rest[quote_start + 1..].find('"') {
+                        let method = &rest[quote_start + 1..quote_start + 1 + quote_end];
+                        methods_by_type
+                            .entry(type_name)
+                            .or_default()
+                            .insert(method.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Higher-order array methods live in interpreter.rs, not native_method.rs.
+    // Extract them from the match arms there too.
+    let interp_source = std::fs::read_to_string("src/interpreter.rs")
+        .expect("interpreter.rs should exist");
+    // These appear as string literals in match arms: "map" => {, "filter" => {, etc.
+    // inside a block guarded by Value::Array. We look for the pattern directly.
+    for line in interp_source.lines() {
+        let trimmed = line.trim();
+        if trimmed.ends_with("=> {") {
+            let stripped = trimmed.trim_start_matches('"');
+            if let Some(end) = stripped.find('"') {
+                let candidate = &stripped[..end];
+                // Only pick short alpha method names inside the array dispatch block
+                if candidate.len() < 20 && candidate.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
+                    // Verify it's actually a method call on arrays by checking the
+                    // surrounding context: these are the only quoted "name" => { patterns
+                    // in the interpreter's array method dispatch
+                    if ["map", "filter", "reduce", "find"].contains(&candidate) {
+                        methods_by_type
+                            .entry("Array")
+                            .or_default()
+                            .insert(candidate.to_string());
+                    }
+                }
+            }
+        }
+    }
 
     let mut missing = Vec::new();
-    for (type_name, methods) in all_groups {
-        for method in *methods {
-            // Look for ".method_name(" or ".method_name)" in the doc
+    for (type_name, methods) in &methods_by_type {
+        for method in methods {
             let pattern = format!(".{}(", method);
             if !doc.contains(&pattern) {
                 missing.push(format!("{}.{}()", type_name, method));
@@ -5432,9 +5467,10 @@ fn test_llms_full_documents_all_native_methods() {
         }
     }
 
+    missing.sort();
     assert!(
         missing.is_empty(),
-        "llms-full.txt is missing documentation for these native methods: {:?}",
+        "llms-full.txt is missing documentation for these methods: {:?}",
         missing
     );
 
@@ -5456,6 +5492,31 @@ fn test_llms_full_documents_all_native_methods() {
     assert!(
         doc.contains("||"),
         "llms-full.txt should document || operator"
+    );
+
+    // Verify native functions are documented
+    let fn_source = std::fs::read_to_string("src/interpreter/native_function.rs")
+        .expect("native_function.rs should exist");
+    let mut native_fns = Vec::new();
+    for line in fn_source.lines() {
+        let trimmed = line.trim();
+        // Pattern: ("name", name())
+        if trimmed.starts_with("(\"") {
+            if let Some(end) = trimmed[2..].find('"') {
+                native_fns.push(trimmed[2..2 + end].to_string());
+            }
+        }
+    }
+    let mut missing_fns = Vec::new();
+    for name in &native_fns {
+        if !doc.contains(name) {
+            missing_fns.push(name.as_str());
+        }
+    }
+    assert!(
+        missing_fns.is_empty(),
+        "llms-full.txt is missing documentation for these native functions: {:?}",
+        missing_fns
     );
 }
 

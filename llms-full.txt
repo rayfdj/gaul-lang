@@ -241,6 +241,35 @@ Numbers.map(fn(X) { X * 2 })
 Numbers.filter(fn(X) { X > 0 })
 ```
 
+### Self-Referencing Variables
+```gaul
+// let/var initializers can reference their own name.
+// This is useful for recursive lambdas without fn declarations.
+let Factorial = fn(N, Acc) {
+    if(N <= 1) { Acc }
+    else { Factorial(N - 1, N * Acc) }
+}
+Factorial(10, 1)  // 3628800
+```
+
+### Tail Call Optimization
+```gaul
+// Gaul optimizes tail-position calls so recursive functions
+// don't overflow the stack. Works with fn declarations and lambdas.
+fn Countdown(N) {
+    if(N <= 0) { "done" }
+    else { Countdown(N - 1) }   // tail call, no stack growth
+}
+Countdown(1000000)  // "done", no stack overflow
+
+// Accumulator pattern with TCO
+fn Sum(N, Acc) {
+    if(N <= 0) { Acc }
+    else { Sum(N - 1, Acc + N) }  // tail call
+}
+Sum(1000000, 0)  // 500000500000
+```
+
 ### Closures
 ```gaul
 fn Make Counter() {
@@ -396,6 +425,8 @@ false.to_str()           // "false"
 ```gaul
 let R = 0..10
 
+R.from()                 // 0 (start of the range)
+R.until()                // 10 (exclusive end of the range)
 R.to_array()             // [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 ```
 
@@ -764,6 +795,8 @@ println(Solve(Input))
 | Map (array) | `Arr.map(fn(X) { ... })` |
 | Filter | `Arr.filter(fn(X) { ... })` |
 | Reduce | `Arr.reduce(init, fn(Acc, X) { ... })` |
+| Self-ref lambda | `let F = fn(N) { F(N - 1) }` |
+| Tail call opt. | Tail-position calls don't grow the stack |
 | Multiline chain | `(Arr.map(...).filter(...))` (wrap in parens!) |
 | Modulo | `N.mod(M)` |
 | To string | `N.to_str()`, `true.to_str()` |
