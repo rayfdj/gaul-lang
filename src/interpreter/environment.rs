@@ -1,4 +1,5 @@
 use crate::interpreter::value::Value;
+use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -8,17 +9,13 @@ pub struct Binding {
     pub is_mutable: bool,
 }
 
+// Most functions have ≤4 params, so inline storage avoids a heap alloc
+type Bindings = SmallVec<[Binding; 4]>;
+
 #[derive(Clone, Debug, Default)]
 pub struct Environment {
-    // we used to maintain environment as a stack of bindings.
-    // this created a problem when we start having to do stack arithmetic
-    // for closure support... at least I couldn't make it work.
-    // trying with a different approach, rather than a stack of vectors,
-    // we're doing this as parent-child chains of environments
-    // So enclosing is the parent scope, None if global
     enclosing: Option<Rc<Environment>>,
-    // Values are only values in this scope only, hence only a Vec<Binding>
-    values: RefCell<Vec<Binding>>,
+    values: RefCell<Bindings>,
 }
 
 impl Environment {
@@ -29,7 +26,36 @@ impl Environment {
     pub fn new_with_enclosing(enclosing: Rc<Environment>) -> Self {
         Self {
             enclosing: Some(enclosing),
-            values: RefCell::new(Vec::new()),
+            values: RefCell::new(SmallVec::new()),
+        }
+    }
+
+    /// Create a function-call environment pre-populated with arguments.
+    /// Avoids separate define() calls and the extra borrow_mut per arg.
+    pub fn new_for_call(enclosing: Rc<Environment>, args: SmallVec<[Value; 4]>) -> Self {
+        let bindings: Bindings = args
+            .into_iter()
+            .map(|value| Binding {
+                value,
+                is_mutable: false,
+            })
+            .collect();
+        Self {
+            enclosing: Some(enclosing),
+            values: RefCell::new(bindings),
+        }
+    }
+
+    /// Reinitialize this environment for reuse (avoids heap allocation).
+    pub fn reinit(&mut self, enclosing: Rc<Environment>, args: SmallVec<[Value; 4]>) {
+        self.enclosing = Some(enclosing);
+        let values = self.values.get_mut(); // &mut access, no RefCell overhead
+        values.clear();
+        for value in args {
+            values.push(Binding {
+                value,
+                is_mutable: false,
+            });
         }
     }
 

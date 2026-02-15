@@ -11,8 +11,11 @@ use crate::interpreter::value::{Function, MapKey, Value};
 use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
 use crate::scanner::token::TokenType;
 use crate::span::Span;
+use smallvec::{smallvec, SmallVec};
 use std::cell::RefCell;
 use std::rc::Rc;
+
+type Args = SmallVec<[Value; 4]>;
 
 // Uhhhhh needed to support break, continue, return. Wish I'd done this earlier!
 // NOT public because we don't want this seen by the outside world outside the interpreter.
@@ -42,6 +45,7 @@ pub struct Interpreter {
     // 3rd try for closure. So we're holding a pointer to the "head" environment, rather than
     // mucking around with stack of scopes.
     env: Rc<Environment>,
+    env_pool: Vec<Rc<Environment>>,
     runtime_config: RuntimeConfig,
 }
 
@@ -69,6 +73,7 @@ impl Interpreter {
     pub fn new(env: Environment, runtime_config: RuntimeConfig) -> Self {
         let mut interpreter = Self {
             env: Rc::new(env),
+            env_pool: Vec::new(),
             runtime_config,
         };
         interpreter.define_native_functions();
@@ -548,7 +553,7 @@ impl Interpreter {
             }
 
             ExprKind::Call { callee, arguments } => {
-                let mut argument_values = Vec::with_capacity(arguments.len());
+                let mut argument_values = Args::with_capacity(arguments.len());
                 for arg in arguments {
                     argument_values.push(prop_val!(self.evaluate_expression(arg)));
                 }
@@ -585,7 +590,7 @@ impl Interpreter {
                                     .map(|e| {
                                         self.call_function(
                                             callable,
-                                            std::slice::from_ref(e),
+                                            smallvec![e.clone()],
                                             expression.span,
                                         )
                                     })
@@ -604,7 +609,7 @@ impl Interpreter {
                                 for item in arr.iter() {
                                     let keep = self.call_function(
                                         predicate,
-                                        std::slice::from_ref(item),
+                                        smallvec![item.clone()],
                                         expression.span,
                                     )?;
                                     match keep {
@@ -640,7 +645,7 @@ impl Interpreter {
                                 for item in arr.iter() {
                                     acc = self.call_function(
                                         callback,
-                                        &[acc, item.clone()],
+                                        smallvec![acc, item.clone()],
                                         expression.span,
                                     )?;
                                 }
@@ -658,7 +663,7 @@ impl Interpreter {
                                 for item in arr.iter() {
                                     let result = self.call_function(
                                         predicate,
-                                        std::slice::from_ref(item),
+                                        smallvec![item.clone()],
                                         expression.span,
                                     )?;
                                     match result {
@@ -690,7 +695,7 @@ impl Interpreter {
 
                 let callee_value = prop_val!(self.evaluate_expression(callee));
                 // refactored this whole thing out to call_function
-                self.call_function(&callee_value, &argument_values, expression.span)
+                self.call_function(&callee_value, argument_values, expression.span)
                     .map(|v| v.into())
             }
 
@@ -735,7 +740,7 @@ impl Interpreter {
     fn call_function(
         &mut self,
         callee: &Value,
-        args: &[Value],
+        args: Args,
         span: Span,
     ) -> Result<Value, RuntimeError> {
         match callee {
@@ -752,14 +757,25 @@ impl Interpreter {
                     });
                 }
 
-                let function_env = Rc::new(Environment::new_with_enclosing(fun.closure.clone()));
-                for arg in args {
-                    function_env.define(arg.clone(), false);
-                }
+                // Try to reuse a recycled environment to avoid heap allocation
+                let function_env = if let Some(mut recycled) = self.env_pool.pop() {
+                    // We only push envs with strong_count==1, so get_mut will succeed
+                    Rc::get_mut(&mut recycled)
+                        .expect("recycled env has refcount > 1")
+                        .reinit(fun.closure.clone(), args);
+                    recycled
+                } else {
+                    Rc::new(Environment::new_for_call(fun.closure.clone(), args))
+                };
 
                 let previous = std::mem::replace(&mut self.env, function_env);
                 let result = self.evaluate_expression(fun.body.as_ref());
-                self.env = previous;
+                let used_env = std::mem::replace(&mut self.env, previous);
+
+                // Recycle if nobody else holds a reference (no closure captured it)
+                if Rc::strong_count(&used_env) == 1 && self.env_pool.len() < 8 {
+                    self.env_pool.push(used_env);
+                }
 
                 match result? {
                     ControlFlow::Return(v) => Ok(v),
@@ -771,7 +787,7 @@ impl Interpreter {
                 }
             }
             Value::NativeFn(native_fun) => {
-                (native_fun.func)(args).map_err(|msg| RuntimeError { span, message: msg })
+                (native_fun.func)(&args).map_err(|msg| RuntimeError { span, message: msg })
             }
             _ => Err(RuntimeError {
                 span,
