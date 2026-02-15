@@ -387,7 +387,7 @@ fn All Positions(Grid) {
 }
 ```
 
-Check out `src/samples/aoc/2025/` for solutions up to Day 12.
+Days 1-6 were written by hand, days 7-12 with LLM assistance. Check out `src/samples/aoc/2025/` for all the solutions.
 
 ---
 
