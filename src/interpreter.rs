@@ -695,6 +695,76 @@ impl Interpreter {
 
                                 return Ok(Value::Null.into());
                             }
+                            "sort_by" => {
+                                let comparator =
+                                    argument_values.first().ok_or_else(|| RuntimeError {
+                                        span: expression.span,
+                                        message: "sort_by expects a comparator function".into(),
+                                    })?;
+                                let items: Vec<Value> = elements.borrow().clone();
+                                let sorted = self.merge_sort(items, comparator, expression.span)?;
+                                return Ok(Value::Array(Rc::new(RefCell::new(sorted))).into());
+                            }
+                            "sort_by_key" => {
+                                let key_fn =
+                                    argument_values.first().ok_or_else(|| RuntimeError {
+                                        span: expression.span,
+                                        message: "sort_by_key expects a key function".into(),
+                                    })?;
+                                let arr = elements.borrow();
+
+                                // Schwartzian transform: extract keys first
+                                let mut pairs: Vec<(Value, Value)> = Vec::with_capacity(arr.len());
+                                for item in arr.iter() {
+                                    let key = self.call_function(
+                                        key_fn,
+                                        smallvec![item.clone()],
+                                        expression.span,
+                                    )?;
+                                    pairs.push((key, item.clone()));
+                                }
+
+                                if pairs.is_empty() {
+                                    return Ok(Value::Array(Rc::new(RefCell::new(vec![]))).into());
+                                }
+
+                                // Validate all keys are the same sortable type
+                                let first_is_num = matches!(&pairs[0].0, Value::Num(_));
+                                let first_is_str = matches!(&pairs[0].0, Value::Str(_));
+                                if !first_is_num && !first_is_str {
+                                    return Err(RuntimeError {
+                                        span: expression.span,
+                                        message: "sort_by_key: key function must return a number or string".into(),
+                                    });
+                                }
+                                for (key, _) in &pairs[1..] {
+                                    let ok = if first_is_num {
+                                        matches!(key, Value::Num(_))
+                                    } else {
+                                        matches!(key, Value::Str(_))
+                                    };
+                                    if !ok {
+                                        return Err(RuntimeError {
+                                            span: expression.span,
+                                            message: "sort_by_key: all keys must be the same type".into(),
+                                        });
+                                    }
+                                }
+
+                                // Sort by extracted keys
+                                pairs.sort_by(|(a, _), (b, _)| {
+                                    match (a, b) {
+                                        (Value::Num(x), Value::Num(y)) => {
+                                            x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
+                                        }
+                                        (Value::Str(x), Value::Str(y)) => x.cmp(y),
+                                        _ => std::cmp::Ordering::Equal,
+                                    }
+                                });
+
+                                let sorted: Vec<Value> = pairs.into_iter().map(|(_, v)| v).collect();
+                                return Ok(Value::Array(Rc::new(RefCell::new(sorted))).into());
+                            }
                             _ => {}
                         }
                     }
@@ -829,5 +899,62 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    fn merge_sort(
+        &mut self,
+        items: Vec<Value>,
+        comparator: &Value,
+        span: Span,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let len = items.len();
+        if len <= 1 {
+            return Ok(items);
+        }
+        let mid = len / 2;
+        let left = self.merge_sort(items[..mid].to_vec(), comparator, span)?;
+        let right = self.merge_sort(items[mid..].to_vec(), comparator, span)?;
+        self.merge(left, right, comparator, span)
+    }
+
+    fn merge(
+        &mut self,
+        left: Vec<Value>,
+        right: Vec<Value>,
+        comparator: &Value,
+        span: Span,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut result = Vec::with_capacity(left.len() + right.len());
+        let mut li = 0;
+        let mut ri = 0;
+
+        while li < left.len() && ri < right.len() {
+            let cmp_val = self.call_function(
+                comparator,
+                smallvec![left[li].clone(), right[ri].clone()],
+                span,
+            )?;
+            match cmp_val {
+                Value::Num(n) => {
+                    if n <= 0.0 {
+                        result.push(left[li].clone());
+                        li += 1;
+                    } else {
+                        result.push(right[ri].clone());
+                        ri += 1;
+                    }
+                }
+                _ => {
+                    return Err(RuntimeError {
+                        span,
+                        message: "sort_by comparator must return a number".into(),
+                    });
+                }
+            }
+        }
+
+        result.extend_from_slice(&left[li..]);
+        result.extend_from_slice(&right[ri..]);
+        Ok(result)
     }
 }

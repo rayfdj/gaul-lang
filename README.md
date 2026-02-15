@@ -425,6 +425,8 @@ Arr.sum()            // 31
 Arr.min()            // 1
 Arr.max()            // 9
 Arr.sort()           // [1, 1, 2, 3, 4, 5, 6, 9]
+Arr.sort_by(fn(A, B) { A - B })   // custom comparator
+Arr.sort_by_key(fn(X) { X.abs() }) // sort by key
 Arr.reverse()        // [6, 2, 9, 5, 1, 4, 1, 3]
 Arr.contains(5)      // true
 Arr.join("-")        // "3-1-4-1-5-9-2-6"

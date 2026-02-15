@@ -5446,7 +5446,7 @@ fn test_llms_full_documents_all_native_methods() {
                     // Verify it's actually a method call on arrays by checking the
                     // surrounding context: these are the only quoted "name" => { patterns
                     // in the interpreter's array method dispatch
-                    if ["map", "filter", "reduce", "find"].contains(&candidate) {
+                    if ["map", "filter", "reduce", "find", "sort_by", "sort_by_key"].contains(&candidate) {
                         methods_by_type
                             .entry("Array")
                             .or_default()
@@ -6675,4 +6675,284 @@ fn test_escape_windows_path() {
 fn test_escape_csv_line() {
     let result = eval(r#""name\tage\theight\nAlice\t30\t165""#);
     assert_eq!(result.unwrap(), Value::Str("name\tage\theight\nAlice\t30\t165".into()));
+}
+
+// --- SORT_BY / SORT_BY_KEY TESTS ---
+
+#[test]
+fn test_sort_by_ascending() {
+    let code = r#"
+    let arr = [3, 1, 4, 1, 5]
+    arr.sort_by(fn(a, b) { a - b })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            let nums: Vec<f64> = arr.iter().map(|v| match v { Value::Num(n) => *n, _ => panic!() }).collect();
+            assert_eq!(nums, vec![1.0, 1.0, 3.0, 4.0, 5.0]);
+        }
+        _ => panic!("Expected sorted array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_sort_by_descending() {
+    let code = r#"
+    let arr = [3, 1, 4, 1, 5]
+    arr.sort_by(fn(a, b) { b - a })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            let nums: Vec<f64> = arr.iter().map(|v| match v { Value::Num(n) => *n, _ => panic!() }).collect();
+            assert_eq!(nums, vec![5.0, 4.0, 3.0, 1.0, 1.0]);
+        }
+        _ => panic!("Expected sorted array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_sort_by_empty_array() {
+    let code = r#"
+    [].sort_by(fn(a, b) { a - b })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            assert_eq!(elements.borrow().len(), 0);
+        }
+        _ => panic!("Expected empty array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_sort_by_single_element() {
+    let code = r#"
+    [42].sort_by(fn(a, b) { a - b })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr.len(), 1);
+            assert_eq!(arr[0], Value::Num(42.0));
+        }
+        _ => panic!("Expected [42], got {:?}", result),
+    }
+}
+
+#[test]
+fn test_sort_by_stability() {
+    // Pairs where first element is the sort key, second tracks original order
+    let code = r#"
+    let arr = [[1, "a"], [2, "b"], [1, "c"], [2, "d"]]
+    arr.sort_by(fn(a, b) { a.get(0) - b.get(0) })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            // Equal keys should preserve original order (merge sort is stable)
+            let tags: Vec<String> = arr.iter().map(|v| match v {
+                Value::Array(inner) => match &inner.borrow()[1] {
+                    Value::Str(s) => s.to_string(),
+                    _ => panic!(),
+                },
+                _ => panic!(),
+            }).collect();
+            assert_eq!(tags, vec!["a", "c", "b", "d"]);
+        }
+        _ => panic!("Expected sorted array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_sort_by_no_mutation() {
+    let code = r#"
+    let arr = [3, 1, 2]
+    let sorted = arr.sort_by(fn(a, b) { a - b })
+    arr.get(0)
+    "#;
+    let result = eval(code);
+    assert_eq!(result.unwrap(), Value::Num(3.0));
+}
+
+#[test]
+fn test_sort_by_comparator_returns_non_number() {
+    let code = r#"
+    [1, 2].sort_by(fn(a, b) { true })
+    "#;
+    let result = eval(code);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("comparator must return a number"));
+}
+
+#[test]
+fn test_sort_by_missing_argument() {
+    let code = r#"
+    [1, 2].sort_by()
+    "#;
+    let result = eval(code);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("sort_by expects a comparator function"));
+}
+
+#[test]
+fn test_sort_by_named_function() {
+    let code = r#"
+    fn compare(a, b) { a - b }
+    [5, 3, 1, 4, 2].sort_by(compare)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            let nums: Vec<f64> = arr.iter().map(|v| match v { Value::Num(n) => *n, _ => panic!() }).collect();
+            assert_eq!(nums, vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+        }
+        _ => panic!("Expected sorted array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_sort_by_chained() {
+    let code = r#"
+    [3, 1, 4, 1, 5].sort_by(fn(a, b) { a - b }).first()
+    "#;
+    let result = eval(code);
+    assert_eq!(result.unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_sort_by_key_numeric() {
+    let code = r#"
+    let arr = ["banana", "fig", "apple", "kiwi"]
+    arr.sort_by_key(fn(s) { s.len() })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            let strs: Vec<&str> = arr.iter().map(|v| match v { Value::Str(s) => &**s, _ => panic!() }).collect();
+            assert_eq!(strs, vec!["fig", "kiwi", "apple", "banana"]);
+        }
+        _ => panic!("Expected sorted array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_sort_by_key_string() {
+    let code = r#"
+    let arr = [3, 1, 2]
+    arr.sort_by_key(fn(n) { n.to_str() })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            let nums: Vec<f64> = arr.iter().map(|v| match v { Value::Num(n) => *n, _ => panic!() }).collect();
+            assert_eq!(nums, vec![1.0, 2.0, 3.0]);
+        }
+        _ => panic!("Expected sorted array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_sort_by_key_empty_array() {
+    let code = r#"
+    [].sort_by_key(fn(x) { x })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            assert_eq!(elements.borrow().len(), 0);
+        }
+        _ => panic!("Expected empty array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_sort_by_key_no_mutation() {
+    let code = r#"
+    let arr = [3, 1, 2]
+    let sorted = arr.sort_by_key(fn(x) { x })
+    arr.get(0)
+    "#;
+    let result = eval(code);
+    assert_eq!(result.unwrap(), Value::Num(3.0));
+}
+
+#[test]
+fn test_sort_by_key_non_sortable_type() {
+    let code = r#"
+    [1, 2].sort_by_key(fn(x) { true })
+    "#;
+    let result = eval(code);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("key function must return a number or string"));
+}
+
+#[test]
+fn test_sort_by_key_mixed_key_types() {
+    let code = r#"
+    let arr = [1, "two"]
+    arr.sort_by_key(fn(x) { x })
+    "#;
+    let result = eval(code);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("all keys must be the same type"));
+}
+
+#[test]
+fn test_sort_by_key_missing_argument() {
+    let code = r#"
+    [1, 2].sort_by_key()
+    "#;
+    let result = eval(code);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("sort_by_key expects a key function"));
+}
+
+#[test]
+fn test_sort_by_key_named_function() {
+    let code = r#"
+    fn negate(x) { 0 - x }
+    [1, 3, 2].sort_by_key(negate)
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            let nums: Vec<f64> = arr.iter().map(|v| match v { Value::Num(n) => *n, _ => panic!() }).collect();
+            assert_eq!(nums, vec![3.0, 2.0, 1.0]);
+        }
+        _ => panic!("Expected sorted array, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_sort_by_key_chained() {
+    let code = r#"
+    ["banana", "fig", "apple"].sort_by_key(fn(s) { s.len() }).first()
+    "#;
+    let result = eval(code);
+    assert_eq!(result.unwrap(), Value::Str("fig".into()));
+}
+
+#[test]
+fn test_sort_by_key_with_map_chain() {
+    let code = r#"
+    [3, 1, 2].sort_by_key(fn(x) { x }).map(fn(x) { x * 10 })
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            let nums: Vec<f64> = arr.iter().map(|v| match v { Value::Num(n) => *n, _ => panic!() }).collect();
+            assert_eq!(nums, vec![10.0, 20.0, 30.0]);
+        }
+        _ => panic!("Expected sorted array, got {:?}", result),
+    }
 }
