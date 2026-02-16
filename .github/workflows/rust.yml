@@ -2,12 +2,18 @@ name: Rust
 
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to build (branch, tag, or SHA). Leave blank for current main.'
+        required: false
+        default: ''
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   check:
+    if: ${{ github.event.inputs.ref == '' }}
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -19,6 +25,7 @@ jobs:
       run: cargo test --verbose
 
   build:
+    if: ${{ !cancelled() }}
     needs: check
     strategy:
       matrix:
@@ -32,6 +39,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.inputs.ref || github.ref }}
     - name: Build release
       run: cargo build --release --verbose
     - name: Upload binary
