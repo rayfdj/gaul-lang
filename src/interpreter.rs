@@ -11,7 +11,7 @@ use crate::interpreter::value::{Function, MapKey, Value};
 use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
 use crate::scanner::token::TokenType;
 use crate::span::Span;
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -206,9 +206,7 @@ impl Interpreter {
                 match (&operator.token_type, operand_value) {
                     (TokenType::Bang, Value::Bool(b)) => Ok(Value::Bool(!b).into()),
                     (TokenType::Minus, Value::Num(n)) => Ok(Value::Num(-n).into()),
-                    (TokenType::Tilde, Value::Num(n)) => {
-                        Ok(Value::Num(!(n as i64) as f64).into())
-                    }
+                    (TokenType::Tilde, Value::Num(n)) => Ok(Value::Num(!(n as i64) as f64).into()),
                     (op_type, v) => Err(RuntimeError {
                         span: expression.span,
                         message: format!(
@@ -531,8 +529,7 @@ impl Interpreter {
                     }
                     Value::Map(map) => {
                         // Collect keys first to avoid holding RefCell borrow during body execution
-                        let keys: Vec<Value> =
-                            map.borrow().keys().map(|k| k.to_value()).collect();
+                        let keys: Vec<Value> = map.borrow().keys().map(|k| k.to_value()).collect();
                         let previous = self.env.clone();
                         self.env = Rc::new(Environment::new_with_enclosing(previous.clone()));
                         self.env.define(Value::Null, false); // slot 0
@@ -548,7 +545,8 @@ impl Interpreter {
                                 }
                             }
                             Ok(Value::Null.into())
-                        })();
+                        })(
+                        );
                         self.env = previous;
                         result
                     }
@@ -746,23 +744,23 @@ impl Interpreter {
                                     if !ok {
                                         return Err(RuntimeError {
                                             span: expression.span,
-                                            message: "sort_by_key: all keys must be the same type".into(),
+                                            message: "sort_by_key: all keys must be the same type"
+                                                .into(),
                                         });
                                     }
                                 }
 
                                 // Sort by extracted keys
-                                pairs.sort_by(|(a, _), (b, _)| {
-                                    match (a, b) {
-                                        (Value::Num(x), Value::Num(y)) => {
-                                            x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
-                                        }
-                                        (Value::Str(x), Value::Str(y)) => x.cmp(y),
-                                        _ => std::cmp::Ordering::Equal,
+                                pairs.sort_by(|(a, _), (b, _)| match (a, b) {
+                                    (Value::Num(x), Value::Num(y)) => {
+                                        x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
                                     }
+                                    (Value::Str(x), Value::Str(y)) => x.cmp(y),
+                                    _ => std::cmp::Ordering::Equal,
                                 });
 
-                                let sorted: Vec<Value> = pairs.into_iter().map(|(_, v)| v).collect();
+                                let sorted: Vec<Value> =
+                                    pairs.into_iter().map(|(_, v)| v).collect();
                                 return Ok(Value::Array(Rc::new(RefCell::new(sorted))).into());
                             }
                             _ => {}

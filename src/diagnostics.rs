@@ -53,11 +53,7 @@ pub fn render(source: &str, kind: &str, span: Span, message: &str, hint: Option<
 
     // hint
     if let Some(hint) = hint {
-        out.push_str(&format!(
-            "{:>width$} |\n",
-            " ",
-            width = gutter_width
-        ));
+        out.push_str(&format!("{:>width$} |\n", " ", width = gutter_width));
         out.push_str(&format!(
             "{:>width$} = hint: {}\n",
             " ",
@@ -80,9 +76,7 @@ pub fn suggest_hint(message: &str) -> Option<String> {
         }
     }
 
-    if msg.contains("cannot assign to immutable variable")
-        || msg.contains("immutable")
-    {
+    if msg.contains("cannot assign to immutable variable") || msg.contains("immutable") {
         return Some("declare with 'var' instead of 'let' to make it mutable".into());
     }
 

@@ -458,7 +458,9 @@ impl Parser {
     }
 
     fn shift(&mut self) -> Result<Expr, ParseError> {
-        self.binary_expression(&[TokenType::LeftShift, TokenType::RightShift], |p| p.range())
+        self.binary_expression(&[TokenType::LeftShift, TokenType::RightShift], |p| {
+            p.range()
+        })
     }
 
     fn range(&mut self) -> Result<Expr, ParseError> {

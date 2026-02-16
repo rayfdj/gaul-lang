@@ -414,9 +414,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             let entries: Vec<Value> = map
                 .borrow()
                 .iter()
-                .map(|(k, v)| {
-                    Value::Array(Rc::new(RefCell::new(vec![k.to_value(), v.clone()])))
-                })
+                .map(|(k, v)| Value::Array(Rc::new(RefCell::new(vec![k.to_value(), v.clone()]))))
                 .collect();
             Ok(Value::Array(Rc::new(RefCell::new(entries))))
         }

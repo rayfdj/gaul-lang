@@ -4816,11 +4816,7 @@ fn eval_diagnostic(source: &str) -> Result<Value, String> {
                 Err(errors) => {
                     let e = &errors[0];
                     return Err(diagnostics::render(
-                        source,
-                        "parse",
-                        e.span,
-                        &e.message,
-                        None,
+                        source, "parse", e.span, &e.message, None,
                     ));
                 }
                 Ok(mut program) => {
@@ -4951,13 +4947,21 @@ fn test_error_span_mixed_unicode() {
 fn test_error_shows_source_line() {
     let err = eval_diagnostic("x").unwrap_err();
     // The source line "x" should appear in the output
-    assert!(err.contains("| x"), "Expected source line in output, got:\n{}", err);
+    assert!(
+        err.contains("| x"),
+        "Expected source line in output, got:\n{}",
+        err
+    );
 }
 
 #[test]
 fn test_error_shows_pointer() {
     let err = eval_diagnostic("x").unwrap_err();
-    assert!(err.contains("^"), "Expected '^' pointer in output, got:\n{}", err);
+    assert!(
+        err.contains("^"),
+        "Expected '^' pointer in output, got:\n{}",
+        err
+    );
 }
 
 #[test]
@@ -4985,11 +4989,7 @@ fn test_hint_str_plus_num() {
 #[test]
 fn test_hint_immutable_assign() {
     let err = eval_diagnostic("let x = 1\nx = 2").unwrap_err();
-    assert!(
-        err.contains("var"),
-        "Expected 'var' hint, got:\n{}",
-        err
-    );
+    assert!(err.contains("var"), "Expected 'var' hint, got:\n{}", err);
 }
 
 #[test]
@@ -5037,11 +5037,7 @@ fn test_scan_error_unterminated_string() {
         "Expected unterminated string error, got:\n{}",
         err
     );
-    assert!(
-        err.contains("line 1"),
-        "Expected line 1, got:\n{}",
-        err
-    );
+    assert!(err.contains("line 1"), "Expected line 1, got:\n{}", err);
 }
 
 #[test]
@@ -5052,11 +5048,7 @@ fn test_scan_error_unexpected_char() {
         "Expected unexpected char error, got:\n{}",
         err
     );
-    assert!(
-        err.contains("line 1:1"),
-        "Expected col 1, got:\n{}",
-        err
-    );
+    assert!(err.contains("line 1:1"), "Expected col 1, got:\n{}", err);
 }
 
 #[test]
@@ -5118,30 +5110,25 @@ fn test_unicode_emoji_rejected_as_identifier() {
 
 #[test]
 fn test_unicode_emoji_in_string_type_error() {
-    let err =
-        eval_diagnostic("let x = \"\u{1f389}\u{1f525}\"\nx + 1").unwrap_err();
+    let err = eval_diagnostic("let x = \"\u{1f389}\u{1f525}\"\nx + 1").unwrap_err();
     assert!(err.contains("line 2"), "Expected line 2, got:\n{}", err);
-    assert!(
-        err.contains(".to_str()"),
-        "Expected hint, got:\n{}",
-        err
-    );
+    assert!(err.contains(".to_str()"), "Expected hint, got:\n{}", err);
 }
 
 #[test]
 fn test_unicode_accented_identifiers() {
-    let err =
-        eval_diagnostic("let caf\u{00e9} = 42\nlet na\u{00ef}ve = caf\u{00e9} + \"oops\"")
-            .unwrap_err();
+    let err = eval_diagnostic("let caf\u{00e9} = 42\nlet na\u{00ef}ve = caf\u{00e9} + \"oops\"")
+        .unwrap_err();
     assert!(err.contains("line 2"), "Expected line 2, got:\n{}", err);
     assert!(err.contains(".to_str()"), "Expected hint, got:\n{}", err);
 }
 
 #[test]
 fn test_unicode_cjk_identifiers() {
-    let err =
-        eval_diagnostic("let \u{53d8}\u{91cf} = 10\nlet \u{7ed3}\u{679c} = \u{53d8}\u{91cf} + \"\u{6587}\u{5b57}\"")
-            .unwrap_err();
+    let err = eval_diagnostic(
+        "let \u{53d8}\u{91cf} = 10\nlet \u{7ed3}\u{679c} = \u{53d8}\u{91cf} + \"\u{6587}\u{5b57}\"",
+    )
+    .unwrap_err();
     assert!(err.contains("line 2"), "Expected line 2, got:\n{}", err);
     assert!(err.contains(".to_str()"), "Expected hint, got:\n{}", err);
 }
@@ -5159,8 +5146,7 @@ fn test_unicode_greek_letters() {
 #[test]
 fn test_unicode_did_you_mean_accented() {
     let err =
-        eval_diagnostic("let donn\u{00e9}es = 100\nlet r\u{00e9}sultat = donnees + 1")
-            .unwrap_err();
+        eval_diagnostic("let donn\u{00e9}es = 100\nlet r\u{00e9}sultat = donnees + 1").unwrap_err();
     assert!(
         err.contains("did you mean"),
         "Expected suggestion, got:\n{}",
@@ -5431,8 +5417,8 @@ fn test_llms_full_documents_all_native_methods() {
 
     // Higher-order array methods live in interpreter.rs, not native_method.rs.
     // Extract them from the match arms there too.
-    let interp_source = std::fs::read_to_string("src/interpreter.rs")
-        .expect("interpreter.rs should exist");
+    let interp_source =
+        std::fs::read_to_string("src/interpreter.rs").expect("interpreter.rs should exist");
     // These appear as string literals in match arms: "map" => {, "filter" => {, etc.
     // inside a block guarded by Value::Array. We look for the pattern directly.
     for line in interp_source.lines() {
@@ -5442,11 +5428,17 @@ fn test_llms_full_documents_all_native_methods() {
             if let Some(end) = stripped.find('"') {
                 let candidate = &stripped[..end];
                 // Only pick short alpha method names inside the array dispatch block
-                if candidate.len() < 20 && candidate.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
+                if candidate.len() < 20
+                    && candidate
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c == '_')
+                {
                     // Verify it's actually a method call on arrays by checking the
                     // surrounding context: these are the only quoted "name" => { patterns
                     // in the interpreter's array method dispatch
-                    if ["map", "filter", "reduce", "find", "sort_by", "sort_by_key"].contains(&candidate) {
+                    if ["map", "filter", "reduce", "find", "sort_by", "sort_by_key"]
+                        .contains(&candidate)
+                    {
                         methods_by_type
                             .entry("Array")
                             .or_default()
@@ -5611,22 +5603,10 @@ fn test_logical_with_negation() {
 
 #[test]
 fn test_logical_chained() {
-    assert_eq!(
-        eval("true && true && true").unwrap(),
-        Value::Bool(true)
-    );
-    assert_eq!(
-        eval("true && true && false").unwrap(),
-        Value::Bool(false)
-    );
-    assert_eq!(
-        eval("false || false || true").unwrap(),
-        Value::Bool(true)
-    );
-    assert_eq!(
-        eval("false || false || false").unwrap(),
-        Value::Bool(false)
-    );
+    assert_eq!(eval("true && true && true").unwrap(), Value::Bool(true));
+    assert_eq!(eval("true && true && false").unwrap(), Value::Bool(false));
+    assert_eq!(eval("false || false || true").unwrap(), Value::Bool(true));
+    assert_eq!(eval("false || false || false").unwrap(), Value::Bool(false));
 }
 
 #[test]
@@ -6549,25 +6529,41 @@ fn test_escape_string_with_only_escapes() {
 fn test_escape_invalid_sequence_error() {
     // \a is not a valid escape sequence, should produce an error
     let result = eval(r#""\a""#);
-    assert!(result.is_err(), "Expected error for invalid escape \\a, got {:?}", result);
+    assert!(
+        result.is_err(),
+        "Expected error for invalid escape \\a, got {:?}",
+        result
+    );
 }
 
 #[test]
 fn test_escape_invalid_sequence_z() {
     let result = eval(r#""\z""#);
-    assert!(result.is_err(), "Expected error for invalid escape \\z, got {:?}", result);
+    assert!(
+        result.is_err(),
+        "Expected error for invalid escape \\z, got {:?}",
+        result
+    );
 }
 
 #[test]
 fn test_escape_invalid_sequence_space() {
     let result = eval(r#""\ ""#);
-    assert!(result.is_err(), "Expected error for invalid escape \\ , got {:?}", result);
+    assert!(
+        result.is_err(),
+        "Expected error for invalid escape \\ , got {:?}",
+        result
+    );
 }
 
 #[test]
 fn test_escape_invalid_sequence_digit() {
     let result = eval(r#""\1""#);
-    assert!(result.is_err(), "Expected error for invalid escape \\1, got {:?}", result);
+    assert!(
+        result.is_err(),
+        "Expected error for invalid escape \\1, got {:?}",
+        result
+    );
 }
 
 // --- Backslash at end of string (unterminated escape) ---
@@ -6577,7 +6573,11 @@ fn test_escape_trailing_backslash() {
     // A lone backslash at the end of a string: "\" - the backslash escapes the
     // closing quote, making this an unterminated string
     let result = eval(r#""\""#);
-    assert!(result.is_err(), "Expected error for trailing backslash, got {:?}", result);
+    assert!(
+        result.is_err(),
+        "Expected error for trailing backslash, got {:?}",
+        result
+    );
 }
 
 // --- Escapes in multiline strings ---
@@ -6586,7 +6586,10 @@ fn test_escape_trailing_backslash() {
 fn test_escape_in_multiline_string() {
     let code = "\"line1\\nstill line1\nactual line2\"";
     let result = eval(code);
-    assert_eq!(result.unwrap(), Value::Str("line1\nstill line1\nactual line2".into()));
+    assert_eq!(
+        result.unwrap(),
+        Value::Str("line1\nstill line1\nactual line2".into())
+    );
 }
 
 // --- Unicode content alongside escapes ---
@@ -6610,7 +6613,10 @@ fn test_escape_with_emoji_content() {
 fn test_escape_with_cjk_content() {
     let code = "\"\u{4f60}\u{597d}\\n\u{4e16}\u{754c}\"";
     let result = eval(code);
-    assert_eq!(result.unwrap(), Value::Str("\u{4f60}\u{597d}\n\u{4e16}\u{754c}".into()));
+    assert_eq!(
+        result.unwrap(),
+        Value::Str("\u{4f60}\u{597d}\n\u{4e16}\u{754c}".into())
+    );
 }
 
 // --- Println/output with escapes ---
@@ -6668,13 +6674,19 @@ fn test_escape_building_json_like_string() {
 #[test]
 fn test_escape_windows_path() {
     let result = eval(r#""C:\\Users\\test\\file.txt""#);
-    assert_eq!(result.unwrap(), Value::Str("C:\\Users\\test\\file.txt".into()));
+    assert_eq!(
+        result.unwrap(),
+        Value::Str("C:\\Users\\test\\file.txt".into())
+    );
 }
 
 #[test]
 fn test_escape_csv_line() {
     let result = eval(r#""name\tage\theight\nAlice\t30\t165""#);
-    assert_eq!(result.unwrap(), Value::Str("name\tage\theight\nAlice\t30\t165".into()));
+    assert_eq!(
+        result.unwrap(),
+        Value::Str("name\tage\theight\nAlice\t30\t165".into())
+    );
 }
 
 // --- SORT_BY / SORT_BY_KEY TESTS ---
@@ -6689,7 +6701,13 @@ fn test_sort_by_ascending() {
     match result {
         Ok(Value::Array(elements)) => {
             let arr = elements.borrow();
-            let nums: Vec<f64> = arr.iter().map(|v| match v { Value::Num(n) => *n, _ => panic!() }).collect();
+            let nums: Vec<f64> = arr
+                .iter()
+                .map(|v| match v {
+                    Value::Num(n) => *n,
+                    _ => panic!(),
+                })
+                .collect();
             assert_eq!(nums, vec![1.0, 1.0, 3.0, 4.0, 5.0]);
         }
         _ => panic!("Expected sorted array, got {:?}", result),
@@ -6706,7 +6724,13 @@ fn test_sort_by_descending() {
     match result {
         Ok(Value::Array(elements)) => {
             let arr = elements.borrow();
-            let nums: Vec<f64> = arr.iter().map(|v| match v { Value::Num(n) => *n, _ => panic!() }).collect();
+            let nums: Vec<f64> = arr
+                .iter()
+                .map(|v| match v {
+                    Value::Num(n) => *n,
+                    _ => panic!(),
+                })
+                .collect();
             assert_eq!(nums, vec![5.0, 4.0, 3.0, 1.0, 1.0]);
         }
         _ => panic!("Expected sorted array, got {:?}", result),
@@ -6755,13 +6779,16 @@ fn test_sort_by_stability() {
         Ok(Value::Array(elements)) => {
             let arr = elements.borrow();
             // Equal keys should preserve original order (merge sort is stable)
-            let tags: Vec<String> = arr.iter().map(|v| match v {
-                Value::Array(inner) => match &inner.borrow()[1] {
-                    Value::Str(s) => s.to_string(),
+            let tags: Vec<String> = arr
+                .iter()
+                .map(|v| match v {
+                    Value::Array(inner) => match &inner.borrow()[1] {
+                        Value::Str(s) => s.to_string(),
+                        _ => panic!(),
+                    },
                     _ => panic!(),
-                },
-                _ => panic!(),
-            }).collect();
+                })
+                .collect();
             assert_eq!(tags, vec!["a", "c", "b", "d"]);
         }
         _ => panic!("Expected sorted array, got {:?}", result),
@@ -6786,7 +6813,11 @@ fn test_sort_by_comparator_returns_non_number() {
     "#;
     let result = eval(code);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("comparator must return a number"));
+    assert!(
+        result
+            .unwrap_err()
+            .contains("comparator must return a number")
+    );
 }
 
 #[test]
@@ -6796,7 +6827,11 @@ fn test_sort_by_missing_argument() {
     "#;
     let result = eval(code);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("sort_by expects a comparator function"));
+    assert!(
+        result
+            .unwrap_err()
+            .contains("sort_by expects a comparator function")
+    );
 }
 
 #[test]
@@ -6809,7 +6844,13 @@ fn test_sort_by_named_function() {
     match result {
         Ok(Value::Array(elements)) => {
             let arr = elements.borrow();
-            let nums: Vec<f64> = arr.iter().map(|v| match v { Value::Num(n) => *n, _ => panic!() }).collect();
+            let nums: Vec<f64> = arr
+                .iter()
+                .map(|v| match v {
+                    Value::Num(n) => *n,
+                    _ => panic!(),
+                })
+                .collect();
             assert_eq!(nums, vec![1.0, 2.0, 3.0, 4.0, 5.0]);
         }
         _ => panic!("Expected sorted array, got {:?}", result),
@@ -6835,7 +6876,13 @@ fn test_sort_by_key_numeric() {
     match result {
         Ok(Value::Array(elements)) => {
             let arr = elements.borrow();
-            let strs: Vec<&str> = arr.iter().map(|v| match v { Value::Str(s) => &**s, _ => panic!() }).collect();
+            let strs: Vec<&str> = arr
+                .iter()
+                .map(|v| match v {
+                    Value::Str(s) => &**s,
+                    _ => panic!(),
+                })
+                .collect();
             assert_eq!(strs, vec!["fig", "kiwi", "apple", "banana"]);
         }
         _ => panic!("Expected sorted array, got {:?}", result),
@@ -6852,7 +6899,13 @@ fn test_sort_by_key_string() {
     match result {
         Ok(Value::Array(elements)) => {
             let arr = elements.borrow();
-            let nums: Vec<f64> = arr.iter().map(|v| match v { Value::Num(n) => *n, _ => panic!() }).collect();
+            let nums: Vec<f64> = arr
+                .iter()
+                .map(|v| match v {
+                    Value::Num(n) => *n,
+                    _ => panic!(),
+                })
+                .collect();
             assert_eq!(nums, vec![1.0, 2.0, 3.0]);
         }
         _ => panic!("Expected sorted array, got {:?}", result),
@@ -6891,7 +6944,11 @@ fn test_sort_by_key_non_sortable_type() {
     "#;
     let result = eval(code);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("key function must return a number or string"));
+    assert!(
+        result
+            .unwrap_err()
+            .contains("key function must return a number or string")
+    );
 }
 
 #[test]
@@ -6902,7 +6959,11 @@ fn test_sort_by_key_mixed_key_types() {
     "#;
     let result = eval(code);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("all keys must be the same type"));
+    assert!(
+        result
+            .unwrap_err()
+            .contains("all keys must be the same type")
+    );
 }
 
 #[test]
@@ -6912,7 +6973,11 @@ fn test_sort_by_key_missing_argument() {
     "#;
     let result = eval(code);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("sort_by_key expects a key function"));
+    assert!(
+        result
+            .unwrap_err()
+            .contains("sort_by_key expects a key function")
+    );
 }
 
 #[test]
@@ -6925,7 +6990,13 @@ fn test_sort_by_key_named_function() {
     match result {
         Ok(Value::Array(elements)) => {
             let arr = elements.borrow();
-            let nums: Vec<f64> = arr.iter().map(|v| match v { Value::Num(n) => *n, _ => panic!() }).collect();
+            let nums: Vec<f64> = arr
+                .iter()
+                .map(|v| match v {
+                    Value::Num(n) => *n,
+                    _ => panic!(),
+                })
+                .collect();
             assert_eq!(nums, vec![3.0, 2.0, 1.0]);
         }
         _ => panic!("Expected sorted array, got {:?}", result),
@@ -6950,7 +7021,13 @@ fn test_sort_by_key_with_map_chain() {
     match result {
         Ok(Value::Array(elements)) => {
             let arr = elements.borrow();
-            let nums: Vec<f64> = arr.iter().map(|v| match v { Value::Num(n) => *n, _ => panic!() }).collect();
+            let nums: Vec<f64> = arr
+                .iter()
+                .map(|v| match v {
+                    Value::Num(n) => *n,
+                    _ => panic!(),
+                })
+                .collect();
             assert_eq!(nums, vec![10.0, 20.0, 30.0]);
         }
         _ => panic!("Expected sorted array, got {:?}", result),

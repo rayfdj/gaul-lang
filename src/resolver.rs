@@ -232,9 +232,7 @@ impl Resolver {
                 result
             }
             ExprKind::Call {
-                callee,
-                arguments,
-                ..
+                callee, arguments, ..
             } => {
                 self.resolve_expression(callee)?;
                 for arg in arguments {
