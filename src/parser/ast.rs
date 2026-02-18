@@ -85,6 +85,10 @@ pub enum ExprKind {
         object: Box<Expr>,
         name: String,
     },
+    Index {
+        object: Box<Expr>,
+        index: Box<Expr>,
+    },
 
     // Primary Expressions
     Num(f64),

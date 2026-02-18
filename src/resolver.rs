@@ -244,6 +244,11 @@ impl Resolver {
                 self.resolve_expression(object)?;
                 Ok(())
             }
+            ExprKind::Index { object, index } => {
+                self.resolve_expression(object)?;
+                self.resolve_expression(index)?;
+                Ok(())
+            }
             ExprKind::Break => {
                 if self.loop_depth == 0 {
                     Err(ResolveError {

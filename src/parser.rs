@@ -2,8 +2,8 @@ pub mod ast;
 
 use crate::parser::ast::DeclarationKind::{ExprStmt, Fn, Let, Var};
 use crate::parser::ast::ExprKind::{
-    Assign, Block, Bool, Call, For, Get, Identifier, If, Null, Num, Range, Return, Str, Unary,
-    While,
+    Assign, Block, Bool, Call, For, Get, Identifier, If, Index, Null, Num, Range, Return, Str,
+    Unary, While,
 };
 use crate::parser::ast::{Declaration, Expr};
 use crate::parser::ast::{ExprKind, Program};
@@ -360,7 +360,7 @@ impl Parser {
             let value = Box::new(self.expression()?); // right-associative
 
             match &expr.kind {
-                Identifier { .. } | Get { .. } => Ok(Expr {
+                Identifier { .. } | Get { .. } | Index { .. } => Ok(Expr {
                     kind: Assign {
                         target: Box::new(expr),
                         value,
@@ -383,7 +383,7 @@ impl Parser {
             let rhs = self.expression()?;
 
             match &expr.kind {
-                Identifier { .. } | Get { .. } => {}
+                Identifier { .. } | Get { .. } | Index { .. } => {}
                 _ => {
                     return Err(ParseError {
                         span,
@@ -595,6 +595,19 @@ impl Parser {
                     kind: Get {
                         object: Box::new(expr),
                         name,
+                    },
+                    span,
+                };
+            } else if self.check(TokenType::LeftBracket) {
+                self.advance();
+                let index = self.expression()?;
+                let span = self.peek().span;
+                self.consume(TokenType::RightBracket, "]")?;
+
+                expr = Expr {
+                    kind: Index {
+                        object: Box::new(expr),
+                        index: Box::new(index),
                     },
                     span,
                 };

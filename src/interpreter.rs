@@ -174,30 +174,7 @@ impl Interpreter {
 
             // assignment
             ExprKind::Assign { target, value } => {
-                let value = prop_val!(self.evaluate_expression(value));
-                match &target.kind {
-                    ExprKind::Identifier { name, resolved } => {
-                        match resolved {
-                            Some((depth, slot)) => {
-                                self.env.assign_at(*depth, *slot, value).map_err(|msg| {
-                                    RuntimeError {
-                                        span: expression.span,
-                                        message: msg,
-                                    }
-                                })?;
-                                Ok(Value::Null.into())
-                            }
-                            None => panic!("Unresolved variable '{}'", name), // should never happen
-                        }
-                    }
-                    other => Err(RuntimeError {
-                        span: expression.span,
-                        message: format!(
-                            "Only identifier can be target of an assignment, but found: '{:?}'",
-                            other
-                        ),
-                    }),
-                }
+                self.evaluate_assign(target, value, expression.span)
             }
 
             // unary
@@ -816,6 +793,11 @@ impl Interpreter {
                     message: "standalone property access not yet implemented".into(),
                 })
             }
+            ExprKind::Index { object, index } => {
+                let obj = prop_val!(self.evaluate_expression(object));
+                let idx = prop_val!(self.evaluate_expression(index));
+                self.evaluate_index_read(obj, idx, expression.span)
+            }
             ExprKind::Lambda { params, body } => {
                 // We capture the *current* environment. Because we use the Linked Chain
                 // architecture (Rc<Environment>), this is a cheap pointer clone that
@@ -832,6 +814,127 @@ impl Interpreter {
 
                 Ok(Value::Fn(Rc::new(function)).into())
             }
+        }
+    }
+
+    #[inline(never)]
+    fn evaluate_assign(
+        &mut self,
+        target: &Expr,
+        value_expr: &Expr,
+        span: Span,
+    ) -> Result<ControlFlow, RuntimeError> {
+        let value = prop_val!(self.evaluate_expression(value_expr));
+        match &target.kind {
+            ExprKind::Identifier { name, resolved } => match resolved {
+                Some((depth, slot)) => {
+                    self.env
+                        .assign_at(*depth, *slot, value)
+                        .map_err(|msg| RuntimeError { span, message: msg })?;
+                    Ok(Value::Null.into())
+                }
+                None => panic!("Unresolved variable '{}'", name),
+            },
+            ExprKind::Index { object, index } => {
+                let obj = prop_val!(self.evaluate_expression(object));
+                let idx = prop_val!(self.evaluate_expression(index));
+                self.evaluate_index_write(obj, idx, value, span)?;
+                Ok(Value::Null.into())
+            }
+            other => Err(RuntimeError {
+                span,
+                message: format!(
+                    "Only identifier can be target of an assignment, but found: '{:?}'",
+                    other
+                ),
+            }),
+        }
+    }
+
+    #[inline(never)]
+    fn evaluate_index_read(
+        &mut self,
+        obj: Value,
+        idx: Value,
+        span: Span,
+    ) -> Result<ControlFlow, RuntimeError> {
+        match (obj, &idx) {
+            (Value::Array(arr), Value::Num(n)) => {
+                if *n < 0.0 {
+                    return Err(RuntimeError {
+                        span,
+                        message: format!("index {} is negative", n),
+                    });
+                }
+                let i = *n as usize;
+                let arr = arr.borrow();
+                arr.get(i).cloned().ok_or_else(|| RuntimeError {
+                    span,
+                    message: format!("index {} out of bounds (len {})", i, arr.len()),
+                }).map(ControlFlow::Value)
+            }
+            (Value::Map(map), _) => {
+                let key = MapKey::from_value(&idx).map_err(|msg| RuntimeError { span, message: msg })?;
+                Ok(map.borrow().get(&key).cloned().unwrap_or(Value::Null).into())
+            }
+            (Value::Str(s), Value::Num(n)) => {
+                if *n < 0.0 {
+                    return Err(RuntimeError {
+                        span,
+                        message: format!("index {} is negative", n),
+                    });
+                }
+                let i = *n as usize;
+                match s.chars().nth(i) {
+                    Some(c) => Ok(Value::Str(c.to_string().into()).into()),
+                    None => Err(RuntimeError {
+                        span,
+                        message: format!("index {} out of bounds (len {})", i, s.chars().count()),
+                    }),
+                }
+            }
+            (obj, idx) => Err(RuntimeError {
+                span,
+                message: format!("cannot index '{}' with '{}'", obj, idx),
+            }),
+        }
+    }
+
+    #[inline(never)]
+    fn evaluate_index_write(
+        &mut self,
+        obj: Value,
+        idx: Value,
+        value: Value,
+        span: Span,
+    ) -> Result<(), RuntimeError> {
+        match (obj, &idx) {
+            (Value::Array(arr), Value::Num(n)) => {
+                let i = *n as usize;
+                let mut arr = arr.borrow_mut();
+                if i < arr.len() {
+                    arr[i] = value;
+                    Ok(())
+                } else {
+                    Err(RuntimeError {
+                        span,
+                        message: format!("index {} out of bounds (len {})", i, arr.len()),
+                    })
+                }
+            }
+            (Value::Map(map), _) => {
+                let key = MapKey::from_value(&idx).map_err(|msg| RuntimeError { span, message: msg })?;
+                map.borrow_mut().insert(key, value);
+                Ok(())
+            }
+            (Value::Str(_), _) => Err(RuntimeError {
+                span,
+                message: "strings are immutable — cannot assign via subscript".into(),
+            }),
+            (obj, _) => Err(RuntimeError {
+                span,
+                message: format!("cannot subscript-assign into '{}'", obj),
+            }),
         }
     }
 

@@ -135,6 +135,25 @@ Foo && Bar
 "Value: " + 42        // "Value: 42" (auto-converts)
 ```
 
+### Subscript Access
+```gaul
+// Array: read and write by index
+Arr[0]           // read first element
+Arr[i]           // read by variable index
+Arr[i + 1]       // read by expression
+Arr[0] = 99      // write (out-of-bounds → runtime error)
+Arr[i] += 1      // compound assignment works too
+
+// Map: read and write by key
+M["name"]        // read (missing key → null, not an error)
+M["name"] = "x"  // write (creates key if missing)
+M[var key]       // dynamic key — any expression works as key
+
+// String: read only (strings are immutable)
+"hello"[0]       // "h"
+S[i]             // character at index i (out-of-bounds → runtime error)
+```
+
 ### Compound Assignment
 ```gaul
 var x = 10
@@ -343,13 +362,14 @@ let Arr = [3, 1, 4, 1, 5, 9]
 
 // Access
 Arr.len()                // 6
-Arr.get(0)               // 3 (use this, not Arr[0])
+Arr[0]                   // 3  (subscript read)
 Arr.first()              // 3
 Arr.last()               // 9
 
 // Modification (mutates in place)
 Arr.push(2)              // Appends 2
 Arr.pop()                // Removes and returns last element (null if empty)
+Arr[0] = 99              // Subscript write (same as Arr.set(0, 99))
 Arr.set(0, 99)           // Sets index 0 to 99
 Arr.remove(0)            // Removes and returns element at index (shifts rest left)
 
@@ -387,11 +407,13 @@ for(Pair : Arr.enumerate()) {
 let M = ["name": "Alice", "age": 30]
 
 // Access
-M.get("name")                // "Alice"
-M.get("missing")             // null (no error for missing keys!)
+M["name"]                    // "Alice"  (subscript read)
+M["missing"]                 // null (no error for missing keys!)
+M.get("name")                // "Alice"  (method form)
 M.get_or("missing", "default")  // "default" (returns default if key absent)
 
 // Modification (mutates in place)
+M["email"] = "a@b.com"      // Subscript write (insert or overwrite)
 M.set("email", "a@b.com")   // Insert or overwrite, returns null
 M.remove("email")            // Returns removed value, or null if missing
 
@@ -663,14 +685,8 @@ let Max Item = Items.reduce(Items.first(), fn(Best, Item) {
 if(A & B) { }                   // & is bitwise AND, use: if(A && B)
 if(A | B) { }                   // | is bitwise OR, use: if(A || B)
 
-// WRONG: Using array subscript or map subscript
-let X = Arr[0]                  // Use: let X = Arr.get(0)
-Arr[0] = 5                      // Use: Arr.set(0, 5)
-let V = Map["key"]              // Use: let V = Map.get("key")
-Map["key"] = 5                  // Use: Map.set("key", 5)
-
 // WRONG: Using % for modulo
-let R = 10 % 3                  // Use: let R = 10.mod(3)
+let R = 10 % 3                  // Use: 10 % 3 or 10.mod(3) (both work now)
 
 // WRONG: Missing parentheses in control flow
 if Condition { }                // Use: if(Condition) { }

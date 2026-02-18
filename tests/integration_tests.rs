@@ -7494,3 +7494,196 @@ fn test_min_clamp_pattern() {
     "#;
     assert_eq!(eval(code).unwrap(), Value::Num(10.0));
 }
+
+// ── subscript syntax ──────────────────────────────────────────────────────────
+
+// --- array reads ---
+
+#[test]
+fn test_subscript_array_literal_index() {
+    assert_eq!(eval("[10, 20, 30][0]").unwrap(), Value::Num(10.0));
+    assert_eq!(eval("[10, 20, 30][2]").unwrap(), Value::Num(30.0));
+}
+
+#[test]
+fn test_subscript_array_variable() {
+    assert_eq!(eval("var arr = [10, 20, 30]\narr[1]").unwrap(), Value::Num(20.0));
+}
+
+#[test]
+fn test_subscript_array_variable_index() {
+    assert_eq!(eval("var arr = [10, 20, 30]\nvar i = 2\narr[i]").unwrap(), Value::Num(30.0));
+}
+
+#[test]
+fn test_subscript_array_expression_index() {
+    assert_eq!(eval("[10, 20, 30][1 + 1]").unwrap(), Value::Num(30.0));
+}
+
+#[test]
+fn test_subscript_array_in_expression() {
+    assert_eq!(eval("[10, 20, 30][0] + [10, 20, 30][1]").unwrap(), Value::Num(30.0));
+}
+
+#[test]
+fn test_subscript_array_out_of_bounds_errors() {
+    assert!(eval("[1, 2, 3][10]").is_err());
+}
+
+#[test]
+fn test_subscript_array_negative_index_errors() {
+    assert!(eval("[1, 2, 3][-1]").is_err());
+}
+
+// --- array writes ---
+
+#[test]
+fn test_subscript_array_write() {
+    assert_eq!(eval("var arr = [1, 2, 3]\narr[0] = 99\narr[0]").unwrap(), Value::Num(99.0));
+}
+
+#[test]
+fn test_subscript_array_write_last() {
+    assert_eq!(eval("var arr = [1, 2, 3]\narr[2] = 42\narr[2]").unwrap(), Value::Num(42.0));
+}
+
+#[test]
+fn test_subscript_array_write_out_of_bounds_errors() {
+    assert!(eval("var arr = [1, 2, 3]\narr[10] = 99").is_err());
+}
+
+#[test]
+fn test_subscript_array_compound_assign() {
+    assert_eq!(eval("var arr = [0, 0, 0]\narr[1] += 5\narr[1]").unwrap(), Value::Num(5.0));
+}
+
+#[test]
+fn test_subscript_array_compound_assign_multiply() {
+    assert_eq!(eval("var arr = [2, 3, 4]\narr[0] *= 10\narr[0]").unwrap(), Value::Num(20.0));
+}
+
+// --- map reads ---
+
+#[test]
+fn test_subscript_map_string_key() {
+    assert_eq!(eval(r#"["a": 1, "b": 2]["a"]"#).unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_subscript_map_variable_key() {
+    assert_eq!(eval("var key = \"b\"\nvar m = [\"a\": 1, \"b\": 2]\nm[key]").unwrap(), Value::Num(2.0));
+}
+
+#[test]
+fn test_subscript_map_missing_key_returns_null() {
+    assert_eq!(eval(r#"["a": 1]["missing"]"#).unwrap(), Value::Null);
+}
+
+#[test]
+fn test_subscript_map_variable() {
+    assert_eq!(eval("var m = [\"x\": 10, \"y\": 20]\nm[\"x\"]").unwrap(), Value::Num(10.0));
+}
+
+// --- map writes ---
+
+#[test]
+fn test_subscript_map_write_existing() {
+    assert_eq!(eval("var m = [\"a\": 1]\nm[\"a\"] = 99\nm[\"a\"]").unwrap(), Value::Num(99.0));
+}
+
+#[test]
+fn test_subscript_map_write_new_key() {
+    assert_eq!(eval("var m = [:]\nm[\"x\"] = 42\nm[\"x\"]").unwrap(), Value::Num(42.0));
+}
+
+#[test]
+fn test_subscript_map_compound_assign() {
+    assert_eq!(eval("var m = [\"n\": 10]\nm[\"n\"] += 5\nm[\"n\"]").unwrap(), Value::Num(15.0));
+}
+
+// --- string reads ---
+
+#[test]
+fn test_subscript_string_first_char() {
+    assert_eq!(eval(r#""hello"[0]"#).unwrap(), Value::Str("h".into()));
+}
+
+#[test]
+fn test_subscript_string_last_char() {
+    assert_eq!(eval(r#""hello"[4]"#).unwrap(), Value::Str("o".into()));
+}
+
+#[test]
+fn test_subscript_string_variable() {
+    assert_eq!(eval("var s = \"abc\"\ns[1]").unwrap(), Value::Str("b".into()));
+}
+
+#[test]
+fn test_subscript_string_out_of_bounds_errors() {
+    assert!(eval(r#""hi"[5]"#).is_err());
+}
+
+#[test]
+fn test_subscript_string_write_errors() {
+    assert!(eval("var s = \"hello\"\ns[0] = \"x\"").is_err());
+}
+
+// --- nested ---
+
+#[test]
+fn test_subscript_nested_array() {
+    assert_eq!(eval("[[1, 2], [3, 4]][0][1]").unwrap(), Value::Num(2.0));
+}
+
+#[test]
+fn test_subscript_nested_array_variable() {
+    assert_eq!(eval("var grid = [[1, 2], [3, 4]]\ngrid[1][0]").unwrap(), Value::Num(3.0));
+}
+
+#[test]
+fn test_subscript_chained_with_method() {
+    assert_eq!(eval(r#"["hello", "world"][1].len()"#).unwrap(), Value::Num(5.0));
+}
+
+// --- in loops ---
+
+#[test]
+fn test_subscript_in_while_loop() {
+    let code = r#"
+    var arr = [1, 2, 3, 4, 5]
+    var sum = 0
+    var i = 0
+    while (i < 5) {
+        sum += arr[i]
+        i += 1
+    }
+    sum
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(15.0));
+}
+
+#[test]
+fn test_subscript_write_in_loop() {
+    let code = r#"
+    var arr = [0, 0, 0]
+    var i = 0
+    while (i < 3) {
+        arr[i] = i * 2
+        i += 1
+    }
+    arr[2]
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(4.0));
+}
+
+// --- spaces in identifiers ---
+
+#[test]
+fn test_subscript_spaces_in_name() {
+    assert_eq!(eval("var my array = [10, 20, 30]\nmy array[1]").unwrap(), Value::Num(20.0));
+}
+
+// --- immutability ---
+// Note: let prevents rebinding (arr = something_else), but arrays are reference
+// types so arr[i] = val mutates through the Rc — same as arr.set() already does.
+// String writes always error because strings are immutable values, not references.
