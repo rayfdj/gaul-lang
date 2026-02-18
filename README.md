@@ -112,7 +112,7 @@ Gaul has the usual arithmetic (`+`, `-`, `*`, `/`), comparison (`==`, `!=`, `<`,
 ~5         // -6 (bitwise NOT)
 ```
 
-Modulo is a method: `10.mod(3)` instead of `10 % 3`.
+Modulo: `10 % 3` (or `10.mod(3)`) — both use Euclidean semantics.
 
 ### Functional Programming
 
@@ -468,6 +468,23 @@ let Hex = 0xFF             // 255
 let Binary = 0b1010        // 10
 let Octal = 0o77           // 63
 ```
+
+---
+
+## String Interpolation
+
+`format(template, ...)` replaces `{}` placeholders with values:
+
+```gaul
+format("hello {}", "gaul")          // "hello gaul"
+format("score: {}", 42)             // "score: 42"
+format("{} + {} = {}", 1, 2, 3)     // "1 + 2 = 3"
+
+var name = "world"
+format("hello, {}!", name)          // "hello, world!"
+```
+
+The number of `{}` must match the number of extra arguments — mismatch is a runtime error.
 
 ---
 

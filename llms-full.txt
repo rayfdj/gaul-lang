@@ -514,6 +514,27 @@ println(" done!")        // Loading... done!
 
 ---
 
+## String Interpolation
+
+`format(template, arg1, arg2, ...)` — replace `{}` placeholders with values.
+
+```gaul
+format("hello {}", "gaul")          // "hello gaul"
+format("score: {}", 42)             // "score: 42"
+format("{} + {} = {}", 1, 2, 3)     // "1 + 2 = 3"
+format("done: {}", true)            // "done: true"
+
+var name = "world"
+format("hello, {}!", name)          // "hello, world!"
+```
+
+- First argument must be a string (the template).
+- Number of `{}` must match the number of remaining arguments — mismatch is a runtime error.
+- Any value type is accepted as a fill argument; it's converted to its string representation.
+- For building strings in a loop, prefer `[...].join(sep)` over repeated string concatenation.
+
+---
+
 ## Idiomatic Gaul Patterns
 
 ### Pattern 1: Functional Pipelines

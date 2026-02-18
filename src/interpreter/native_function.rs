@@ -8,6 +8,7 @@ pub fn all_native_functions() -> Vec<(&'static str, Value)> {
         ("read_file", native_read_file()),
         ("min", native_min()),
         ("max", native_max()),
+        ("format", native_format()),
     ]
 }
 
@@ -58,6 +59,41 @@ fn native_max() -> Value {
         func: |args| match (&args[0], &args[1]) {
             (Value::Num(a), Value::Num(b)) => Ok(Value::Num(if a >= b { *a } else { *b })),
             _ => Err("max expects two numbers".into()),
+        },
+    }))
+}
+
+fn native_format() -> Value {
+    Value::NativeFn(Rc::from(NativeFunction {
+        name: Rc::from("format"),
+        arity: None,
+        func: |args| {
+            if args.is_empty() {
+                return Err("format expects at least 1 argument (the template string)".into());
+            }
+            let template = match &args[0] {
+                Value::Str(s) => s.clone(),
+                _ => return Err("format: first argument must be a string".into()),
+            };
+            let fill_args = &args[1..];
+            let parts: Vec<&str> = template.split("{}").collect();
+            let placeholder_count = parts.len() - 1;
+            if placeholder_count != fill_args.len() {
+                return Err(format!(
+                    "format: template has {} placeholder(s) but {} argument(s) given",
+                    placeholder_count,
+                    fill_args.len()
+                )
+                .into());
+            }
+            let mut result = String::new();
+            for (i, part) in parts.iter().enumerate() {
+                result.push_str(part);
+                if i < fill_args.len() {
+                    result.push_str(&format!("{}", fill_args[i]));
+                }
+            }
+            Ok(Value::Str(result.into()))
         },
     }))
 }

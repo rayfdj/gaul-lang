@@ -7686,4 +7686,144 @@ fn test_subscript_spaces_in_name() {
 // --- immutability ---
 // Note: let prevents rebinding (arr = something_else), but arrays are reference
 // types so arr[i] = val mutates through the Rc — same as arr.set() already does.
+
+// ============================================================
+// format() — string interpolation
+// ============================================================
+
+// --- basic ---
+
+#[test]
+fn test_format_no_placeholders() {
+    assert_eq!(
+        eval(r#"format("hello world")"#).unwrap(),
+        Value::Str("hello world".into())
+    );
+}
+
+#[test]
+fn test_format_one_placeholder_string() {
+    assert_eq!(
+        eval(r#"format("hello {}", "gaul")"#).unwrap(),
+        Value::Str("hello gaul".into())
+    );
+}
+
+#[test]
+fn test_format_one_placeholder_number() {
+    assert_eq!(
+        eval(r#"format("score: {}", 42)"#).unwrap(),
+        Value::Str("score: 42".into())
+    );
+}
+
+#[test]
+fn test_format_multiple_placeholders() {
+    assert_eq!(
+        eval(r#"format("{} + {} = {}", 1, 2, 3)"#).unwrap(),
+        Value::Str("1 + 2 = 3".into())
+    );
+}
+
+// --- types ---
+
+#[test]
+fn test_format_bool() {
+    assert_eq!(
+        eval(r#"format("is true: {}", true)"#).unwrap(),
+        Value::Str("is true: true".into())
+    );
+}
+
+#[test]
+fn test_format_null() {
+    assert_eq!(
+        eval(r#"format("val: {}", null)"#).unwrap(),
+        Value::Str("val: null".into())
+    );
+}
+
+#[test]
+fn test_format_float() {
+    assert_eq!(
+        eval(r#"format("pi ~= {}", 3.14)"#).unwrap(),
+        Value::Str("pi ~= 3.14".into())
+    );
+}
+
+// --- with variables ---
+
+#[test]
+fn test_format_with_variable() {
+    assert_eq!(
+        eval("var name = \"gaul\"\nformat(\"hello, {}!\", name)").unwrap(),
+        Value::Str("hello, gaul!".into())
+    );
+}
+
+#[test]
+fn test_format_spaces_in_identifier() {
+    assert_eq!(
+        eval("var total score = 99\nformat(\"score: {}\", total score)").unwrap(),
+        Value::Str("score: 99".into())
+    );
+}
+
+// --- placeholder at start/end ---
+
+#[test]
+fn test_format_placeholder_at_start() {
+    assert_eq!(
+        eval(r#"format("{} items", 5)"#).unwrap(),
+        Value::Str("5 items".into())
+    );
+}
+
+#[test]
+fn test_format_placeholder_at_end() {
+    assert_eq!(
+        eval(r#"format("count: {}", 7)"#).unwrap(),
+        Value::Str("count: 7".into())
+    );
+}
+
+// --- result used in expression ---
+
+#[test]
+fn test_format_result_concat() {
+    assert_eq!(
+        eval(r#"format("x={}", 1) + " y=2""#).unwrap(),
+        Value::Str("x=1 y=2".into())
+    );
+}
+
+#[test]
+fn test_format_result_len() {
+    assert_eq!(
+        eval(r#"format("hi {}", "bob").len()"#).unwrap(),
+        Value::Num(6.0)
+    );
+}
+
+// --- errors ---
+
+#[test]
+fn test_format_too_many_args_errors() {
+    assert!(eval(r#"format("hello", 1)"#).is_err());
+}
+
+#[test]
+fn test_format_too_few_args_errors() {
+    assert!(eval(r#"format("{} and {}", 1)"#).is_err());
+}
+
+#[test]
+fn test_format_non_string_template_errors() {
+    assert!(eval(r#"format(42, "x")"#).is_err());
+}
+
+#[test]
+fn test_format_no_args_errors() {
+    assert!(eval("format()").is_err());
+}
 // String writes always error because strings are immutable values, not references.
