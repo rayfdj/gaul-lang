@@ -106,10 +106,20 @@ impl Scanner {
                 self.add_token(TokenType::RightBracket)
             }
             ',' => self.add_token(TokenType::Comma),
-            '-' => self.add_token(TokenType::Minus),
-            '+' => self.add_token(TokenType::Plus),
+            '-' => {
+                let t = if self.match_char('=') { TokenType::MinusEqual } else { TokenType::Minus };
+                self.add_token(t);
+            }
+            '+' => {
+                let t = if self.match_char('=') { TokenType::PlusEqual } else { TokenType::Plus };
+                self.add_token(t);
+            }
             ':' => self.add_token(TokenType::Colon),
-            '*' => self.add_token(TokenType::Star),
+            '*' => {
+                let t = if self.match_char('=') { TokenType::StarEqual } else { TokenType::Star };
+                self.add_token(t);
+            }
+            '%' => self.add_token(TokenType::Percent),
 
             // Dot or Range
             '.' => {
@@ -196,6 +206,8 @@ impl Scanner {
                     while self.peek() != Some('\n') && !self.is_at_end() {
                         self.advance();
                     }
+                } else if self.match_char('=') {
+                    self.add_token(TokenType::SlashEqual);
                 } else if self.match_char('*') {
                     // Multi-line comment
                     loop {

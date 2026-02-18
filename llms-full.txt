@@ -84,8 +84,10 @@ let Nothing = null
 5 - 3      // 2
 5 * 3      // 15
 5 / 3      // 1.666...
-5.mod(3)   // 2 (modulo is a method, not %)
+5 % 3      // 2 (Euclidean modulo — same as 5.mod(3))
 5.pow(3)   // 125
+min(3, 5)  // 3
+max(3, 5)  // 5
 ```
 
 ### Comparison
@@ -131,6 +133,20 @@ Foo && Bar
 ```gaul
 "Hello, " + "World!"  // "Hello, World!"
 "Value: " + 42        // "Value: 42" (auto-converts)
+```
+
+### Compound Assignment
+```gaul
+var x = 10
+x += 5     // x is now 15 (same as x = x + 5)
+x -= 3     // x is now 12
+x *= 2     // x is now 24
+x /= 4     // x is now 6
+
+// Works with spaced identifiers too
+var total distance = 0
+var step size = 5
+total distance += step size   // total distance is now 5
 ```
 
 ### Bitwise
@@ -357,6 +373,13 @@ Arr.is_empty()           // false
 Arr.contains(5)          // true
 Arr.index_of(4)          // 2 (first index, or -1 if not found)
 Arr.find(fn(x) { x > 3 })  // 4 (first match, or null if none)
+
+// Enumeration
+Arr.enumerate()          // [[0, 3], [1, 1], [2, 4], ...] — pairs of [index, value]
+for(Pair : Arr.enumerate()) {
+    let I = Pair.get(0)
+    let Item = Pair.get(1)
+}
 ```
 
 ### Map Methods
@@ -462,6 +485,9 @@ for(Line : Lines) {
 println("Hello")         // Print with newline
 println(42)              // Numbers auto-convert
 println([1, 2, 3])       // Arrays print as [1, 2, 3]
+print("Loading...")      // Print without newline (flushes stdout)
+print(".")
+println(" done!")        // Loading... done!
 ```
 
 ---
@@ -809,7 +835,8 @@ println(Solve(Input))
 | Self-ref lambda | `let F = fn(N) { F(N - 1) }` |
 | Tail call opt. | Tail-position calls don't grow the stack |
 | Multiline chain | `(Arr.map(...).filter(...))` (wrap in parens!) |
-| Modulo | `N.mod(M)` |
+| Modulo | `N.mod(M)` or `N % M` |
+| Min / Max | `min(A, B)`, `max(A, B)` |
 | To string | `N.to_str()`, `true.to_str()` |
 | Read file | `read_file("path")` |
-| Print | `println(value)` |
+| Print | `println(value)`, `print(value)` (no newline) |

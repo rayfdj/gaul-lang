@@ -372,6 +372,55 @@ impl Parser {
                     message: "Invalid assignment target".to_string(),
                 }),
             }
+        } else if self.match_any(&[
+            TokenType::PlusEqual,
+            TokenType::MinusEqual,
+            TokenType::StarEqual,
+            TokenType::SlashEqual,
+        ]) {
+            let op_token = self.previous().clone();
+            let span = op_token.span;
+            let rhs = self.expression()?;
+
+            match &expr.kind {
+                Identifier { .. } | Get { .. } => {}
+                _ => {
+                    return Err(ParseError {
+                        span,
+                        message: "Invalid assignment target".to_string(),
+                    })
+                }
+            }
+
+            let bin_op_type = match op_token.token_type {
+                TokenType::PlusEqual => TokenType::Plus,
+                TokenType::MinusEqual => TokenType::Minus,
+                TokenType::StarEqual => TokenType::Star,
+                TokenType::SlashEqual => TokenType::Slash,
+                _ => unreachable!(),
+            };
+            let bin_op_token = Token {
+                token_type: bin_op_type,
+                lexeme: op_token.lexeme.clone(),
+                span,
+            };
+
+            let expanded_rhs = Expr {
+                kind: ExprKind::Binary {
+                    left: Box::new(expr.clone()),
+                    operator: bin_op_token,
+                    right: Box::new(rhs),
+                },
+                span,
+            };
+
+            Ok(Expr {
+                kind: Assign {
+                    target: Box::new(expr),
+                    value: Box::new(expanded_rhs),
+                },
+                span,
+            })
         } else {
             Ok(expr)
         }
@@ -487,7 +536,7 @@ impl Parser {
     }
 
     fn factor(&mut self) -> Result<Expr, ParseError> {
-        self.binary_expression(&[TokenType::Star, TokenType::Slash], |p| p.unary())
+        self.binary_expression(&[TokenType::Star, TokenType::Slash, TokenType::Percent], |p| p.unary())
     }
 
     fn unary(&mut self) -> Result<Expr, ParseError> {

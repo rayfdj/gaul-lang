@@ -182,6 +182,17 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         (Value::Bool(b), "to_str") => Ok(Value::Str(b.to_string().into())),
 
         // Array!
+        (Value::Array(elements), "enumerate") => {
+            let pairs: Vec<Value> = elements
+                .borrow()
+                .iter()
+                .enumerate()
+                .map(|(i, v)| {
+                    Value::Array(Rc::new(RefCell::new(vec![Value::Num(i as f64), v.clone()])))
+                })
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(pairs))))
+        }
         (Value::Array(elements), "len") => Ok(Value::Num(elements.borrow().len() as f64)),
         (Value::Array(elements), "get") => {
             let idx = match args.first() {

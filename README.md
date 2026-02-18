@@ -101,7 +101,7 @@ for(I : 1..10) {
 
 ### Operators
 
-Gaul has the usual arithmetic (`+`, `-`, `*`, `/`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), and logical (`&&`, `||`, `!`) operators, plus bitwise operators for integer-level manipulation:
+Gaul has the usual arithmetic (`+`, `-`, `*`, `/`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`), and logical (`&&`, `||`, `!`) operators, compound assignment (`+=`, `-=`, `*=`, `/=`), plus bitwise operators for integer-level manipulation:
 
 ```gaul
 5 & 3      // 1 (AND)

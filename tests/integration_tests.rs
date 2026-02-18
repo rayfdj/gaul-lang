@@ -5486,6 +5486,26 @@ fn test_llms_full_documents_all_native_methods() {
         "llms-full.txt should document || operator"
     );
 
+    // Verify syntax-level operators (pure parser constructs — invisible to the
+    // native method/function extraction above, so listed explicitly here).
+    // IMPORTANT: if you add a new operator that is handled in the scanner/parser
+    // rather than the interpreter, add it to this list so docs stay in sync.
+    let syntax_ops: &[(&str, &str)] = &[
+        ("+=", "compound assignment +="),
+        ("-=", "compound assignment -="),
+        ("*=", "compound assignment *="),
+        ("/=", "compound assignment /="),
+        (" % ", "modulo operator %"),
+        ("~=", "jam karet / approximate equality ~="),
+        ("..", "range operator .."),
+    ];
+    for (op, description) in syntax_ops {
+        assert!(
+            doc.contains(op),
+            "llms-full.txt should document {description} ('{op}')"
+        );
+    }
+
     // Verify native functions are documented
     let fn_source = std::fs::read_to_string("src/interpreter/native_function.rs")
         .expect("native_function.rs should exist");
@@ -5501,7 +5521,10 @@ fn test_llms_full_documents_all_native_methods() {
     }
     let mut missing_fns = Vec::new();
     for name in &native_fns {
-        if !doc.contains(name) {
+        // Check for "name(" so we match actual call syntax, not substrings.
+        // e.g. "print(" won't false-pass due to "println" containing "print".
+        let pattern = format!("{}(", name);
+        if !doc.contains(&pattern) {
             missing_fns.push(name.as_str());
         }
     }
@@ -7032,4 +7055,442 @@ fn test_sort_by_key_with_map_chain() {
         }
         _ => panic!("Expected sorted array, got {:?}", result),
     }
+}
+
+// ── compound assignment operators ─────────────────────────────────────────────
+
+#[test]
+fn test_compound_assign_plus() {
+    let result = eval("var x = 10\nx += 5\nx");
+    assert_eq!(result.unwrap(), Value::Num(15.0));
+}
+
+#[test]
+fn test_compound_assign_minus() {
+    let result = eval("var x = 20\nx -= 3\nx");
+    assert_eq!(result.unwrap(), Value::Num(17.0));
+}
+
+#[test]
+fn test_compound_assign_star() {
+    let result = eval("var x = 4\nx *= 3\nx");
+    assert_eq!(result.unwrap(), Value::Num(12.0));
+}
+
+#[test]
+fn test_compound_assign_slash() {
+    let result = eval("var x = 20\nx /= 4\nx");
+    assert_eq!(result.unwrap(), Value::Num(5.0));
+}
+
+#[test]
+fn test_compound_assign_variable_operand() {
+    let result = eval("var x = 10\nvar y = 5\nx += y\nx");
+    assert_eq!(result.unwrap(), Value::Num(15.0));
+}
+
+#[test]
+fn test_compound_assign_expression_operand() {
+    let result = eval("var x = 10\nvar y = 5\nx += y * 2\nx");
+    assert_eq!(result.unwrap(), Value::Num(20.0));
+}
+
+#[test]
+fn test_compound_assign_call_operand() {
+    let code = r#"
+    fn three() { 3 }
+    var x = 5
+    x += three()
+    x
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(8.0));
+}
+
+#[test]
+fn test_compound_assign_in_function() {
+    let code = r#"
+    fn add_five(n) {
+        var result = n
+        result += 5
+        result
+    }
+    add_five(10)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(15.0));
+}
+
+#[test]
+fn test_compound_assign_captured_var() {
+    let code = r#"
+    var counter = 0
+    fn bump() {
+        counter += 1
+    }
+    bump()
+    bump()
+    counter
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(2.0));
+}
+
+#[test]
+fn test_compound_assign_nested_scope() {
+    let code = r#"
+    var x = 10
+    {
+        x += 5
+    }
+    x
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(15.0));
+}
+
+#[test]
+fn test_compound_assign_accumulator() {
+    let code = r#"
+    var sum = 0
+    var i = 1
+    while (i <= 5) {
+        sum += i
+        i = i + 1
+    }
+    sum
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(15.0));
+}
+
+#[test]
+fn test_compound_assign_counter() {
+    let code = r#"
+    var i = 0
+    while (i < 5) {
+        i += 1
+    }
+    i
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(5.0));
+}
+
+#[test]
+fn test_compound_assign_spaces_in_name() {
+    let code = r#"
+    var total distance = 0
+    var step size = 5
+    total distance += step size
+    total distance
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(5.0));
+}
+
+#[test]
+fn test_compound_assign_chained() {
+    let code = r#"
+    var x = 100
+    x -= 20
+    x *= 2
+    x /= 8
+    x
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(20.0));
+}
+
+#[test]
+fn test_compound_assign_negative_rhs() {
+    let result = eval("var x = 10\nx += -5\nx");
+    assert_eq!(result.unwrap(), Value::Num(5.0));
+}
+
+#[test]
+fn test_compound_assign_zero() {
+    let result = eval("var x = 7\nx += 0\nx");
+    assert_eq!(result.unwrap(), Value::Num(7.0));
+}
+
+#[test]
+fn test_compound_assign_float_result() {
+    let result = eval("var x = 10\nx /= 3\nx");
+    match result.unwrap() {
+        Value::Num(n) => assert!((n - 10.0 / 3.0).abs() < 1e-10),
+        v => panic!("Expected number, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_compound_assign_to_let_errors() {
+    let result = eval("let x = 5\nx += 1");
+    assert!(result.is_err(), "Expected error assigning to immutable let");
+}
+
+#[test]
+fn test_compound_assign_to_literal_errors() {
+    let result = eval("5 += 3");
+    assert!(result.is_err(), "Expected parse error for literal target");
+}
+
+#[test]
+fn test_compound_assign_to_undefined_errors() {
+    let result = eval("y += 1");
+    assert!(result.is_err(), "Expected error for undefined variable");
+}
+
+// ── % modulo operator ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_percent_basic() {
+    assert_eq!(eval("10 % 3").unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_percent_exact_divisible() {
+    assert_eq!(eval("9 % 3").unwrap(), Value::Num(0.0));
+}
+
+#[test]
+fn test_percent_euclidean_negative_dividend() {
+    // Euclidean mod — result is always non-negative, same as .mod()
+    assert_eq!(eval("-7 % 3").unwrap(), Value::Num(2.0));
+}
+
+#[test]
+fn test_percent_euclidean_negative_divisor() {
+    assert_eq!(eval("7 % -3").unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_percent_float() {
+    match eval("5.5 % 2.0").unwrap() {
+        Value::Num(n) => assert!((n - 1.5).abs() < 1e-10),
+        v => panic!("Expected Num, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_percent_precedence_same_as_star() {
+    // 10 + 5 % 3 == 10 + 2 == 12  (% binds tighter than +)
+    assert_eq!(eval("10 + 5 % 3").unwrap(), Value::Num(12.0));
+}
+
+#[test]
+fn test_percent_in_expression() {
+    assert_eq!(eval("(2 + 3) % 4").unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_percent_matches_mod_method() {
+    // % and .mod() must give the same result
+    // Note: -7.mod(3) parses as -(7.mod(3)) in Gaul, so use a var to avoid that
+    assert_eq!(eval("17 % 5").unwrap(), eval("17.mod(5)").unwrap());
+    assert_eq!(eval("var n = -7\nn % 3").unwrap(), eval("var n = -7\nn.mod(3)").unwrap());
+}
+
+#[test]
+fn test_percent_in_loop() {
+    let code = r#"
+    var evens = 0
+    var i = 0
+    while (i < 10) {
+        if (i % 2 == 0) { evens += 1 }
+        i += 1
+    }
+    evens
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(5.0));
+}
+
+#[test]
+fn test_percent_zero_divisor_errors() {
+    assert!(eval("5 % 0").is_err());
+}
+
+// ── print() (no newline) ──────────────────────────────────────────────────────
+
+#[test]
+fn test_print_returns_null() {
+    assert_eq!(eval("print(\"hello\")").unwrap(), Value::Null);
+}
+
+#[test]
+fn test_print_no_args() {
+    // print() with no args should not crash
+    assert_eq!(eval("print()").unwrap(), Value::Null);
+}
+
+#[test]
+fn test_print_multiple_args() {
+    // multiple args should not crash
+    assert_eq!(eval("print(\"a\", \"b\", 3)").unwrap(), Value::Null);
+}
+
+#[test]
+fn test_print_and_println_chainable() {
+    let code = r#"
+    print("x")
+    println(" done")
+    "#;
+    assert!(eval(code).is_ok());
+}
+
+// ── .enumerate() ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_enumerate_basic() {
+    let code = r#"["a", "b", "c"].enumerate()"#;
+    match eval(code).unwrap() {
+        Value::Array(outer) => {
+            let outer = outer.borrow();
+            assert_eq!(outer.len(), 3);
+            for (expected_i, elem) in outer.iter().enumerate() {
+                match elem {
+                    Value::Array(pair) => {
+                        let pair = pair.borrow();
+                        assert_eq!(pair[0], Value::Num(expected_i as f64));
+                    }
+                    _ => panic!("Expected pair array"),
+                }
+            }
+        }
+        v => panic!("Expected Array, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_enumerate_empty() {
+    let code = r#"[].enumerate()"#;
+    match eval(code).unwrap() {
+        Value::Array(outer) => assert_eq!(outer.borrow().len(), 0),
+        v => panic!("Expected empty array, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_enumerate_values_accessible() {
+    let code = r#"
+    let pairs = [10, 20, 30].enumerate()
+    let first = pairs.get(0)
+    first.get(1)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(10.0));
+}
+
+#[test]
+fn test_enumerate_index_accessible() {
+    let code = r#"
+    let pairs = [10, 20, 30].enumerate()
+    let second = pairs.get(1)
+    second.get(0)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_enumerate_in_for_loop() {
+    let code = r#"
+    var index sum = 0
+    for (pair : [10, 20, 30].enumerate()) {
+        index sum += pair.get(0)
+    }
+    index sum
+    "#;
+    // indices 0+1+2 = 3
+    assert_eq!(eval(code).unwrap(), Value::Num(3.0));
+}
+
+#[test]
+fn test_enumerate_single_element() {
+    let code = r#"["only"].enumerate().get(0).get(0)"#;
+    assert_eq!(eval(code).unwrap(), Value::Num(0.0));
+}
+
+// ── min() / max() global functions ───────────────────────────────────────────
+
+#[test]
+fn test_min_basic() {
+    assert_eq!(eval("min(3, 5)").unwrap(), Value::Num(3.0));
+}
+
+#[test]
+fn test_min_reversed() {
+    assert_eq!(eval("min(5, 3)").unwrap(), Value::Num(3.0));
+}
+
+#[test]
+fn test_min_equal() {
+    assert_eq!(eval("min(4, 4)").unwrap(), Value::Num(4.0));
+}
+
+#[test]
+fn test_min_negative() {
+    assert_eq!(eval("min(-1, 1)").unwrap(), Value::Num(-1.0));
+}
+
+#[test]
+fn test_min_floats() {
+    assert_eq!(eval("min(1.5, 1.4)").unwrap(), Value::Num(1.4));
+}
+
+#[test]
+fn test_max_basic() {
+    assert_eq!(eval("max(3, 5)").unwrap(), Value::Num(5.0));
+}
+
+#[test]
+fn test_max_reversed() {
+    assert_eq!(eval("max(5, 3)").unwrap(), Value::Num(5.0));
+}
+
+#[test]
+fn test_max_equal() {
+    assert_eq!(eval("max(4, 4)").unwrap(), Value::Num(4.0));
+}
+
+#[test]
+fn test_max_negative() {
+    assert_eq!(eval("max(-1, 1)").unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_max_floats() {
+    assert_eq!(eval("max(1.5, 1.4)").unwrap(), Value::Num(1.5));
+}
+
+#[test]
+fn test_min_in_expression() {
+    assert_eq!(eval("min(10, 3) + 2").unwrap(), Value::Num(5.0));
+}
+
+#[test]
+fn test_max_in_expression() {
+    assert_eq!(eval("max(10, 3) * 2").unwrap(), Value::Num(20.0));
+}
+
+#[test]
+fn test_min_wrong_args_errors() {
+    assert!(eval("min(1)").is_err());
+    assert!(eval("min(1, 2, 3)").is_err());
+}
+
+#[test]
+fn test_max_wrong_args_errors() {
+    assert!(eval("max(1)").is_err());
+    assert!(eval("max(1, 2, 3)").is_err());
+}
+
+#[test]
+fn test_min_max_with_variables() {
+    let code = r#"
+    var a = 7
+    var b = 3
+    max(a, b) - min(a, b)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(4.0));
+}
+
+#[test]
+fn test_min_clamp_pattern() {
+    // Common AOC pattern: clamp a value between lo and hi
+    let code = r#"
+    fn clamp(val, lo, hi) { max(lo, min(val, hi)) }
+    clamp(15, 0, 10)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(10.0));
 }

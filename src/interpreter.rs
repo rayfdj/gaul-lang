@@ -272,6 +272,16 @@ impl Interpreter {
                             (TokenType::Star, Value::Num(n1), Value::Num(n2)) => {
                                 Ok(Value::Num(n1 * n2).into())
                             }
+                            (TokenType::Percent, Value::Num(n1), Value::Num(n2)) => {
+                                if n2 == 0.0 {
+                                    Err(RuntimeError {
+                                        span: expression.span,
+                                        message: format!("cannot modulo '{}' by zero", n1),
+                                    })
+                                } else {
+                                    Ok(Value::Num(n1.rem_euclid(n2)).into())
+                                }
+                            }
 
                             // bitwise
                             (TokenType::Ampersand, Value::Num(n1), Value::Num(n2)) => {
@@ -886,6 +896,20 @@ impl Interpreter {
                     }
                 }
                 Value::NativeFn(native_fun) => {
+                    if let Some(expected) = native_fun.arity {
+                        if current_args.len() != expected {
+                            return Err(RuntimeError {
+                                span,
+                                message: format!(
+                                    "'{}' expects {} argument{}, got {}",
+                                    native_fun.name,
+                                    expected,
+                                    if expected == 1 { "" } else { "s" },
+                                    current_args.len()
+                                ),
+                            });
+                        }
+                    }
                     return (native_fun.func)(&current_args)
                         .map_err(|msg| RuntimeError { span, message: msg });
                 }
