@@ -151,19 +151,6 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
                 Ok(Value::Num(n.sqrt()))
             }
         }
-        (Value::Num(n), "mod") => {
-            let divisor = match args.first() {
-                Some(Value::Num(d)) => *d,
-                _ => return Err("mod expects a number".into()),
-            };
-
-            // Safety Check: Avoid NaN
-            if divisor == 0.0 {
-                return Err("modulo by zero".into());
-            }
-
-            Ok(Value::Num(n.rem_euclid(divisor)))
-        }
         (Value::Num(n), "floor_div") => {
             let divisor = match args.first() {
                 Some(Value::Num(d)) => *d,

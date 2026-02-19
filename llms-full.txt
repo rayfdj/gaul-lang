@@ -84,7 +84,7 @@ let Nothing = null
 5 - 3      // 2
 5 * 3      // 15
 5 / 3      // 1.666...
-5 % 3      // 2 (Euclidean modulo — same as 5.mod(3))
+5 % 3      // 2 (Euclidean modulo)
 5.pow(3)   // 125
 min(3, 5)  // 3
 max(3, 5)  // 5
@@ -237,7 +237,7 @@ let Indices = (0..10).to_array()
 ```gaul
 for(I : 0..100) {
     if(I == 50) { break }
-    if(I.mod(2) == 0) { continue }
+    if(I % 2 == 0) { continue }
     println(I)
 }
 ```
@@ -437,7 +437,7 @@ let Doubled = Numbers.map(fn(X) { X * 2 })
 // [2, 4, 6, 8, 10]
 
 // Filter: keep matching elements
-let Evens = Numbers.filter(fn(X) { X.mod(2) == 0 })
+let Evens = Numbers.filter(fn(X) { X % 2 == 0 })
 // [2, 4]
 
 // Reduce: accumulate to single value
@@ -447,7 +447,7 @@ let Sum = Numbers.reduce(0, fn(Acc, X) { Acc + X })
 // Chaining (IDIOMATIC GAUL)
 // IMPORTANT: Wrap multiline chains in parentheses!
 let Result = (Numbers
-    .filter(fn(X) { X.mod(2) == 0 })
+    .filter(fn(X) { X % 2 == 0 })
     .map(fn(X) { X * X })
     .sum())
 // 20
@@ -466,7 +466,6 @@ N.floor()                // -43
 N.ceil()                 // -42
 N.round()                // -43
 N.sqrt()                 // NaN (negative)
-42.mod(5)                // 2 (modulo)
 42.floor_div(5)          // 8 (integer division)
 42.pow(2)                // 1764
 ```
@@ -886,9 +885,6 @@ let Max Item = Items.reduce(Items.first(), fn(Best, Item) {
 if(A & B) { }                   // & is bitwise AND, use: if(A && B)
 if(A | B) { }                   // | is bitwise OR, use: if(A || B)
 
-// WRONG: Using % for modulo
-let R = 10 % 3                  // Use: 10 % 3 or 10.mod(3) (both work now)
-
 // WRONG: Missing parentheses in control flow
 if Condition { }                // Use: if(Condition) { }
 for X : Array { }               // Use: for(X : Array) { }
@@ -1052,7 +1048,7 @@ println(Solve(Input))
 | Self-ref lambda | `let F = fn(N) { F(N - 1) }` |
 | Tail call opt. | Tail-position calls don't grow the stack |
 | Multiline chain | `(Arr.map(...).filter(...))` (wrap in parens!) |
-| Modulo | `N.mod(M)` or `N % M` |
+| Modulo | `N % M` (Euclidean) |
 | Min / Max | `min(A, B)`, `max(A, B)` |
 | To string | `N.to_str()`, `true.to_str()` |
 | Read file | `read_file("path")` |

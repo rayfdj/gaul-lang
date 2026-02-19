@@ -449,7 +449,7 @@ fn test_continue_in_for_loop() {
     let list = [1, 2, 3, 4, 5]
 
     for (n : list) {
-        if (n.mod(2) == 0) {
+        if (n % 2 == 0) {
             continue
         }
         sum = sum + n
@@ -526,7 +526,7 @@ fn test_return_inside_loop() {
     let code = r#"
     fn find_first_even(list) {
         for (n : list) {
-            if (n.mod(2) == 0) {
+            if (n % 2 == 0) {
                 return n
             }
         }
@@ -1039,31 +1039,6 @@ fn test_number_sqrt() {
 fn test_number_sqrt_negative() {
     let code = "(-1).sqrt()";
     let result = eval(code);
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_number_mod() {
-    let result = eval("17.mod(5)");
-    match result {
-        Ok(Value::Num(n)) => assert_eq!(n, 2.0),
-        _ => panic!("Expected 2, got {:?}", result),
-    }
-}
-
-#[test]
-fn test_number_mod_negative() {
-    let code = "(-7).mod(3)";
-    let result = eval(code);
-    match result {
-        Ok(Value::Num(n)) => assert_eq!(n, 2.0), // rem_euclid gives positive result
-        _ => panic!("Expected 2, got {:?}", result),
-    }
-}
-
-#[test]
-fn test_number_mod_by_zero() {
-    let result = eval("10.mod(0)");
     assert!(result.is_err());
 }
 
@@ -2768,7 +2743,7 @@ fn test_filter_all_match() {
 #[test]
 fn test_filter_with_named_function() {
     let code = r#"
-    fn is even(x) { return x.mod(2) == 0 }
+    fn is even(x) { return x % 2 == 0 }
     [1, 2, 3, 4, 5, 6].filter(is even)
     "#;
     let result = eval(code);
@@ -2838,7 +2813,7 @@ fn test_filter_must_return_bool() {
 fn test_filter_chained_with_map() {
     let code = r#"
     ([1, 2, 3, 4, 5, 6]
-        .filter(fn(x) { return x.mod(2) == 0 })
+        .filter(fn(x) { return x % 2 == 0 })
         .map(fn(x) { return x * 10 }))
     "#;
     let result = eval(code);
@@ -3050,7 +3025,7 @@ fn test_reduce_allman_style() {
 fn test_reduce_multiline_trailing_op() {
     let code = r#"
     ([1, 2, 3, 4, 5].
-        filter(fn(x) { return x.mod(2) == 1 }).
+        filter(fn(x) { return x % 2 == 1 }).
         reduce(0, fn(acc, x) { return acc + x }))
     "#;
     let result = eval(code);
@@ -3067,7 +3042,7 @@ fn test_reduce_multiline_trailing_op() {
 fn test_map_filter_reduce_pipeline() {
     let code = r#"
     ([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        .filter(fn(x) { return x.mod(2) == 0 })
+        .filter(fn(x) { return x % 2 == 0 })
         .map(fn(x) { return x * x })
         .reduce(0, fn(acc, x) { return acc + x }))
     "#;
@@ -3082,7 +3057,7 @@ fn test_map_filter_reduce_pipeline() {
 #[test]
 fn test_pipeline_with_multi_word_identifiers() {
     let code = r#"
-    let is even = fn(x) { return x.mod(2) == 0 }
+    let is even = fn(x) { return x % 2 == 0 }
     let square it = fn(x) { return x * x }
     let add up = fn(acc, x) { return acc + x }
 
@@ -6026,7 +6001,7 @@ fn test_tco_multiple_base_cases() {
     fn collatz steps(n, steps) {
         if (n == 1) { steps }
         else {
-            if (n.mod(2) == 0) { collatz steps(n / 2, steps + 1) }
+            if (n % 2 == 0) { collatz steps(n / 2, steps + 1) }
             else { collatz steps(3 * n + 1, steps + 1) }
         }
     }
@@ -7281,14 +7256,6 @@ fn test_percent_precedence_same_as_star() {
 #[test]
 fn test_percent_in_expression() {
     assert_eq!(eval("(2 + 3) % 4").unwrap(), Value::Num(1.0));
-}
-
-#[test]
-fn test_percent_matches_mod_method() {
-    // % and .mod() must give the same result
-    // Note: -7.mod(3) parses as -(7.mod(3)) in Gaul, so use a var to avoid that
-    assert_eq!(eval("17 % 5").unwrap(), eval("17.mod(5)").unwrap());
-    assert_eq!(eval("var n = -7\nn % 3").unwrap(), eval("var n = -7\nn.mod(3)").unwrap());
 }
 
 #[test]
