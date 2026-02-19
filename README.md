@@ -113,7 +113,7 @@ Gaul has the usual arithmetic (`+`, `-`, `*`, `/`), comparison (`==`, `!=`, `<`,
 ~5         // -6 (bitwise NOT)
 ```
 
-Modulo: `10 % 3` (or `10.mod(3)`) — both use Euclidean semantics.
+Modulo: `10 % 3` — uses Euclidean semantics (result is always non-negative).
 
 ### Functional Programming
 
@@ -127,7 +127,7 @@ let Doubled = Numbers.map(fn(X) { X * 2 })
 // [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
 
 // Filter: keep elements matching predicate
-let Evens = Numbers.filter(fn(X) { X.mod(2) == 0 })
+let Evens = Numbers.filter(fn(X) { X % 2 == 0 })
 // [2, 4, 6, 8, 10]
 
 // Reduce: accumulate to single value
@@ -136,7 +136,7 @@ let Sum = Numbers.reduce(0, fn(Acc, X) { Acc + X })
 
 // Chain them together
 let Result = Numbers
-    .filter(fn(X) { X.mod(2) == 0 })
+    .filter(fn(X) { X % 2 == 0 })
     .map(fn(X) { X * X })
     .sum()
 // 220
@@ -315,8 +315,8 @@ Where `中文.json` maps:
 mantra Fizzbuzz Gaul(N) {
     anggep I = 1
     selama(I <= N) {
-        biarin Bisa Bagi 3 = I.mod(3) == 0
-        biarin Bisa Bagi 5 = I.mod(5) == 0
+        biarin Bisa Bagi 3 = I % 3 == 0
+        biarin Bisa Bagi 5 = I % 5 == 0
 
         kalo((Bisa Bagi 3) && (Bisa Bagi 5)) {
             println("✨ Mantul!")
@@ -465,7 +465,6 @@ N.ceil()             // -42
 N.round()            // -43
 N.pow(2)             // 1823.29
 N.sqrt()             // NaN (negative)
-42.mod(5)            // 2
 42.floor_div(5)      // 8
 ```
 
