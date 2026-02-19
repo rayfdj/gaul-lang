@@ -1,0 +1,48 @@
+// main.gaul — task manager entry point
+//
+// Run with: gaul-lang src/samples/tasks/main.gaul
+
+import { Add Task, Complete Task, Remove Task, Pending Tasks, Done Tasks } from "list.gaul"
+import { Completion Rate, Summary } from "stats.gaul"
+import { Task Line, Section Header, Divider } from "format.gaul"
+
+// Build a task list
+var Tasks = []
+Tasks = Add Task(Tasks, "Design the module system")
+Tasks = Add Task(Tasks, "Implement import and export")
+Tasks = Add Task(Tasks, "Write integration tests")
+Tasks = Add Task(Tasks, "Update documentation")
+Tasks = Add Task(Tasks, "Ship it")
+
+// Mark the first three done
+Tasks = Complete Task(Tasks, 1)
+Tasks = Complete Task(Tasks, 2)
+Tasks = Complete Task(Tasks, 3)
+
+// Decide "Ship it" is premature — remove it
+Tasks = Remove Task(Tasks, 5)
+
+// Print all tasks
+println(Section Header("All Tasks"))
+for(Task : Tasks) {
+    println(Task Line(Task))
+}
+println("")
+
+// Pending only
+println(Section Header("Still To Do"))
+let Pending = Pending Tasks(Tasks)
+if(Pending.is_empty()) {
+    println("  Nothing left — you're done!")
+} else {
+    for(Task : Pending) {
+        println(Task Line(Task))
+    }
+}
+println("")
+
+// Stats
+println(Divider)
+println(format("  {}", Summary(Tasks)))
+println(format("  Progress: {}%", Completion Rate(Tasks)))
+println(Divider)

@@ -1,0 +1,34 @@
+// list.gaul — task list operations: create, complete, remove, filter
+
+export fn Make Task(Id, Title) {
+    ["id": Id, "title": Title, "done": false]
+}
+
+export fn Add Task(Tasks, Title) {
+    let Id = Tasks.len() + 1
+    Tasks.push(Make Task(Id, Title))
+    Tasks
+}
+
+// Marks the task with the given Id as done (mutates in place — maps are references)
+export fn Complete Task(Tasks, Id) {
+    for(Task : Tasks) {
+        if(Task.get("id") == Id) {
+            Task.set("done", true)
+        }
+    }
+    Tasks
+}
+
+// Returns a new array without the task matching Id
+export fn Remove Task(Tasks, Id) {
+    Tasks.filter(fn(Task) { Task.get("id") != Id })
+}
+
+export fn Pending Tasks(Tasks) {
+    Tasks.filter(fn(Task) { !Task.get("done") })
+}
+
+export fn Done Tasks(Tasks) {
+    Tasks.filter(fn(Task) { Task.get("done") })
+}

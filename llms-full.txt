@@ -14,7 +14,7 @@ When generating Gaul code, you MUST follow these conventions:
 6. **Expression-based if** - `if` returns a value: `let X = if(cond) { a } else { b }`
 7. **Parentheses required** - `if(cond)`, `while(cond)`, `for(x : collection)`
 8. **Colon in for loops** - `for(Item : Array)` not `for Item in Array`
-9. **Method access with `.get()`** - Arrays use `Arr.get(0)` not `Arr[0]`
+9. **Subscript or method access both work** - `Arr[0]` and `Arr.get(0)` are equivalent; `M["key"]` and `M.get("key")` are equivalent; `S[i]` reads one character from a string (strings are immutable — no subscript write)
 10. **Parenthesize multiline chains** - Wrap method chains spanning multiple lines in `()` or the parser won't see continuations
 
 ---
@@ -496,7 +496,6 @@ Split code across files with `export` and `import`.
 // math.gaul
 export fn double(x) { x * 2 }
 export let Pi = 3.14159
-export var Counter = 0
 ```
 
 ```gaul
@@ -510,29 +509,141 @@ println(Pi)           // 3.14159
 
 - **`export let`, `export var`, `export fn`** — these three forms are valid. Exporting a bare expression is a parse error.
 - **Named imports only**: `import { Name1, Name2 } from "path.gaul"`. No glob imports.
-- **Path resolution**: relative to the importing file's directory (not the process working directory). The REPL falls back to CWD.
-- **Module cache**: each file is scanned/parsed/executed at most once per run; subsequent imports of the same file return the cached exports.
+- **Path resolution**: relative to the importing file's directory (not the process CWD). The REPL falls back to CWD.
+- **Module cache**: each file runs at most once per interpreter session; subsequent imports of the same file return the cached exports without re-executing it.
 - **Circular imports**: detected at runtime and reported as an error.
-- **Imported names are immutable** (like `let`). You cannot reassign them.
+- **Imported names are immutable** (`let`-style bindings). You cannot reassign them after import.
 - **Custom keywords** apply here too: `"import"`, `"export"`, and `"from"` can all be remapped in your keywords JSON.
 
-### Examples
+### Multi-file example: task manager
 
-```gaul
-// lib/utils.gaul
-export fn clamp(V, Lo, Hi) {
-    if(V < Lo) { Lo } else { if(V > Hi) { Hi } else { V } }
-}
+The sample at `src/samples/tasks/` shows how to split a real program across four files:
 
-export let Max Int = 1000000
+```
+tasks/
+  main.gaul     — entry point, imports from all three modules
+  list.gaul     — task CRUD: add, complete, remove, filter
+  stats.gaul    — completion rate, summary line
+  format.gaul   — pretty-printing helpers
 ```
 
+**format.gaul** — pure helpers, no dependencies:
 ```gaul
-// app.gaul
-import { clamp, Max Int } from "lib/utils.gaul"
+export let Divider = "--------------------------------------------"
 
-let Safe Value = clamp(9999, 0, Max Int)
-println(Safe Value)   // 9999
+export fn Pad Right(S, Width) {
+    var Result = S
+    while(Result.len() < Width) {
+        Result = Result + " "
+    }
+    Result
+}
+
+export fn Task Line(Task) {
+    let Badge = if(Task.get("done")) { "[x]" } else { "[ ]" }
+    let Id = Pad Right(Task.get("id").to_str(), 3)
+    format("{} {}  {}", Badge, Id, Task.get("title"))
+}
+
+export fn Section Header(Title) {
+    format("{}\n  {}\n{}", Divider, Title, Divider)
+}
+```
+
+**list.gaul** — task operations:
+```gaul
+export fn Make Task(Id, Title) {
+    ["id": Id, "title": Title, "done": false]
+}
+
+export fn Add Task(Tasks, Title) {
+    let Id = Tasks.len() + 1
+    Tasks.push(Make Task(Id, Title))
+    Tasks
+}
+
+// Maps are reference types — Task.set() mutates the original in the array
+export fn Complete Task(Tasks, Id) {
+    for(Task : Tasks) {
+        if(Task.get("id") == Id) {
+            Task.set("done", true)
+        }
+    }
+    Tasks
+}
+
+export fn Remove Task(Tasks, Id) {
+    Tasks.filter(fn(Task) { Task.get("id") != Id })
+}
+
+export fn Pending Tasks(Tasks) {
+    Tasks.filter(fn(Task) { !Task.get("done") })
+}
+```
+
+**stats.gaul** — analytics:
+```gaul
+export fn Done Count(Tasks) {
+    Tasks.filter(fn(T) { T.get("done") }).len()
+}
+
+export fn Completion Rate(Tasks) {
+    if(Tasks.len() == 0) { return 0 }
+    (Done Count(Tasks) * 100) / Tasks.len()
+}
+
+export fn Summary(Tasks) {
+    let Total = Tasks.len()
+    let Done = Done Count(Tasks)
+    format("{}  total  |  {}  done  |  {}  pending", Total, Done, Total - Done)
+}
+```
+
+**main.gaul** — ties it together:
+```gaul
+import { Add Task, Complete Task, Remove Task, Pending Tasks } from "list.gaul"
+import { Completion Rate, Summary } from "stats.gaul"
+import { Task Line, Section Header, Divider } from "format.gaul"
+
+var Tasks = []
+Tasks = Add Task(Tasks, "Design the module system")
+Tasks = Add Task(Tasks, "Implement import and export")
+Tasks = Add Task(Tasks, "Write integration tests")
+Tasks = Add Task(Tasks, "Update documentation")
+Tasks = Add Task(Tasks, "Ship it")
+
+Tasks = Complete Task(Tasks, 1)
+Tasks = Complete Task(Tasks, 2)
+Tasks = Complete Task(Tasks, 3)
+Tasks = Remove Task(Tasks, 5)
+
+println(Section Header("All Tasks"))
+for(Task : Tasks) { println(Task Line(Task)) }
+
+println(Section Header("Still To Do"))
+for(Task : Pending Tasks(Tasks)) { println(Task Line(Task)) }
+
+println(format("  {}", Summary(Tasks)))
+println(format("  Progress: {}%", Completion Rate(Tasks)))
+```
+
+Output:
+```
+--------------------------------------------
+  All Tasks
+--------------------------------------------
+[x] 1    Design the module system
+[x] 2    Implement import and export
+[x] 3    Write integration tests
+[ ] 4    Update documentation
+
+--------------------------------------------
+  Still To Do
+--------------------------------------------
+[ ] 4    Update documentation
+
+  4  total  |  3  done  |  1  pending
+  Progress: 75%
 ```
 
 ---
@@ -946,3 +1057,5 @@ println(Solve(Input))
 | To string | `N.to_str()`, `true.to_str()` |
 | Read file | `read_file("path")` |
 | Print | `println(value)`, `print(value)` (no newline) |
+| Export name | `export fn F() { }`, `export let X = 1`, `export var Y = 2` |
+| Import names | `import { F, X } from "path.gaul"` |

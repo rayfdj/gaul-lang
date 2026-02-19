@@ -19,7 +19,7 @@ Gaul (from Indonesian "bahasa gaul" — slang language) challenges conventions: 
 - **Multiline chains need parens**: `(Items.map(...).filter(...))` — wrap in `()` or parser won't see line continuations
 - **String interpolation**: `format("hello {}", name)` — `{}` placeholders, arg count must match
 - **Stdin**: `read_stdin()` reads all stdin as a string; `read_line()` reads one line (newline stripped)
-- **Modules**: `export fn Foo() { ... }` / `export let X = 1` to expose names; `import { Foo, X } from "path.gaul"` to use them. Paths are relative to the importing file. No glob imports. Circular imports error at runtime.
+- **Modules**: `export fn Foo() { }` / `export let X = 1` to expose names; `import { Foo, X } from "path.gaul"` to use them. Paths are relative to the importing file's directory. No glob imports. Module cache: each file runs once. Circular imports error at runtime. See `src/samples/tasks/` for a working multi-file example.
 
 ## Documentation
 
@@ -28,10 +28,12 @@ Gaul (from Indonesian "bahasa gaul" — slang language) challenges conventions: 
 
 ## Code Examples
 
-- [src/samples/aoc/2025/](/src/samples/aoc/2025/): Advent of Code solutions demonstrating real-world usage
+- [src/samples/tasks/](/src/samples/tasks/): Multi-file task manager — the canonical module example (4 files: main, list, stats, format)
+- [src/samples/aoc/2025/](/src/samples/aoc/2025/): Advent of Code 2025 solutions (Days 1-12), real-world usage
 - [src/samples/map.gaul](/src/samples/map.gaul): Maps — creation, access, iteration, frequency counting, visited sets
-- [src/samples/closure.gaul](/src/samples/closure.gaul): Closure demonstration
-- [src/samples/custom_keywords/](/src/samples/custom_keywords/): French, Mandarin, Indonesian examples
+- [src/samples/closure.gaul](/src/samples/closure.gaul): Closures and mutable captured state
+- [src/samples/fib.gaul](/src/samples/fib.gaul): Recursive Fibonacci (performance baseline)
+- [src/samples/custom_keywords/](/src/samples/custom_keywords/): French, Mandarin, Indonesian keyword examples
 
 ## Optional
 

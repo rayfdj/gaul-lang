@@ -390,6 +390,13 @@ fn All Positions(Grid) {
 
 Days 1-6 were written by hand, days 7-12 with LLM assistance. Check out `src/samples/aoc/2025/` for all the solutions.
 
+Other samples:
+- `src/samples/tasks/` — multi-file task manager demonstrating modules (import/export)
+- `src/samples/map.gaul` — maps: frequency counting, visited sets, iteration
+- `src/samples/closure.gaul` — closures and mutable captured state
+- `src/samples/fib.gaul` — recursive Fibonacci (performance baseline)
+- `src/samples/custom_keywords/` — French, Mandarin, and Indonesian keyword examples
+
 ---
 
 ## Rich Standard Library
@@ -508,12 +515,86 @@ println(Pi)           // 3.14159
 
 Rules:
 - Only `export let`, `export var`, and `export fn` are valid — exporting expression statements is a parse error
-- Imports are resolved relative to the importing file's directory
+- Imports are resolved relative to the importing file's directory (not the process CWD)
 - Each module file is executed only once (cached after first import)
 - Circular imports are detected and reported as a runtime error
 - Imported names are immutable (`let`-style) bindings
+- Custom keywords work here too — `"import"`, `"export"`, `"from"` can all be remapped
 
-Custom keywords work here too: if your keyword file maps `"import"` to `"impor"`, you'd write `impor { double } dari "math.gaul"`.
+### Multi-file example
+
+`src/samples/tasks/` is a working task manager split across four files:
+
+```
+tasks/
+  main.gaul     — entry point
+  list.gaul     — add, complete, remove, filter tasks
+  stats.gaul    — completion rate and summary
+  format.gaul   — pretty-printing helpers
+```
+
+```gaul
+// list.gaul
+export fn Make Task(Id, Title) {
+    ["id": Id, "title": Title, "done": false]
+}
+
+export fn Add Task(Tasks, Title) {
+    let Id = Tasks.len() + 1
+    Tasks.push(Make Task(Id, Title))
+    Tasks
+}
+
+export fn Complete Task(Tasks, Id) {
+    for(Task : Tasks) {
+        if(Task.get("id") == Id) { Task.set("done", true) }
+    }
+    Tasks
+}
+
+export fn Pending Tasks(Tasks) {
+    Tasks.filter(fn(Task) { !Task.get("done") })
+}
+```
+
+```gaul
+// main.gaul
+import { Add Task, Complete Task, Pending Tasks } from "list.gaul"
+import { Summary, Completion Rate } from "stats.gaul"
+import { Task Line, Section Header } from "format.gaul"
+
+var Tasks = []
+Tasks = Add Task(Tasks, "Design the module system")
+Tasks = Add Task(Tasks, "Implement import and export")
+Tasks = Add Task(Tasks, "Write integration tests")
+Tasks = Add Task(Tasks, "Update documentation")
+
+Tasks = Complete Task(Tasks, 1)
+Tasks = Complete Task(Tasks, 2)
+Tasks = Complete Task(Tasks, 3)
+
+println(Section Header("All Tasks"))
+for(Task : Tasks) { println(Task Line(Task)) }
+
+println(format("  {}", Summary(Tasks)))
+println(format("  Progress: {}%", Completion Rate(Tasks)))
+```
+
+Output:
+```
+--------------------------------------------
+  All Tasks
+--------------------------------------------
+[x] 1    Design the module system
+[x] 2    Implement import and export
+[x] 3    Write integration tests
+[ ] 4    Update documentation
+
+  4  total  |  3  done  |  1  pending
+  Progress: 75%
+```
+
+Run it: `gaul-lang src/samples/tasks/main.gaul`
 
 ---
 

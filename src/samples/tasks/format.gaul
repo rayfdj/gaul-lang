@@ -1,0 +1,21 @@
+// format.gaul — pretty-printing helpers for the task manager
+
+export let Divider = "--------------------------------------------"
+
+export fn Pad Right(S, Width) {
+    var Result = S
+    while(Result.len() < Width) {
+        Result = Result + " "
+    }
+    Result
+}
+
+export fn Task Line(Task) {
+    let Badge = if(Task.get("done")) { "[x]" } else { "[ ]" }
+    let Id = Pad Right(Task.get("id").to_str(), 3)
+    format("{} {}  {}", Badge, Id, Task.get("title"))
+}
+
+export fn Section Header(Title) {
+    format("{}\n  {}\n{}", Divider, Title, Divider)
+}

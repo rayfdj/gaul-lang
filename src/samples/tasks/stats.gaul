@@ -1,0 +1,18 @@
+// stats.gaul — statistics computed over a task list
+
+export fn Done Count(Tasks) {
+    Tasks.filter(fn(T) { T.get("done") }).len()
+}
+
+export fn Completion Rate(Tasks) {
+    if(Tasks.len() == 0) { return 0 }
+    let Done = Done Count(Tasks)
+    (Done * 100) / Tasks.len()
+}
+
+export fn Summary(Tasks) {
+    let Total = Tasks.len()
+    let Done = Done Count(Tasks)
+    let Pending = Total - Done
+    format("{}  total  |  {}  done  |  {}  pending", Total, Done, Pending)
+}
