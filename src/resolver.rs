@@ -1,4 +1,6 @@
 use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
+#[allow(unused_imports)]
+use crate::parser::ast::DeclarationKind::{Export, Import};
 use crate::span::Span;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -126,6 +128,14 @@ impl Resolver {
                 result?; // propagate error after cleanup
             }
             DeclarationKind::ExprStmt(expr) => self.resolve_expression(expr)?,
+            DeclarationKind::Import { items, .. } => {
+                for item in items {
+                    self.define(item, span)?;
+                }
+            }
+            DeclarationKind::Export { inner } => {
+                self.resolve_declaration(inner)?;
+            }
         }
         Ok(())
     }

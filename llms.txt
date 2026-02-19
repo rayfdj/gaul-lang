@@ -19,6 +19,7 @@ Gaul (from Indonesian "bahasa gaul" — slang language) challenges conventions: 
 - **Multiline chains need parens**: `(Items.map(...).filter(...))` — wrap in `()` or parser won't see line continuations
 - **String interpolation**: `format("hello {}", name)` — `{}` placeholders, arg count must match
 - **Stdin**: `read_stdin()` reads all stdin as a string; `read_line()` reads one line (newline stripped)
+- **Modules**: `export fn Foo() { ... }` / `export let X = 1` to expose names; `import { Foo, X } from "path.gaul"` to use them. Paths are relative to the importing file. No glob imports. Circular imports error at runtime.
 
 ## Documentation
 

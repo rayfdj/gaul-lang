@@ -488,6 +488,55 @@ R.to_array()             // [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 ---
 
+## Modules
+
+Split code across files with `export` and `import`.
+
+```gaul
+// math.gaul
+export fn double(x) { x * 2 }
+export let Pi = 3.14159
+export var Counter = 0
+```
+
+```gaul
+// main.gaul
+import { double, Pi } from "math.gaul"
+println(double(21))   // 42
+println(Pi)           // 3.14159
+```
+
+### Rules
+
+- **`export let`, `export var`, `export fn`** — these three forms are valid. Exporting a bare expression is a parse error.
+- **Named imports only**: `import { Name1, Name2 } from "path.gaul"`. No glob imports.
+- **Path resolution**: relative to the importing file's directory (not the process working directory). The REPL falls back to CWD.
+- **Module cache**: each file is scanned/parsed/executed at most once per run; subsequent imports of the same file return the cached exports.
+- **Circular imports**: detected at runtime and reported as an error.
+- **Imported names are immutable** (like `let`). You cannot reassign them.
+- **Custom keywords** apply here too: `"import"`, `"export"`, and `"from"` can all be remapped in your keywords JSON.
+
+### Examples
+
+```gaul
+// lib/utils.gaul
+export fn clamp(V, Lo, Hi) {
+    if(V < Lo) { Lo } else { if(V > Hi) { Hi } else { V } }
+}
+
+export let Max Int = 1000000
+```
+
+```gaul
+// app.gaul
+import { clamp, Max Int } from "lib/utils.gaul"
+
+let Safe Value = clamp(9999, 0, Max Int)
+println(Safe Value)   // 9999
+```
+
+---
+
 ## File I/O and Stdin
 
 ```gaul

@@ -1,6 +1,6 @@
 pub mod ast;
 
-use crate::parser::ast::DeclarationKind::{ExprStmt, Fn, Let, Var};
+use crate::parser::ast::DeclarationKind::{ExprStmt, Export, Fn, Import, Let, Var};
 use crate::parser::ast::ExprKind::{
     Assign, Block, Bool, Call, For, Get, Identifier, If, Index, Null, Num, Range, Return, Str,
     Unary, While,
@@ -139,7 +139,9 @@ impl Parser {
                 | TokenType::If
                 | TokenType::While
                 | TokenType::For
-                | TokenType::Return => return,
+                | TokenType::Return
+                | TokenType::Import
+                | TokenType::Export => return,
                 _ => {}
             }
 
@@ -154,9 +156,79 @@ impl Parser {
             self.var_decl()
         } else if self.check(TokenType::Function) {
             self.fn_decl()
+        } else if self.check(TokenType::Import) {
+            self.import_decl()
+        } else if self.check(TokenType::Export) {
+            self.export_decl()
         } else {
             self.expr_stmt()
         }
+    }
+
+    fn import_decl(&mut self) -> Result<Declaration, ParseError> {
+        let span = self.peek().span;
+        self.advance(); // consume import
+        self.consume(TokenType::LeftBrace, "{")?;
+
+        let mut items = Vec::new();
+        while !self.check(TokenType::RightBrace) && !self.is_at_end() {
+            items.push(
+                self.consume(TokenType::Identifier, "identifier")?
+                    .lexeme
+                    .clone(),
+            );
+            if self.check(TokenType::Comma) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        self.consume(TokenType::RightBrace, "}")?;
+        self.consume(TokenType::From, "'from'")?;
+
+        let path = match &self.peek().token_type.clone() {
+            TokenType::String(s) => {
+                let p = s.clone();
+                self.advance();
+                p
+            }
+            _ => return Err(self.error_expected("string path after 'from'")),
+        };
+
+        if !self.match_any(&[TokenType::Newline, TokenType::Eof]) {
+            return Err(self.error_expected("newline or eof"));
+        }
+
+        Ok(Declaration {
+            kind: Import { path, items },
+            span,
+        })
+    }
+
+    fn export_decl(&mut self) -> Result<Declaration, ParseError> {
+        let span = self.peek().span;
+        self.advance(); // consume export
+
+        let inner = if self.check(TokenType::Let) {
+            self.let_decl()?
+        } else if self.check(TokenType::Var) {
+            self.var_decl()?
+        } else if self.check(TokenType::Function) {
+            self.fn_decl()?
+        } else {
+            return Err(ParseError {
+                span: self.peek().span,
+                message: "export must be followed by let, var, or fn".to_string(),
+            });
+        };
+
+        Ok(Declaration {
+            kind: Export {
+                inner: Box::new(inner),
+            },
+            span,
+        })
     }
 
     fn let_decl(&mut self) -> Result<Declaration, ParseError> {
@@ -585,10 +657,11 @@ impl Parser {
                 };
             } else if self.check(TokenType::Dot) {
                 self.advance();
-                let name = self
-                    .consume(TokenType::Identifier, "property name")?
-                    .lexeme
-                    .clone();
+                // Allow keywords as method names (e.g. range.from(), range.until())
+                if self.is_at_end() || self.check(TokenType::Newline) {
+                    return Err(self.error_expected("property name after '.'"));
+                }
+                let name = self.advance().lexeme.clone();
                 let span = self.previous().span;
 
                 expr = Expr {

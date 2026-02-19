@@ -11,5 +11,8 @@
   "let": "soit",
   "var": "mut",
   "break": "stop",
-  "continue": "suite"
+  "continue": "suite",
+  "import": "importer",
+  "export": "exporter",
+  "from": "depuis"
 }

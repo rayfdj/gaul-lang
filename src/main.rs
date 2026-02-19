@@ -5,6 +5,7 @@ use gaul_lang::config::{DEFAULT_JAM_KARET_NUM, RuntimeConfig};
 use gaul_lang::diagnostics;
 use gaul_lang::interpreter::Interpreter;
 use gaul_lang::interpreter::environment::Environment;
+use gaul_lang::interpreter::module_context::ModuleContext;
 use gaul_lang::interpreter::value::Value;
 use gaul_lang::keywords::load_keywords;
 use gaul_lang::parser::Parser;
@@ -45,7 +46,9 @@ fn main() -> Result<()> {
         jam_karet_num: cli.jam_karet_num,
         jam_karet_str: cli.jam_karet_str,
     };
-    let mut interpreter = Interpreter::new(Environment::new(), runtime_config);
+    let current_file = cli.script.as_deref().and_then(|p| std::fs::canonicalize(p).ok());
+    let module_ctx = ModuleContext::new(current_file, keywords.clone());
+    let mut interpreter = Interpreter::new(Environment::new(), runtime_config, module_ctx);
 
     match cli.script {
         None => run_prompt(&keywords, &mut resolver, &mut interpreter)?,

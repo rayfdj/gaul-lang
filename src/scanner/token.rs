@@ -84,6 +84,9 @@ pub enum TokenType {
     While,    // while
     Break,    // break
     Continue, // continue
+    Import,   // import
+    Export,   // export
+    From,     // from
 
     // Control
     Newline, // significant for ending identifier

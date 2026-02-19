@@ -11,5 +11,8 @@
   "let": "biarin",
   "var": "anggep",
   "break": "cabut",
-  "continue": "gas"
+  "continue": "gas",
+  "import": "impor",
+  "export": "ekspor",
+  "from": "dari"
 }

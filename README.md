@@ -24,6 +24,7 @@ Gaul (from Indonesian *"bahasa gaul"* — slang language) is a dynamically-typed
 
 - **Spaces in identifiers** — Write `let My Variable = 42` instead of `myVariable` or `my_variable`
 - **Custom keywords** — Program in French, Mandarin, Indonesian, or any language you define
+- **Modules** — Split code across files with `import` / `export`
 - **Functional programming** — First-class functions, closures, map/filter/reduce
 - **The Jam Karet operator** — Fuzzy equality (`~=`) for numbers and strings
 - **Full Unicode support** — Variables, strings, and comments in any script
@@ -485,6 +486,34 @@ format("hello, {}!", name)          // "hello, world!"
 ```
 
 The number of `{}` must match the number of extra arguments — mismatch is a runtime error.
+
+---
+
+## Modules
+
+Split programs across multiple files using `export` and `import`.
+
+```gaul
+// math.gaul
+export fn double(x) { x * 2 }
+export let Pi = 3.14159
+```
+
+```gaul
+// main.gaul
+import { double, Pi } from "math.gaul"
+println(double(21))   // 42
+println(Pi)           // 3.14159
+```
+
+Rules:
+- Only `export let`, `export var`, and `export fn` are valid — exporting expression statements is a parse error
+- Imports are resolved relative to the importing file's directory
+- Each module file is executed only once (cached after first import)
+- Circular imports are detected and reported as a runtime error
+- Imported names are immutable (`let`-style) bindings
+
+Custom keywords work here too: if your keyword file maps `"import"` to `"impor"`, you'd write `impor { double } dari "math.gaul"`.
 
 ---
 

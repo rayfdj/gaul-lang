@@ -11,5 +11,8 @@
   "let": "设",
   "var": "变",
   "break": "跳出",
-  "continue": "继续"
+  "continue": "继续",
+  "import": "引入",
+  "export": "导出",
+  "from": "来自"
 }

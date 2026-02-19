@@ -1,10 +1,12 @@
 pub mod environment;
+pub mod module_context;
 pub mod native_function;
 pub mod native_method;
 pub mod value;
 
 use crate::config::RuntimeConfig;
 use crate::interpreter::environment::Environment;
+use crate::interpreter::module_context::ModuleContext;
 use crate::interpreter::native_function::all_native_functions;
 use crate::interpreter::native_method::call_native_method;
 use crate::interpreter::value::{Function, MapKey, Value};
@@ -13,6 +15,8 @@ use crate::scanner::token::TokenType;
 use crate::span::Span;
 use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 type Args = SmallVec<[Value; 4]>;
@@ -48,6 +52,8 @@ pub struct Interpreter {
     env: Rc<Environment>,
     env_pool: Vec<Rc<Environment>>,
     runtime_config: RuntimeConfig,
+    module_ctx: ModuleContext,
+    pub exports: HashMap<String, Value>,
 }
 
 // Propagate control flow, discard value
@@ -71,11 +77,13 @@ macro_rules! prop_val {
 }
 
 impl Interpreter {
-    pub fn new(env: Environment, runtime_config: RuntimeConfig) -> Self {
+    pub fn new(env: Environment, runtime_config: RuntimeConfig, module_ctx: ModuleContext) -> Self {
         let mut interpreter = Self {
             env: Rc::new(env),
             env_pool: Vec::new(),
             runtime_config,
+            module_ctx,
+            exports: HashMap::new(),
         };
         interpreter.define_native_functions();
         interpreter
@@ -155,7 +163,135 @@ impl Interpreter {
                 Ok(Value::Null.into())
             }
             DeclarationKind::ExprStmt(expr) => self.evaluate_expression(expr),
+            DeclarationKind::Import { path, items } => {
+                let exports = self.load_module(path, declaration.span)?;
+                for item in items {
+                    let value = exports.get(item.as_str()).cloned().ok_or_else(|| RuntimeError {
+                        span: declaration.span,
+                        message: format!("module '{}' does not export '{}'", path, item),
+                    })?;
+                    self.env.define(value, false);
+                }
+                Ok(Value::Null.into())
+            }
+            DeclarationKind::Export { inner } => {
+                let slot = self.env.current_scope_len();
+                self.execute_declaration(inner)?;
+                let name = match &inner.kind {
+                    DeclarationKind::Fn { name, .. }
+                    | DeclarationKind::Let { name, .. }
+                    | DeclarationKind::Var { name, .. } => name.clone(),
+                    _ => {
+                        return Err(RuntimeError {
+                            span: declaration.span,
+                            message: "export must wrap let, var, or fn".to_string(),
+                        })
+                    }
+                };
+                let value = self.env.get_at(0, slot);
+                self.exports.insert(name, value);
+                Ok(Value::Null.into())
+            }
         }
+    }
+
+    fn load_module(&mut self, path_str: &str, span: Span) -> Result<Rc<HashMap<String, Value>>, RuntimeError> {
+        // Resolve path relative to the current file's directory
+        let base_dir = self.module_ctx.current_file
+            .as_ref()
+            .and_then(|f| f.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+        let raw_path = base_dir.join(path_str);
+        let canonical = std::fs::canonicalize(&raw_path).map_err(|e| RuntimeError {
+            span,
+            message: format!("cannot open module '{}': {}", path_str, e),
+        })?;
+
+        // Check cache
+        if let Some(cached) = self.module_ctx.cache.borrow().get(&canonical) {
+            return Ok(Rc::clone(cached));
+        }
+
+        // Check for circular import
+        if self.module_ctx.loading.borrow().contains(&canonical) {
+            return Err(RuntimeError {
+                span,
+                message: format!("circular import detected: '{}'", path_str),
+            });
+        }
+
+        // Mark as loading
+        self.module_ctx.loading.borrow_mut().insert(canonical.clone());
+
+        let source = std::fs::read_to_string(&canonical).map_err(|e| RuntimeError {
+            span,
+            message: format!("cannot read module '{}': {}", path_str, e),
+        })?;
+
+        let result = self.execute_module(&source, canonical.clone(), span);
+
+        // Always remove from loading set
+        self.module_ctx.loading.borrow_mut().remove(&canonical);
+
+        let exports_map = result?;
+        let rc = Rc::new(exports_map);
+        self.module_ctx.cache.borrow_mut().insert(canonical, Rc::clone(&rc));
+        Ok(rc)
+    }
+
+    fn execute_module(
+        &mut self,
+        source: &str,
+        file_path: PathBuf,
+        span: Span,
+    ) -> Result<HashMap<String, Value>, RuntimeError> {
+        use crate::parser::Parser;
+        use crate::resolver::Resolver;
+        use crate::scanner::Scanner;
+
+        let scanner = Scanner::new(source, &self.module_ctx.keywords.clone());
+        let tokens = scanner.scan_tokens().map_err(|errors| RuntimeError {
+            span,
+            message: format!(
+                "scan errors in module '{}':\n{}",
+                file_path.display(),
+                errors.iter().map(|e| e.message.clone()).collect::<Vec<_>>().join("\n")
+            ),
+        })?;
+
+        let parser = Parser::new(tokens);
+        let mut program = parser.parse().map_err(|errors| RuntimeError {
+            span,
+            message: format!(
+                "parse errors in module '{}':\n{}",
+                file_path.display(),
+                errors.iter().map(|e| e.message.clone()).collect::<Vec<_>>().join("\n")
+            ),
+        })?;
+
+        let mut resolver = Resolver::new();
+        resolver.resolve(&mut program).map_err(|e| RuntimeError {
+            span,
+            message: format!(
+                "resolve error in module '{}': {}",
+                file_path.display(),
+                e.message
+            ),
+        })?;
+
+        let child_ctx = self.module_ctx.child(file_path.clone());
+        let mut sub = Interpreter::new(Environment::new(), self.runtime_config.clone(), child_ctx);
+        sub.interpret(program).map_err(|e| RuntimeError {
+            span,
+            message: format!(
+                "runtime error in module '{}': {}",
+                file_path.display(),
+                e.message
+            ),
+        })?;
+
+        Ok(sub.exports)
     }
 
     fn evaluate_expression(&mut self, expression: &Expr) -> Result<ControlFlow, RuntimeError> {

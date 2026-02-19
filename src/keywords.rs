@@ -42,6 +42,9 @@ pub fn default_keywords() -> HashMap<String, String> {
         ("var".into(), "var".into()),
         ("break".into(), "break".into()),
         ("continue".into(), "continue".into()),
+        ("import".into(), "import".into()),
+        ("export".into(), "export".into()),
+        ("from".into(), "from".into()),
     ])
 }
 
@@ -62,6 +65,9 @@ fn str_to_token_type(s: &str) -> Option<TokenType> {
         "var" => Some(TokenType::Var),
         "break" => Some(TokenType::Break),
         "continue" => Some(TokenType::Continue),
+        "import" => Some(TokenType::Import),
+        "export" => Some(TokenType::Export),
+        "from" => Some(TokenType::From),
         _ => None,
     }
 }

@@ -4,6 +4,7 @@ pub const DEFAULT_JAM_KARET_NUM: f64 = 0.05;
 // two strings are roughly the same if their levenshtein distance is less than 20% of length
 pub const DEFAULT_JAM_KARET_STR: f64 = 0.2;
 
+#[derive(Clone)]
 pub struct RuntimeConfig {
     pub jam_karet_num: f64,
     pub jam_karet_str: f64,

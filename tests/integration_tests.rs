@@ -1,9 +1,12 @@
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use gaul_lang::config::RuntimeConfig;
 use gaul_lang::diagnostics;
 use gaul_lang::interpreter::Interpreter;
 use gaul_lang::interpreter::environment::Environment;
+use gaul_lang::interpreter::module_context::ModuleContext;
 use gaul_lang::interpreter::value::Value;
 use gaul_lang::keywords::{default_keywords, load_keywords};
 use gaul_lang::parser::Parser;
@@ -15,7 +18,8 @@ use gaul_lang::span::Span;
 fn eval(source: &str) -> Result<Value, String> {
     let keywords = load_keywords(None).map_err(|e| e.to_string())?;
     let mut resolver = Resolver::new();
-    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default());
+    let module_ctx = ModuleContext::new(None, keywords.clone());
+    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
 
     let scanner = Scanner::new(source, &keywords);
     let tokens = scanner.scan_tokens().map_err(|e| format!("{:?}", e))?;
@@ -4795,7 +4799,8 @@ fn test_array_find_predicate_must_return_bool() {
 fn eval_diagnostic(source: &str) -> Result<Value, String> {
     let keywords = load_keywords(None).map_err(|e| e.to_string())?;
     let mut resolver = Resolver::new();
-    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default());
+    let module_ctx = ModuleContext::new(None, keywords.clone());
+    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
 
     let scanner = Scanner::new(source, &keywords);
     match scanner.scan_tokens() {
@@ -4853,7 +4858,8 @@ fn eval_diagnostic(source: &str) -> Result<Value, String> {
 fn eval_span(source: &str) -> Option<Span> {
     let keywords = load_keywords(None).ok()?;
     let mut resolver = Resolver::new();
-    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default());
+    let module_ctx = ModuleContext::new(None, keywords.clone());
+    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
 
     let scanner = Scanner::new(source, &keywords);
     match scanner.scan_tokens() {
@@ -5498,6 +5504,8 @@ fn test_llms_full_documents_all_native_methods() {
         (" % ", "modulo operator %"),
         ("~=", "jam karet / approximate equality ~="),
         ("..", "range operator .."),
+        ("import {", "import statement"),
+        ("export fn", "export statement"),
     ];
     for (op, description) in syntax_ops {
         assert!(
@@ -7947,4 +7955,216 @@ fn test_read_line_multiple_calls() {
 fn test_read_line_empty_input() {
     let out = run_with_stdin("println(read_line().len())", "");
     assert_eq!(out, "0");
+}
+
+// ============================================================
+// Module tests (import / export)
+// ============================================================
+
+static TEMP_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+struct TempDir {
+    path: std::path::PathBuf,
+}
+
+impl TempDir {
+    fn new() -> Self {
+        let id = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("gaul_test_{}", id));
+        std::fs::create_dir_all(&path).expect("create temp dir");
+        Self { path }
+    }
+
+    fn write(&self, name: &str, content: &str) -> std::path::PathBuf {
+        let p = self.path.join(name);
+        std::fs::write(&p, content).expect("write temp file");
+        p
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+/// Evaluate a .gaul file from disk (for module tests that need real file paths).
+fn eval_file(path: &Path) -> Result<Value, String> {
+    let source = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let keywords = load_keywords(None).map_err(|e| e.to_string())?;
+    let mut resolver = Resolver::new();
+    let canonical = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
+    let module_ctx = ModuleContext::new(Some(canonical), keywords.clone());
+    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
+
+    let scanner = Scanner::new(&source, &keywords);
+    let tokens = scanner.scan_tokens().map_err(|e| format!("{:?}", e))?;
+    let parser = Parser::new(tokens);
+    let mut program = parser.parse().map_err(|e| format!("{:?}", e))?;
+    resolver.resolve(&mut program).map_err(|e| format!("{:?}", e))?;
+    interpreter.interpret(program).map_err(|e| format!("{:?}", e))
+}
+
+#[test]
+fn test_export_and_import_fn() {
+    let dir = TempDir::new();
+    dir.write("math.gaul", "export fn double(x) { x * 2 }\n");
+    let main = dir.write("main.gaul", "import { double } from \"math.gaul\"\ndouble(21)\n");
+    let result = eval_file(&main);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 42.0),
+        _ => panic!("Expected 42, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_export_and_import_let() {
+    let dir = TempDir::new();
+    dir.write("constants.gaul", "export let Pi = 3\n");
+    let main = dir.write("main.gaul", "import { Pi } from \"constants.gaul\"\nPi + 1\n");
+    let result = eval_file(&main);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 4.0),
+        _ => panic!("Expected 4, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_import_multiple_names() {
+    let dir = TempDir::new();
+    dir.write("lib.gaul", "export let A = 10\nexport let B = 20\n");
+    let main = dir.write("main.gaul", "import { A, B } from \"lib.gaul\"\nA + B\n");
+    let result = eval_file(&main);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 30.0),
+        _ => panic!("Expected 30, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_module_cache() {
+    let dir = TempDir::new();
+    // Module exports two names; import each in separate statements.
+    // This verifies the module is only executed once (cache hit on second import).
+    dir.write("counted.gaul", "export let a = 10\nexport let b = 20\n");
+    let main = dir.write(
+        "main.gaul",
+        "import { a } from \"counted.gaul\"\nimport { b } from \"counted.gaul\"\na + b\n",
+    );
+    let result = eval_file(&main);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 30.0),
+        _ => panic!("Expected 30, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_circular_import_errors() {
+    let dir = TempDir::new();
+    let a_path = dir.path.join("a.gaul");
+    let b_path = dir.path.join("b.gaul");
+    std::fs::write(&a_path, "import { bval } from \"b.gaul\"\nexport let aval = 1\n").unwrap();
+    std::fs::write(&b_path, "import { aval } from \"a.gaul\"\nexport let bval = 2\n").unwrap();
+    let result = eval_file(&a_path);
+    match result {
+        Err(msg) => assert!(msg.contains("circular"), "expected circular error, got: {}", msg),
+        Ok(v) => panic!("Expected circular import error, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_import_nonexistent_name() {
+    let dir = TempDir::new();
+    dir.write("mod.gaul", "export let x = 1\n");
+    let main = dir.write("main.gaul", "import { y } from \"mod.gaul\"\ny\n");
+    let result = eval_file(&main);
+    match result {
+        Err(msg) => assert!(
+            msg.contains("does not export") || msg.contains("y"),
+            "unexpected error: {}",
+            msg
+        ),
+        Ok(v) => panic!("Expected error, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_import_nonexistent_file() {
+    let dir = TempDir::new();
+    let main = dir.write("main.gaul", "import { x } from \"doesnotexist.gaul\"\nx\n");
+    let result = eval_file(&main);
+    match result {
+        Err(msg) => assert!(
+            msg.contains("doesnotexist") || msg.contains("cannot open"),
+            "unexpected error: {}",
+            msg
+        ),
+        Ok(v) => panic!("Expected error, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_import_is_immutable() {
+    let dir = TempDir::new();
+    dir.write("mod.gaul", "export let x = 1\n");
+    let main = dir.write("main.gaul", "import { x } from \"mod.gaul\"\nx = 2\n");
+    let result = eval_file(&main);
+    match result {
+        Err(msg) => assert!(
+            msg.contains("immutable") || msg.contains("Cannot assign"),
+            "expected immutability error, got: {}",
+            msg
+        ),
+        Ok(v) => panic!("Expected error, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_unexported_is_private() {
+    let dir = TempDir::new();
+    dir.write("mod.gaul", "let secret = 42\n");
+    let main = dir.write("main.gaul", "import { secret } from \"mod.gaul\"\nsecret\n");
+    let result = eval_file(&main);
+    match result {
+        Err(msg) => assert!(
+            msg.contains("does not export") || msg.contains("secret"),
+            "unexpected error: {}",
+            msg
+        ),
+        Ok(v) => panic!("Expected error for unexported name, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_relative_path_resolution() {
+    let dir = TempDir::new();
+    // Create a subdirectory
+    let subdir = dir.path.join("lib");
+    std::fs::create_dir_all(&subdir).unwrap();
+    std::fs::write(subdir.join("math.gaul"), "export fn triple(x) { x * 3 }\n").unwrap();
+    // Main imports from the subdirectory
+    let main = dir.write("main.gaul", "import { triple } from \"lib/math.gaul\"\ntriple(7)\n");
+    let result = eval_file(&main);
+    match result {
+        Ok(Value::Num(n)) => assert_eq!(n, 21.0),
+        _ => panic!("Expected 21, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_export_non_decl_parse_error() {
+    let result = eval("export 42\n");
+    match result {
+        Err(_) => {} // expected: parse error
+        Ok(v) => panic!("Expected parse error, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_import_without_from_error() {
+    let result = eval("import { Foo }\n");
+    match result {
+        Err(_) => {} // expected: parse error
+        Ok(v) => panic!("Expected parse error, got {:?}", v),
+    }
 }

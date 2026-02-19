@@ -29,6 +29,13 @@ pub enum DeclarationKind {
         body: Rc<Expr>,
     },
     ExprStmt(Expr),
+    Import {
+        path: String,
+        items: Vec<String>,
+    },
+    Export {
+        inner: Box<Declaration>,
+    },
 }
 
 #[derive(Debug, Clone)]
