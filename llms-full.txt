@@ -488,15 +488,35 @@ R.to_array()             // [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 ---
 
-## File I/O
+## File I/O and Stdin
 
 ```gaul
-let Content = read_file("data.txt")
+let Content = read_file("data.txt")   // read entire file as string
 let Lines = Content.lines()
 
 for(Line : Lines) {
     println(Line.trim())
 }
+```
+
+```gaul
+let All = read_stdin()       // read all of stdin as a string (e.g. piped input)
+let Line = read_line()       // read one line from stdin (trailing \r\n stripped)
+```
+
+`read_stdin()` and `read_line()` work on all platforms (Linux, macOS, Windows).
+Use `.lines()` on the result of `read_stdin()` to iterate line by line.
+
+```gaul
+// Process piped input: cat data.txt | gaul solve.gaul
+let Input = read_stdin()
+for(Line : Input.lines()) {
+    println(Line.trim())
+}
+
+// Interactive prompts
+let Name = read_line()
+println(format("Hello, {}!", Name))
 ```
 
 ---

@@ -6,6 +6,8 @@ pub fn all_native_functions() -> Vec<(&'static str, Value)> {
         ("println", native_println()),
         ("print", native_print()),
         ("read_file", native_read_file()),
+        ("read_stdin", native_read_stdin()),
+        ("read_line", native_read_line()),
         ("min", native_min()),
         ("max", native_max()),
         ("format", native_format()),
@@ -59,6 +61,45 @@ fn native_max() -> Value {
         func: |args| match (&args[0], &args[1]) {
             (Value::Num(a), Value::Num(b)) => Ok(Value::Num(if a >= b { *a } else { *b })),
             _ => Err("max expects two numbers".into()),
+        },
+    }))
+}
+
+fn native_read_stdin() -> Value {
+    Value::NativeFn(Rc::from(NativeFunction {
+        name: Rc::from("read_stdin"),
+        arity: Some(0),
+        func: |_args| {
+            use std::io::Read;
+            let mut s = String::new();
+            std::io::stdin()
+                .lock()
+                .read_to_string(&mut s)
+                .map_err(|e| format!("read_stdin: {}", e))?;
+            Ok(Value::Str(s.into()))
+        },
+    }))
+}
+
+fn native_read_line() -> Value {
+    Value::NativeFn(Rc::from(NativeFunction {
+        name: Rc::from("read_line"),
+        arity: Some(0),
+        func: |_args| {
+            use std::io::BufRead;
+            let mut line = String::new();
+            std::io::stdin()
+                .lock()
+                .read_line(&mut line)
+                .map_err(|e| format!("read_line: {}", e))?;
+            // Strip trailing \r\n (Windows) or \n (Unix)
+            if line.ends_with('\n') {
+                line.pop();
+                if line.ends_with('\r') {
+                    line.pop();
+                }
+            }
+            Ok(Value::Str(line.into()))
         },
     }))
 }

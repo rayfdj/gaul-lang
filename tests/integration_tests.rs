@@ -7827,3 +7827,124 @@ fn test_format_no_args_errors() {
     assert!(eval("format()").is_err());
 }
 // String writes always error because strings are immutable values, not references.
+
+// ============================================================
+// read_stdin() / read_line() — subprocess tests
+//
+// These functions consume real stdin, so we can't test them
+// with the in-process eval() helper. Instead we spawn the
+// compiled binary and pipe input in via std::process::Command.
+// CARGO_BIN_EXE_gaul-lang is set automatically by cargo when
+// running integration tests and points to the already-built binary.
+// ============================================================
+
+const GAUL_BIN: &str = env!("CARGO_BIN_EXE_gaul-lang");
+
+/// Runs `code` as a temporary .gaul file, feeding `stdin_input` to the
+/// process, and returns trimmed stdout. Panics if the process fails.
+fn run_with_stdin(code: &str, stdin_input: &str) -> String {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    // Unique temp file name so parallel tests don't collide.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp = std::env::temp_dir().join(format!(
+        "gaul_test_{}_{}.gaul",
+        std::process::id(),
+        id
+    ));
+    std::fs::write(&tmp, code).expect("write temp gaul file");
+
+    let mut child = Command::new(GAUL_BIN)
+        .arg(&tmp)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn gaul binary");
+
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin_input.as_bytes())
+        .expect("write stdin");
+
+    let out = child.wait_with_output().expect("wait for gaul");
+    let _ = std::fs::remove_file(&tmp);
+
+    assert!(
+        out.status.success(),
+        "gaul exited with error:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
+// --- read_stdin() ---
+
+#[test]
+fn test_read_stdin_reads_all() {
+    let out = run_with_stdin("println(read_stdin())", "hello world");
+    assert_eq!(out, "hello world");
+}
+
+#[test]
+fn test_read_stdin_multiline() {
+    let out = run_with_stdin("let s = read_stdin()\nprintln(s.lines().len())", "a\nb\nc\n");
+    assert_eq!(out, "3");
+}
+
+#[test]
+fn test_read_stdin_empty() {
+    let out = run_with_stdin("println(read_stdin().len())", "");
+    assert_eq!(out, "0");
+}
+
+#[test]
+fn test_read_stdin_used_with_lines() {
+    let out = run_with_stdin(
+        "for(line : read_stdin().lines()) {\n    println(line.trim())\n}",
+        "foo\nbar\nbaz\n",
+    );
+    assert_eq!(out, "foo\nbar\nbaz");
+}
+
+#[test]
+fn test_read_stdin_returns_string() {
+    // .len() only works on strings — proves read_stdin() returns a string
+    let out = run_with_stdin("println(read_stdin().len())", "hello");
+    assert_eq!(out, "5");
+}
+
+// --- read_line() ---
+
+#[test]
+fn test_read_line_reads_one_line() {
+    let out = run_with_stdin("println(read_line())", "first\nsecond\n");
+    assert_eq!(out, "first");
+}
+
+#[test]
+fn test_read_line_strips_newline() {
+    // Result should not contain \n or \r — verify by checking length
+    let out = run_with_stdin("println(read_line().len())", "hello\n");
+    assert_eq!(out, "5");
+}
+
+#[test]
+fn test_read_line_multiple_calls() {
+    let out = run_with_stdin(
+        "let a = read_line()\nlet b = read_line()\nprintln(format(\"{} {}\", a, b))",
+        "foo\nbar\n",
+    );
+    assert_eq!(out, "foo bar");
+}
+
+#[test]
+fn test_read_line_empty_input() {
+    let out = run_with_stdin("println(read_line().len())", "");
+    assert_eq!(out, "0");
+}

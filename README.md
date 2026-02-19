@@ -488,15 +488,28 @@ The number of `{}` must match the number of extra arguments — mismatch is a ru
 
 ---
 
-## File I/O
+## File I/O and Stdin
 
 ```gaul
-let Content = read_file("data.txt")
+let Content = read_file("data.txt")   // read entire file as string
 let Lines = Content.lines()
 
 for(Line : Lines) {
     println(Line.trim())
 }
+```
+
+```gaul
+let All = read_stdin()    // read all of stdin as a string
+let Line = read_line()    // read one line (trailing newline stripped)
+```
+
+Works cross-platform (Linux, macOS, Windows).
+
+```bash
+# pipe input into a Gaul script
+cat data.txt | gaul solve.gaul
+echo "hello" | gaul greet.gaul
 ```
 
 ---
