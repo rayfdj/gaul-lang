@@ -1,3 +1,5 @@
+import { read_file } from "fs"
+
 // Day 12: Christmas Tree Farm - Optimized 1D Solver (No Semicolons)
 
 let Example Input = [

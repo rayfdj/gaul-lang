@@ -1,3 +1,5 @@
+import { read_file } from "fs"
+
 // Day 8: Playground - Junction Boxes with Union-Find
 // Connect closest pairs of 3D points, track circuit sizes
 

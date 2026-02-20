@@ -1,3 +1,5 @@
+import { read_file } from "fs"
+
 // Day 9: Movie Theater - Largest Rectangle from Red Tiles
 // Part 1: Any two tiles as opposite corners
 // Part 2: Rectangle must be contained within polygon formed by tiles

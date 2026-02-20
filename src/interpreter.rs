@@ -2,6 +2,7 @@ pub mod environment;
 pub mod module_context;
 pub mod native_function;
 pub mod native_method;
+pub mod stdlib;
 pub mod value;
 
 use crate::config::RuntimeConfig;
@@ -196,6 +197,19 @@ impl Interpreter {
     }
 
     fn load_module(&mut self, path_str: &str, span: Span) -> Result<Rc<HashMap<String, Value>>, RuntimeError> {
+        // Check for built-in stdlib modules (bare names like "math", "fs", "sys")
+        if !path_str.contains('/') && !path_str.contains('\\') && !path_str.contains('.') {
+            let cache_key = PathBuf::from(format!("@@stdlib/{}", path_str));
+            if let Some(cached) = self.module_ctx.cache.borrow().get(&cache_key) {
+                return Ok(Rc::clone(cached));
+            }
+            if let Some(exports) = stdlib::get_stdlib_module(path_str) {
+                let rc = Rc::new(exports);
+                self.module_ctx.cache.borrow_mut().insert(cache_key, Rc::clone(&rc));
+                return Ok(rc);
+            }
+        }
+
         // Resolve path relative to the current file's directory
         let base_dir = self.module_ctx.current_file
             .as_ref()
