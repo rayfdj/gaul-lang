@@ -1,3 +1,5 @@
+import { read_file } from "fs"
+
 // Day 10: Factory - Lights Out Puzzle
 // Toggle lights to match target pattern using minimum button presses
 // Each button toggles specific light positions (XOR toggle)

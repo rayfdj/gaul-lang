@@ -86,8 +86,6 @@ let Nothing = null
 5 / 3      // 1.666...
 5 % 3      // 2 (Euclidean modulo)
 5.pow(3)   // 125
-min(3, 5)  // 3
-max(3, 5)  // 5
 ```
 
 ### Comparison
@@ -476,6 +474,18 @@ true.to_str()            // "true"
 false.to_str()           // "false"
 ```
 
+### Type Inspection
+```gaul
+type_of(42)              // "number"
+type_of("hello")         // "string"
+type_of(true)            // "bool"
+type_of(null)            // "null"
+type_of([1, 2])          // "array"
+type_of(["a": 1])        // "map"
+type_of(0..10)           // "range"
+type_of(println)         // "function"
+```
+
 ### Range Methods
 ```gaul
 let R = 0..10
@@ -645,11 +655,62 @@ Output:
   Progress: 75%
 ```
 
+### Standard Library Modules
+
+Gaul provides built-in modules that you import by bare name (no file extension or path).
+
+#### `"math"` -- Trigonometry, Logarithms, Min/Max
+
+```gaul
+import { sin, cos, tan, asin, acos, atan, atan2 } from "math"
+import { log, log2, log10, exp } from "math"
+import { min, max, PI, E } from "math"
+
+sin(PI / 2)          // 1
+cos(0)               // 1
+tan(PI / 4)          // ~1
+asin(1)              // PI/2
+acos(1)              // 0
+atan(0)              // 0
+atan2(1, 0)          // PI/2
+log(E)               // 1 (natural log)
+log2(8)              // 3
+log10(100)           // 2
+exp(1)               // E (~2.718)
+min(3, 5)            // 3
+max(3, 5)            // 5
+```
+
+#### `"fs"` -- File System
+
+```gaul
+import { read_file, write_file, append_file, file_exists } from "fs"
+
+let Content = read_file("data.txt")
+write_file("out.txt", "hello")
+append_file("log.txt", "new line\n")
+file_exists("data.txt")   // true or false
+```
+
+#### `"sys"` -- System Utilities
+
+```gaul
+import { clock, args, exit, env_get, env_set } from "sys"
+
+let T = clock()       // seconds since Unix epoch (float)
+let Argv = args()     // command-line arguments as string array
+env_get("HOME")       // environment variable value, or null if unset
+env_set("MY_VAR", "value")
+exit(0)               // terminate with exit code
+```
+
 ---
 
 ## File I/O and Stdin
 
 ```gaul
+import { read_file } from "fs"
+
 let Content = read_file("data.txt")   // read entire file as string
 let Lines = Content.lines()
 
@@ -663,7 +724,7 @@ let All = read_stdin()       // read all of stdin as a string (e.g. piped input)
 let Line = read_line()       // read one line from stdin (trailing \r\n stripped)
 ```
 
-`read_stdin()` and `read_line()` work on all platforms (Linux, macOS, Windows).
+`read_stdin()` and `read_line()` are builtins (no import needed). They work on all platforms.
 Use `.lines()` on the result of `read_stdin()` to iterate line by line.
 
 ```gaul
@@ -950,6 +1011,8 @@ sortilege Fibonacci(N) {
 ## Complete Example: Advent of Code Style
 
 ```gaul
+import { read_file } from "fs"
+
 let Input = read_file("input.txt")
 
 fn Parse Grid(Lines) {
@@ -998,6 +1061,8 @@ println(Solve Part 1(Input))
 
 ### With Maps (Frequency Counting Pattern)
 ```gaul
+import { read_file } from "fs"
+
 let Input = read_file("input.txt")
 
 fn Solve(Input) {
@@ -1049,9 +1114,11 @@ println(Solve(Input))
 | Tail call opt. | Tail-position calls don't grow the stack |
 | Multiline chain | `(Arr.map(...).filter(...))` (wrap in parens!) |
 | Modulo | `N % M` (Euclidean) |
-| Min / Max | `min(A, B)`, `max(A, B)` |
 | To string | `N.to_str()`, `true.to_str()` |
-| Read file | `read_file("path")` |
+| Type check | `type_of(value)` returns `"number"`, `"string"`, etc. |
 | Print | `println(value)`, `print(value)` (no newline) |
 | Export name | `export fn F() { }`, `export let X = 1`, `export var Y = 2` |
 | Import names | `import { F, X } from "path.gaul"` |
+| Stdlib math | `import { sin, min, max, PI } from "math"` |
+| Stdlib fs | `import { read_file, write_file } from "fs"` |
+| Stdlib sys | `import { clock, args, env_get } from "sys"` |

@@ -476,6 +476,58 @@ let Binary = 0b1010        // 10
 let Octal = 0o77           // 63
 ```
 
+### Type Inspection
+```gaul
+type_of(42)          // "number"
+type_of("hello")     // "string"
+type_of(true)        // "bool"
+type_of(null)        // "null"
+type_of([1, 2])      // "array"
+type_of(["a": 1])    // "map"
+type_of(0..10)       // "range"
+type_of(println)     // "function"
+```
+
+---
+
+## Standard Library Modules
+
+Gaul provides built-in modules that you import by name (no file path needed).
+
+### `"math"` -- Trigonometry, Logarithms, Min/Max
+```gaul
+import { sin, cos, PI, min, max } from "math"
+
+sin(PI / 2)          // 1
+cos(0)               // 1
+min(3, 5)            // 3
+max(3, 5)            // 5
+```
+
+Available exports: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `log` (natural), `log2`, `log10`, `exp`, `min`, `max`, `PI`, `E`.
+
+### `"fs"` -- File System
+```gaul
+import { read_file, write_file, file_exists } from "fs"
+
+let Content = read_file("data.txt")
+write_file("out.txt", "hello")
+file_exists("data.txt")   // true
+```
+
+Available exports: `read_file`, `write_file`, `append_file`, `file_exists`.
+
+### `"sys"` -- System Utilities
+```gaul
+import { clock, args, env_get } from "sys"
+
+let T = clock()       // seconds since epoch
+let Argv = args()     // command-line arguments as array
+env_get("HOME")       // environment variable (null if unset)
+```
+
+Available exports: `args`, `exit`, `clock`, `env_get`, `env_set`.
+
 ---
 
 ## String Interpolation
@@ -600,6 +652,8 @@ Run it: `gaul-lang src/samples/tasks/main.gaul`
 ## File I/O and Stdin
 
 ```gaul
+import { read_file } from "fs"
+
 let Content = read_file("data.txt")   // read entire file as string
 let Lines = Content.lines()
 

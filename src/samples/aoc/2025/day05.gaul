@@ -1,3 +1,5 @@
+import { read_file } from "fs"
+
 let Example Input = "3-5
 10-14
 16-20

@@ -5516,6 +5516,29 @@ fn test_llms_full_documents_all_native_methods() {
         "llms-full.txt is missing documentation for these native functions: {:?}",
         missing_fns
     );
+
+    // Verify stdlib module exports are documented
+    use gaul_lang::interpreter::stdlib::all_stdlib_exports;
+    let mut missing_stdlib = Vec::new();
+    for (module, name) in all_stdlib_exports() {
+        // Constants (all-uppercase) just need to appear in the doc
+        // Functions need "name(" pattern
+        if name.chars().all(|c| c.is_uppercase()) {
+            if !doc.contains(name) {
+                missing_stdlib.push(format!("{}.{}", module, name));
+            }
+        } else {
+            let pattern = format!("{}(", name);
+            if !doc.contains(&pattern) {
+                missing_stdlib.push(format!("{}.{}", module, name));
+            }
+        }
+    }
+    assert!(
+        missing_stdlib.is_empty(),
+        "llms-full.txt is missing documentation for these stdlib exports: {:?}",
+        missing_stdlib
+    );
 }
 
 // --- LOGICAL OPERATOR TESTS (&&, ||) ---
@@ -7376,83 +7399,100 @@ fn test_enumerate_single_element() {
     assert_eq!(eval(code).unwrap(), Value::Num(0.0));
 }
 
-// ── min() / max() global functions ───────────────────────────────────────────
+// ── min() / max() via "math" stdlib module ──────────────────────────────────
 
 #[test]
 fn test_min_basic() {
-    assert_eq!(eval("min(3, 5)").unwrap(), Value::Num(3.0));
+    assert_eq!(eval(r#"import { min } from "math"
+    min(3, 5)"#).unwrap(), Value::Num(3.0));
 }
 
 #[test]
 fn test_min_reversed() {
-    assert_eq!(eval("min(5, 3)").unwrap(), Value::Num(3.0));
+    assert_eq!(eval(r#"import { min } from "math"
+    min(5, 3)"#).unwrap(), Value::Num(3.0));
 }
 
 #[test]
 fn test_min_equal() {
-    assert_eq!(eval("min(4, 4)").unwrap(), Value::Num(4.0));
+    assert_eq!(eval(r#"import { min } from "math"
+    min(4, 4)"#).unwrap(), Value::Num(4.0));
 }
 
 #[test]
 fn test_min_negative() {
-    assert_eq!(eval("min(-1, 1)").unwrap(), Value::Num(-1.0));
+    assert_eq!(eval(r#"import { min } from "math"
+    min(-1, 1)"#).unwrap(), Value::Num(-1.0));
 }
 
 #[test]
 fn test_min_floats() {
-    assert_eq!(eval("min(1.5, 1.4)").unwrap(), Value::Num(1.4));
+    assert_eq!(eval(r#"import { min } from "math"
+    min(1.5, 1.4)"#).unwrap(), Value::Num(1.4));
 }
 
 #[test]
 fn test_max_basic() {
-    assert_eq!(eval("max(3, 5)").unwrap(), Value::Num(5.0));
+    assert_eq!(eval(r#"import { max } from "math"
+    max(3, 5)"#).unwrap(), Value::Num(5.0));
 }
 
 #[test]
 fn test_max_reversed() {
-    assert_eq!(eval("max(5, 3)").unwrap(), Value::Num(5.0));
+    assert_eq!(eval(r#"import { max } from "math"
+    max(5, 3)"#).unwrap(), Value::Num(5.0));
 }
 
 #[test]
 fn test_max_equal() {
-    assert_eq!(eval("max(4, 4)").unwrap(), Value::Num(4.0));
+    assert_eq!(eval(r#"import { max } from "math"
+    max(4, 4)"#).unwrap(), Value::Num(4.0));
 }
 
 #[test]
 fn test_max_negative() {
-    assert_eq!(eval("max(-1, 1)").unwrap(), Value::Num(1.0));
+    assert_eq!(eval(r#"import { max } from "math"
+    max(-1, 1)"#).unwrap(), Value::Num(1.0));
 }
 
 #[test]
 fn test_max_floats() {
-    assert_eq!(eval("max(1.5, 1.4)").unwrap(), Value::Num(1.5));
+    assert_eq!(eval(r#"import { max } from "math"
+    max(1.5, 1.4)"#).unwrap(), Value::Num(1.5));
 }
 
 #[test]
 fn test_min_in_expression() {
-    assert_eq!(eval("min(10, 3) + 2").unwrap(), Value::Num(5.0));
+    assert_eq!(eval(r#"import { min } from "math"
+    min(10, 3) + 2"#).unwrap(), Value::Num(5.0));
 }
 
 #[test]
 fn test_max_in_expression() {
-    assert_eq!(eval("max(10, 3) * 2").unwrap(), Value::Num(20.0));
+    assert_eq!(eval(r#"import { max } from "math"
+    max(10, 3) * 2"#).unwrap(), Value::Num(20.0));
 }
 
 #[test]
 fn test_min_wrong_args_errors() {
-    assert!(eval("min(1)").is_err());
-    assert!(eval("min(1, 2, 3)").is_err());
+    assert!(eval(r#"import { min } from "math"
+    min(1)"#).is_err());
+    assert!(eval(r#"import { min } from "math"
+    min(1, 2, 3)"#).is_err());
 }
 
 #[test]
 fn test_max_wrong_args_errors() {
-    assert!(eval("max(1)").is_err());
-    assert!(eval("max(1, 2, 3)").is_err());
+    assert!(eval(r#"import { max } from "math"
+    max(1)"#).is_err());
+    assert!(eval(r#"import { max } from "math"
+    max(1, 2, 3)"#).is_err());
 }
 
 #[test]
 fn test_min_max_with_variables() {
     let code = r#"
+    import { min, max } from "math"
     var a = 7
     var b = 3
     max(a, b) - min(a, b)
@@ -7462,8 +7502,8 @@ fn test_min_max_with_variables() {
 
 #[test]
 fn test_min_clamp_pattern() {
-    // Common AOC pattern: clamp a value between lo and hi
     let code = r#"
+    import { min, max } from "math"
     fn clamp(val, lo, hi) { max(lo, min(val, hi)) }
     clamp(15, 0, 10)
     "#;
@@ -8134,4 +8174,289 @@ fn test_import_without_from_error() {
         Err(_) => {} // expected: parse error
         Ok(v) => panic!("Expected parse error, got {:?}", v),
     }
+}
+
+// ── type_of() ───────────────────────────────────────────────────────────────
+
+#[test]
+fn test_type_of_number() {
+    assert_eq!(eval("type_of(42)").unwrap(), Value::Str("number".into()));
+}
+
+#[test]
+fn test_type_of_string() {
+    assert_eq!(eval(r#"type_of("hello")"#).unwrap(), Value::Str("string".into()));
+}
+
+#[test]
+fn test_type_of_bool() {
+    assert_eq!(eval("type_of(true)").unwrap(), Value::Str("bool".into()));
+}
+
+#[test]
+fn test_type_of_null() {
+    assert_eq!(eval("type_of(null)").unwrap(), Value::Str("null".into()));
+}
+
+#[test]
+fn test_type_of_array() {
+    assert_eq!(eval("type_of([1, 2])").unwrap(), Value::Str("array".into()));
+}
+
+#[test]
+fn test_type_of_map() {
+    assert_eq!(eval(r#"type_of(["a": 1])"#).unwrap(), Value::Str("map".into()));
+}
+
+#[test]
+fn test_type_of_range() {
+    assert_eq!(eval("type_of(0..10)").unwrap(), Value::Str("range".into()));
+}
+
+#[test]
+fn test_type_of_function() {
+    assert_eq!(eval("type_of(println)").unwrap(), Value::Str("function".into()));
+}
+
+#[test]
+fn test_type_of_user_function() {
+    let code = r#"
+    fn foo() { 1 }
+    type_of(foo)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Str("function".into()));
+}
+
+#[test]
+fn test_type_of_lambda() {
+    assert_eq!(eval("type_of(fn(x) { x })").unwrap(), Value::Str("function".into()));
+}
+
+// ── stdlib "math" module ────────────────────────────────────────────────────
+
+#[test]
+fn test_math_sin() {
+    let code = r#"import { sin, PI } from "math"
+    sin(PI / 2)"#;
+    match eval(code).unwrap() {
+        Value::Num(n) => assert!((n - 1.0).abs() < 1e-10),
+        v => panic!("expected Num, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_math_cos() {
+    let code = r#"import { cos } from "math"
+    cos(0)"#;
+    assert_eq!(eval(code).unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_math_tan() {
+    let code = r#"import { tan } from "math"
+    tan(0)"#;
+    assert_eq!(eval(code).unwrap(), Value::Num(0.0));
+}
+
+#[test]
+fn test_math_asin() {
+    let code = r#"import { asin, PI } from "math"
+    asin(1)"#;
+    match eval(code).unwrap() {
+        Value::Num(n) => assert!((n - std::f64::consts::FRAC_PI_2).abs() < 1e-10),
+        v => panic!("expected Num, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_math_acos() {
+    let code = r#"import { acos } from "math"
+    acos(1)"#;
+    assert_eq!(eval(code).unwrap(), Value::Num(0.0));
+}
+
+#[test]
+fn test_math_atan() {
+    let code = r#"import { atan } from "math"
+    atan(0)"#;
+    assert_eq!(eval(code).unwrap(), Value::Num(0.0));
+}
+
+#[test]
+fn test_math_atan2() {
+    let code = r#"import { atan2, PI } from "math"
+    atan2(1, 0)"#;
+    match eval(code).unwrap() {
+        Value::Num(n) => assert!((n - std::f64::consts::FRAC_PI_2).abs() < 1e-10),
+        v => panic!("expected Num, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_math_log() {
+    let code = r#"import { log, E } from "math"
+    log(E)"#;
+    match eval(code).unwrap() {
+        Value::Num(n) => assert!((n - 1.0).abs() < 1e-10),
+        v => panic!("expected Num, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_math_log2() {
+    let code = r#"import { log2 } from "math"
+    log2(8)"#;
+    assert_eq!(eval(code).unwrap(), Value::Num(3.0));
+}
+
+#[test]
+fn test_math_log10() {
+    let code = r#"import { log10 } from "math"
+    log10(100)"#;
+    assert_eq!(eval(code).unwrap(), Value::Num(2.0));
+}
+
+#[test]
+fn test_math_exp() {
+    let code = r#"import { exp } from "math"
+    exp(0)"#;
+    assert_eq!(eval(code).unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_math_pi_constant() {
+    let code = r#"import { PI } from "math"
+    PI"#;
+    match eval(code).unwrap() {
+        Value::Num(n) => assert!((n - std::f64::consts::PI).abs() < 1e-10),
+        v => panic!("expected Num, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_math_e_constant() {
+    let code = r#"import { E } from "math"
+    E"#;
+    match eval(code).unwrap() {
+        Value::Num(n) => assert!((n - std::f64::consts::E).abs() < 1e-10),
+        v => panic!("expected Num, got {:?}", v),
+    }
+}
+
+#[test]
+fn test_math_bad_import_errors() {
+    assert!(eval(r#"import { nope } from "math""#).is_err());
+}
+
+// ── stdlib "fs" module ──────────────────────────────────────────────────────
+
+#[test]
+fn test_fs_write_and_read_file() {
+    use std::sync::atomic::AtomicUsize;
+    static FS_COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let n = FS_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let tmp = format!("/tmp/gaul_test_fs_{}.txt", n);
+    let code = format!(
+        r#"import {{ write_file, read_file }} from "fs"
+        write_file("{tmp}", "hello gaul")
+        read_file("{tmp}")"#,
+    );
+    assert_eq!(eval(&code).unwrap(), Value::Str("hello gaul".into()));
+    let _ = std::fs::remove_file(&tmp);
+}
+
+#[test]
+fn test_fs_append_file() {
+    use std::sync::atomic::AtomicUsize;
+    static APPEND_COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let n = APPEND_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let tmp = format!("/tmp/gaul_test_append_{}.txt", n);
+    let code = format!(
+        r#"import {{ write_file, append_file, read_file }} from "fs"
+        write_file("{tmp}", "one")
+        append_file("{tmp}", "two")
+        read_file("{tmp}")"#,
+    );
+    assert_eq!(eval(&code).unwrap(), Value::Str("onetwo".into()));
+    let _ = std::fs::remove_file(&tmp);
+}
+
+#[test]
+fn test_fs_file_exists() {
+    let code = r#"import { file_exists } from "fs"
+    file_exists("Cargo.toml")"#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_fs_file_not_exists() {
+    let code = r#"import { file_exists } from "fs"
+    file_exists("no_such_file_xyz.txt")"#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(false));
+}
+
+// ── stdlib "sys" module ─────────────────────────────────────────────────────
+
+#[test]
+fn test_sys_clock() {
+    let code = r#"import { clock } from "sys"
+    clock() > 0"#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_sys_args() {
+    let code = r#"import { args } from "sys"
+    type_of(args())"#;
+    assert_eq!(eval(code).unwrap(), Value::Str("array".into()));
+}
+
+#[test]
+fn test_sys_env_get_and_set() {
+    let code = r#"import { env_get, env_set } from "sys"
+    env_set("GAUL_TEST_VAR", "hello")
+    env_get("GAUL_TEST_VAR")"#;
+    assert_eq!(eval(code).unwrap(), Value::Str("hello".into()));
+}
+
+#[test]
+fn test_sys_env_get_missing() {
+    let code = r#"import { env_get } from "sys"
+    env_get("GAUL_DEFINITELY_NOT_SET_XYZ")"#;
+    assert_eq!(eval(code).unwrap(), Value::Null);
+}
+
+// ── removed globals are no longer available ─────────────────────────────────
+
+#[test]
+fn test_min_no_longer_global() {
+    assert!(eval("min(1, 2)").is_err());
+}
+
+#[test]
+fn test_max_no_longer_global() {
+    assert!(eval("max(1, 2)").is_err());
+}
+
+#[test]
+fn test_read_file_no_longer_global() {
+    assert!(eval(r#"read_file("Cargo.toml")"#).is_err());
+}
+
+// ── stdlib module caching ───────────────────────────────────────────────────
+
+#[test]
+fn test_stdlib_module_cached() {
+    // importing same module twice should work (cached)
+    let code = r#"
+    import { sin } from "math"
+    import { cos } from "math"
+    sin(0) + cos(0)
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Num(1.0));
+}
+
+#[test]
+fn test_unknown_stdlib_module_errors() {
+    assert!(eval(r#"import { foo } from "nope""#).is_err());
 }

@@ -1,3 +1,5 @@
+import { read_file } from "fs"
+
 let Example Banks = [
 "987654321111111",
 "811111111111119",

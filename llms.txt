@@ -18,8 +18,13 @@ Gaul (from Indonesian "bahasa gaul" — slang language) challenges conventions: 
 - **No semicolons**: Newlines and expression boundaries are sufficient
 - **Multiline chains need parens**: `(Items.map(...).filter(...))` — wrap in `()` or parser won't see line continuations
 - **String interpolation**: `format("hello {}", name)` — `{}` placeholders, arg count must match
+- **Type inspection**: `type_of(value)` returns `"number"`, `"string"`, `"bool"`, `"null"`, `"array"`, `"map"`, `"range"`, or `"function"`
 - **Stdin**: `read_stdin()` reads all stdin as a string; `read_line()` reads one line (newline stripped)
 - **Modules**: `export fn Foo() { }` / `export let X = 1` to expose names; `import { Foo, X } from "path.gaul"` to use them. Paths are relative to the importing file's directory. No glob imports. Module cache: each file runs once. Circular imports error at runtime. See `src/samples/tasks/` for a working multi-file example.
+- **Stdlib modules** (built-in, no file path needed):
+  - `"math"`: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `log`, `log2`, `log10`, `exp`, `min`, `max`, `PI`, `E` — e.g. `import { sin, PI, min } from "math"`
+  - `"fs"`: `read_file`, `write_file`, `append_file`, `file_exists` — e.g. `import { read_file } from "fs"`
+  - `"sys"`: `args`, `exit`, `clock`, `env_get`, `env_set` — e.g. `import { clock, args } from "sys"`
 
 ## Documentation
 

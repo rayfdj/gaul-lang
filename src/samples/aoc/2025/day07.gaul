@@ -1,3 +1,5 @@
+import { read_file } from "fs"
+
 // Day 7: Laboratories - Tachyon Beam Splitters
 // A beam enters at 'S', travels downward, splits at '^' into left and right
 // Key: beams MERGE when they occupy the same column!

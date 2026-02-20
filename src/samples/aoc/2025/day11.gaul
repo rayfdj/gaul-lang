@@ -1,3 +1,5 @@
+import { read_file } from "fs"
+
 // Day 11: Reactor - Count Paths in Directed Graph
 // Part 1: Count all distinct paths from 'you' to 'out'
 // Part 2: Count paths from 'svr' to 'out' that pass through both 'dac' and 'fft'

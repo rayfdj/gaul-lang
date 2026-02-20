@@ -5,12 +5,10 @@ pub fn all_native_functions() -> Vec<(&'static str, Value)> {
     vec![
         ("println", native_println()),
         ("print", native_print()),
-        ("read_file", native_read_file()),
         ("read_stdin", native_read_stdin()),
         ("read_line", native_read_line()),
-        ("min", native_min()),
-        ("max", native_max()),
         ("format", native_format()),
+        ("type_of", native_type_of()),
     ]
 }
 
@@ -39,28 +37,6 @@ fn native_print() -> Value {
             }
             let _ = std::io::stdout().flush();
             Ok(Value::Null)
-        },
-    }))
-}
-
-fn native_min() -> Value {
-    Value::NativeFn(Rc::from(NativeFunction {
-        name: Rc::from("min"),
-        arity: Some(2),
-        func: |args| match (&args[0], &args[1]) {
-            (Value::Num(a), Value::Num(b)) => Ok(Value::Num(if a <= b { *a } else { *b })),
-            _ => Err("min expects two numbers".into()),
-        },
-    }))
-}
-
-fn native_max() -> Value {
-    Value::NativeFn(Rc::from(NativeFunction {
-        name: Rc::from("max"),
-        arity: Some(2),
-        func: |args| match (&args[0], &args[1]) {
-            (Value::Num(a), Value::Num(b)) => Ok(Value::Num(if a >= b { *a } else { *b })),
-            _ => Err("max expects two numbers".into()),
         },
     }))
 }
@@ -139,25 +115,22 @@ fn native_format() -> Value {
     }))
 }
 
-fn native_read_file() -> Value {
+fn native_type_of() -> Value {
     Value::NativeFn(Rc::from(NativeFunction {
-        name: Rc::from("read_file"),
+        name: Rc::from("type_of"),
         arity: Some(1),
-        func: |args| match &args[0] {
-            Value::Str(path) => std::fs::read_to_string(path.as_ref())
-                .map(|s| Value::Str(s.into()))
-                .map_err(|e| {
-                    let cwd = std::env::current_dir()
-                        .unwrap_or_else(|_| std::path::PathBuf::from("unknown"));
-                    let absolute_path = cwd.join(path.as_ref());
-                    format!(
-                        "Error reading '{}'\n  -> Resolved to: '{}'\n  -> System Error: {}",
-                        path,
-                        absolute_path.display(),
-                        e
-                    )
-                }),
-            _ => Err("read_file expects a string".into()),
+        func: |args| {
+            let type_name = match &args[0] {
+                Value::Num(_) => "number",
+                Value::Str(_) => "string",
+                Value::Bool(_) => "bool",
+                Value::Null => "null",
+                Value::Array(_) => "array",
+                Value::Map(_) => "map",
+                Value::Range(_, _) => "range",
+                Value::Fn(_) | Value::NativeFn(_) => "function",
+            };
+            Ok(Value::Str(Rc::from(type_name)))
         },
     }))
 }
