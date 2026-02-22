@@ -381,8 +381,17 @@ Arr.sort()               // [1, 1, 3, 4, 5, 9]
 Arr.sort_by(fn(A, B) { A - B })   // custom comparator (negative = A first)
 Arr.sort_by_key(fn(X) { X.abs() }) // sort by extracted key (Num or Str)
 Arr.reverse()            // [9, 5, 1, 4, 1, 3]
+Arr.flatten()            // [[1,2],[3]] → [1, 2, 3] (one level; non-arrays kept as-is)
 Arr.join("-")            // "3-1-4-1-5-9"
 Arr.slice(1, 3)          // [1, 4] (from start to end, end optional)
+Arr.zip([10, 20])        // [[3,10], [1,20]] (shorter wins)
+Arr.chunk(3)             // [[3,1,4], [1,5,9]] (last chunk may be short; n=0 errors)
+Arr.take(3)              // [3, 1, 4] (clamps to len)
+Arr.skip(3)              // [1, 5, 9] (clamps to len)
+
+// Mutation
+Arr.insert(0, 99)        // null (inserts 99 at index 0; idx up to len allowed)
+Arr.swap(0, 1)           // null (swaps elements at two indices; both must be in bounds)
 
 // Query
 Arr.is_empty()           // false
@@ -452,6 +461,18 @@ let Result = (Numbers
 
 // Single-line chains don't need outer parens
 let Sum = Numbers.filter(fn(X) { X > 0 }).sum()
+
+// Any: true if at least one element matches (false for empty)
+Numbers.any(fn(X) { X > 3 })   // true
+
+// All: true if every element matches (true for empty — vacuous truth)
+Numbers.all(fn(X) { X > 0 })   // true
+
+// Count: number of elements matching predicate
+Numbers.count(fn(X) { X % 2 == 0 })  // 2
+
+// Flat map: map then flatten one level (callback must return array)
+Numbers.flat_map(fn(X) { [X, X * 10] })  // [1, 10, 2, 20, 3, 30, 4, 40, 5, 50]
 ```
 
 ### Number Methods
@@ -1110,6 +1131,9 @@ println(Solve(Input))
 | Map (array) | `Arr.map(fn(X) { ... })` |
 | Filter | `Arr.filter(fn(X) { ... })` |
 | Reduce | `Arr.reduce(init, fn(Acc, X) { ... })` |
+| Any / All | `Arr.any(fn(X) { ... })`, `Arr.all(fn(X) { ... })` |
+| Count | `Arr.count(fn(X) { ... })` |
+| Flat map | `Arr.flat_map(fn(X) { [X, ...] })` |
 | Self-ref lambda | `let F = fn(N) { F(N - 1) }` |
 | Tail call opt. | Tail-position calls don't grow the stack |
 | Multiline chain | `(Arr.map(...).filter(...))` (wrap in parens!) |

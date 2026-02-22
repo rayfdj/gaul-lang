@@ -366,6 +366,106 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
                 None => Ok(Value::Num(-1.0)),
             }
         }
+        (Value::Array(elements), "flatten") => {
+            let arr = elements.borrow();
+            let mut result = Vec::new();
+            for item in arr.iter() {
+                match item {
+                    Value::Array(inner) => result.extend(inner.borrow().iter().cloned()),
+                    other => result.push(other.clone()),
+                }
+            }
+            Ok(Value::Array(Rc::new(RefCell::new(result))))
+        }
+        (Value::Array(elements), "zip") => {
+            let other = match args.first() {
+                Some(Value::Array(a)) => a,
+                _ => return Err("zip expects an array".into()),
+            };
+            let arr = elements.borrow();
+            let other_arr = other.borrow();
+            let len = arr.len().min(other_arr.len());
+            let pairs: Vec<Value> = (0..len)
+                .map(|i| {
+                    Value::Array(Rc::new(RefCell::new(vec![
+                        arr[i].clone(),
+                        other_arr[i].clone(),
+                    ])))
+                })
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(pairs))))
+        }
+        (Value::Array(elements), "chunk") => {
+            let n = match args.first() {
+                Some(Value::Num(n)) => *n as usize,
+                _ => return Err("chunk expects a number".into()),
+            };
+            if n == 0 {
+                return Err("chunk size must be greater than 0".into());
+            }
+            let arr = elements.borrow();
+            let chunks: Vec<Value> = arr
+                .chunks(n)
+                .map(|c| Value::Array(Rc::new(RefCell::new(c.to_vec()))))
+                .collect();
+            Ok(Value::Array(Rc::new(RefCell::new(chunks))))
+        }
+        (Value::Array(elements), "take") => {
+            let n = match args.first() {
+                Some(Value::Num(n)) => (*n as usize).min(elements.borrow().len()),
+                _ => return Err("take expects a number".into()),
+            };
+            let arr = elements.borrow();
+            let taken: Vec<Value> = arr[..n].to_vec();
+            Ok(Value::Array(Rc::new(RefCell::new(taken))))
+        }
+        (Value::Array(elements), "skip") => {
+            let n = match args.first() {
+                Some(Value::Num(n)) => (*n as usize).min(elements.borrow().len()),
+                _ => return Err("skip expects a number".into()),
+            };
+            let arr = elements.borrow();
+            let skipped: Vec<Value> = arr[n..].to_vec();
+            Ok(Value::Array(Rc::new(RefCell::new(skipped))))
+        }
+        (Value::Array(elements), "insert") => {
+            let idx = match args.first() {
+                Some(Value::Num(n)) => *n as usize,
+                _ => return Err("insert expects an index".into()),
+            };
+            let val = args.get(1).ok_or("insert expects a value")?.clone();
+            let mut arr = elements.borrow_mut();
+            if idx > arr.len() {
+                return Err(format!(
+                    "insert index {} out of bounds for array of length {}",
+                    idx,
+                    arr.len()
+                ));
+            }
+            arr.insert(idx, val);
+            Ok(Value::Null)
+        }
+        (Value::Array(elements), "swap") => {
+            let i = match args.first() {
+                Some(Value::Num(n)) => *n as usize,
+                _ => return Err("swap expects two indices".into()),
+            };
+            let j = match args.get(1) {
+                Some(Value::Num(n)) => *n as usize,
+                _ => return Err("swap expects two indices".into()),
+            };
+            let mut arr = elements.borrow_mut();
+            if i >= arr.len() || j >= arr.len() {
+                return Err(format!(
+                    "swap indices ({}, {}) out of bounds for array of length {}",
+                    i,
+                    j,
+                    arr.len()
+                ));
+            }
+            arr.swap(i, j);
+            Ok(Value::Null)
+        }
 
         // Map!
         (Value::Map(map), "get") => {

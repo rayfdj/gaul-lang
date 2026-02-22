@@ -900,6 +900,14 @@ impl Interpreter {
                                     pairs.into_iter().map(|(_, v)| v).collect();
                                 return Ok(Value::Array(Rc::new(RefCell::new(sorted))).into());
                             }
+                            "any" | "all" | "count" | "flat_map" => {
+                                return self.evaluate_array_higher_order(
+                                    name,
+                                    elements,
+                                    &argument_values,
+                                    expression.span,
+                                );
+                            }
                             _ => {}
                         }
                     }
@@ -1085,6 +1093,110 @@ impl Interpreter {
                 span,
                 message: format!("cannot subscript-assign into '{}'", obj),
             }),
+        }
+    }
+
+    #[inline(never)]
+    fn evaluate_array_higher_order(
+        &mut self,
+        method: &str,
+        elements: &Rc<RefCell<Vec<Value>>>,
+        argument_values: &Args,
+        span: Span,
+    ) -> Result<ControlFlow, RuntimeError> {
+        match method {
+            "any" => {
+                let predicate = argument_values.first().ok_or_else(|| RuntimeError {
+                    span,
+                    message: "any expects a predicate".into(),
+                })?;
+                let arr = elements.borrow();
+                for item in arr.iter() {
+                    let result =
+                        self.call_function(predicate, smallvec![item.clone()], span)?;
+                    match result {
+                        Value::Bool(true) => return Ok(Value::Bool(true).into()),
+                        Value::Bool(false) => {}
+                        _ => {
+                            return Err(RuntimeError {
+                                span,
+                                message: "any predicate must return a boolean".into(),
+                            });
+                        }
+                    }
+                }
+                Ok(Value::Bool(false).into())
+            }
+            "all" => {
+                let predicate = argument_values.first().ok_or_else(|| RuntimeError {
+                    span,
+                    message: "all expects a predicate".into(),
+                })?;
+                let arr = elements.borrow();
+                for item in arr.iter() {
+                    let result =
+                        self.call_function(predicate, smallvec![item.clone()], span)?;
+                    match result {
+                        Value::Bool(false) => return Ok(Value::Bool(false).into()),
+                        Value::Bool(true) => {}
+                        _ => {
+                            return Err(RuntimeError {
+                                span,
+                                message: "all predicate must return a boolean".into(),
+                            });
+                        }
+                    }
+                }
+                Ok(Value::Bool(true).into())
+            }
+            "count" => {
+                let predicate = argument_values.first().ok_or_else(|| RuntimeError {
+                    span,
+                    message: "count expects a predicate".into(),
+                })?;
+                let arr = elements.borrow();
+                let mut count = 0i64;
+                for item in arr.iter() {
+                    let result =
+                        self.call_function(predicate, smallvec![item.clone()], span)?;
+                    match result {
+                        Value::Bool(true) => count += 1,
+                        Value::Bool(false) => {}
+                        _ => {
+                            return Err(RuntimeError {
+                                span,
+                                message: "count predicate must return a boolean".into(),
+                            });
+                        }
+                    }
+                }
+                Ok(Value::Num(count as f64).into())
+            }
+            "flat_map" => {
+                let callable = argument_values.first().ok_or_else(|| RuntimeError {
+                    span,
+                    message: "flat_map expects a function".into(),
+                })?;
+                let arr = elements.borrow();
+                let mut result = Vec::new();
+                for item in arr.iter() {
+                    let mapped =
+                        self.call_function(callable, smallvec![item.clone()], span)?;
+                    match mapped {
+                        Value::Array(inner) => {
+                            result.extend(inner.borrow().iter().cloned())
+                        }
+                        _ => {
+                            return Err(RuntimeError {
+                                span,
+                                message: "flat_map callback must return an array".into(),
+                            });
+                        }
+                    }
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(result))).into())
+            }
+            _ => unreachable!(),
         }
     }
 

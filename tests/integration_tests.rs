@@ -5417,7 +5417,7 @@ fn test_llms_full_documents_all_native_methods() {
                     // Verify it's actually a method call on arrays by checking the
                     // surrounding context: these are the only quoted "name" => { patterns
                     // in the interpreter's array method dispatch
-                    if ["map", "filter", "reduce", "find", "sort_by", "sort_by_key"]
+                    if ["map", "filter", "reduce", "find", "sort_by", "sort_by_key", "any", "all", "count", "flat_map"]
                         .contains(&candidate)
                     {
                         methods_by_type
@@ -8459,4 +8459,346 @@ fn test_stdlib_module_cached() {
 #[test]
 fn test_unknown_stdlib_module_errors() {
     assert!(eval(r#"import { foo } from "nope""#).is_err());
+}
+
+// ── flatten ──
+
+#[test]
+fn test_array_flatten_nested() {
+    let code = r#"[[1, 2], [3, 4], [5]].flatten()"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[1, 2, 3, 4, 5]");
+}
+
+#[test]
+fn test_array_flatten_mixed() {
+    let code = r#"[[1, 2], 3, [4]].flatten()"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[1, 2, 3, 4]");
+}
+
+#[test]
+fn test_array_flatten_empty() {
+    let code = r#"[].flatten()"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[]");
+}
+
+#[test]
+fn test_array_flatten_one_level() {
+    // Only flattens one level deep
+    let code = r#"[[[1, 2]], [3]].flatten()"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[[1, 2], 3]");
+}
+
+// ── zip ──
+
+#[test]
+fn test_array_zip_basic() {
+    let code = r#"[1, 2, 3].zip(["a", "b", "c"])"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), r#"[[1, "a"], [2, "b"], [3, "c"]]"#);
+}
+
+#[test]
+fn test_array_zip_shorter_left() {
+    let code = r#"[1, 2].zip(["a", "b", "c"])"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), r#"[[1, "a"], [2, "b"]]"#);
+}
+
+#[test]
+fn test_array_zip_shorter_right() {
+    let code = r#"[1, 2, 3].zip(["a"])"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), r#"[[1, "a"]]"#);
+}
+
+#[test]
+fn test_array_zip_empty() {
+    let code = r#"[1, 2].zip([])"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[]");
+}
+
+// ── chunk ──
+
+#[test]
+fn test_array_chunk_even() {
+    let code = r#"[1, 2, 3, 4, 5, 6].chunk(2)"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[[1, 2], [3, 4], [5, 6]]");
+}
+
+#[test]
+fn test_array_chunk_uneven() {
+    let code = r#"[1, 2, 3, 4, 5].chunk(2)"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[[1, 2], [3, 4], [5]]");
+}
+
+#[test]
+fn test_array_chunk_zero_errors() {
+    assert!(eval(r#"[1, 2].chunk(0)"#).is_err());
+}
+
+#[test]
+fn test_array_chunk_larger_than_array() {
+    let code = r#"[1, 2].chunk(5)"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[[1, 2]]");
+}
+
+#[test]
+fn test_array_chunk_empty() {
+    let code = r#"[].chunk(3)"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[]");
+}
+
+// ── take ──
+
+#[test]
+fn test_array_take_basic() {
+    let code = r#"[1, 2, 3, 4, 5].take(3)"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[1, 2, 3]");
+}
+
+#[test]
+fn test_array_take_clamp() {
+    let code = r#"[1, 2].take(10)"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[1, 2]");
+}
+
+#[test]
+fn test_array_take_zero() {
+    let code = r#"[1, 2, 3].take(0)"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[]");
+}
+
+// ── skip ──
+
+#[test]
+fn test_array_skip_basic() {
+    let code = r#"[1, 2, 3, 4, 5].skip(2)"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[3, 4, 5]");
+}
+
+#[test]
+fn test_array_skip_clamp() {
+    let code = r#"[1, 2].skip(10)"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[]");
+}
+
+#[test]
+fn test_array_skip_zero() {
+    let code = r#"[1, 2, 3].skip(0)"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[1, 2, 3]");
+}
+
+// ── insert ──
+
+#[test]
+fn test_array_insert_beginning() {
+    let code = r#"
+let Arr = [1, 2, 3]
+Arr.insert(0, 99)
+Arr
+"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[99, 1, 2, 3]");
+}
+
+#[test]
+fn test_array_insert_middle() {
+    let code = r#"
+let Arr = [1, 2, 3]
+Arr.insert(1, 99)
+Arr
+"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[1, 99, 2, 3]");
+}
+
+#[test]
+fn test_array_insert_end() {
+    let code = r#"
+let Arr = [1, 2, 3]
+Arr.insert(3, 99)
+Arr
+"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[1, 2, 3, 99]");
+}
+
+#[test]
+fn test_array_insert_returns_null() {
+    let code = r#"[1, 2, 3].insert(0, 99)"#;
+    assert_eq!(eval(code).unwrap(), Value::Null);
+}
+
+#[test]
+fn test_array_insert_out_of_bounds() {
+    assert!(eval(r#"[1, 2].insert(5, 99)"#).is_err());
+}
+
+// ── swap ──
+
+#[test]
+fn test_array_swap_basic() {
+    let code = r#"
+let Arr = [1, 2, 3]
+Arr.swap(0, 2)
+Arr
+"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[3, 2, 1]");
+}
+
+#[test]
+fn test_array_swap_returns_null() {
+    let code = r#"
+let Arr = [1, 2, 3]
+Arr.swap(0, 1)
+"#;
+    assert_eq!(eval(code).unwrap(), Value::Null);
+}
+
+#[test]
+fn test_array_swap_same_index() {
+    let code = r#"
+let Arr = [1, 2, 3]
+Arr.swap(1, 1)
+Arr
+"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[1, 2, 3]");
+}
+
+#[test]
+fn test_array_swap_out_of_bounds() {
+    assert!(eval(r#"[1, 2].swap(0, 5)"#).is_err());
+}
+
+// ── any ──
+
+#[test]
+fn test_array_any_true() {
+    let code = r#"[1, 2, 3, 4, 5].any(fn(X) { X > 3 })"#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_array_any_false() {
+    let code = r#"[1, 2, 3].any(fn(X) { X > 10 })"#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn test_array_any_empty() {
+    let code = r#"[].any(fn(X) { true })"#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn test_array_any_non_bool_errors() {
+    assert!(eval(r#"[1, 2].any(fn(X) { X })"#).is_err());
+}
+
+// ── all ──
+
+#[test]
+fn test_array_all_true() {
+    let code = r#"[1, 2, 3, 4, 5].all(fn(X) { X > 0 })"#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_array_all_false() {
+    let code = r#"[1, 2, 3].all(fn(X) { X > 2 })"#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn test_array_all_empty() {
+    let code = r#"[].all(fn(X) { false })"#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_array_all_non_bool_errors() {
+    assert!(eval(r#"[1, 2].all(fn(X) { X })"#).is_err());
+}
+
+// ── count ──
+
+#[test]
+fn test_array_count_some() {
+    let code = r#"[1, 2, 3, 4, 5].count(fn(X) { X > 3 })"#;
+    assert_eq!(eval(code).unwrap(), Value::Num(2.0));
+}
+
+#[test]
+fn test_array_count_none() {
+    let code = r#"[1, 2, 3].count(fn(X) { X > 10 })"#;
+    assert_eq!(eval(code).unwrap(), Value::Num(0.0));
+}
+
+#[test]
+fn test_array_count_all() {
+    let code = r#"[1, 2, 3].count(fn(X) { X > 0 })"#;
+    assert_eq!(eval(code).unwrap(), Value::Num(3.0));
+}
+
+#[test]
+fn test_array_count_empty() {
+    let code = r#"[].count(fn(X) { true })"#;
+    assert_eq!(eval(code).unwrap(), Value::Num(0.0));
+}
+
+#[test]
+fn test_array_count_non_bool_errors() {
+    assert!(eval(r#"[1, 2].count(fn(X) { X })"#).is_err());
+}
+
+// ── flat_map ──
+
+#[test]
+fn test_array_flat_map_basic() {
+    let code = r#"[1, 2, 3].flat_map(fn(X) { [X, X * 10] })"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[1, 10, 2, 20, 3, 30]");
+}
+
+#[test]
+fn test_array_flat_map_empty_results() {
+    let code = r#"[1, 2, 3].flat_map(fn(X) { [] })"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[]");
+}
+
+#[test]
+fn test_array_flat_map_empty_array() {
+    let code = r#"[].flat_map(fn(X) { [X] })"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[]");
+}
+
+#[test]
+fn test_array_flat_map_non_array_errors() {
+    assert!(eval(r#"[1, 2].flat_map(fn(X) { X })"#).is_err());
+}
+
+#[test]
+fn test_array_flat_map_variable_lengths() {
+    let code = r#"[1, 2, 3].flat_map(fn(X) { if(X % 2 == 0) { [X] } else { [] } })"#;
+    let result = eval(code).unwrap();
+    assert_eq!(result.to_string(), "[2]");
 }

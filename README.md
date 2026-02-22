@@ -436,8 +436,19 @@ Arr.sort()           // [1, 1, 2, 3, 4, 5, 6, 9]
 Arr.sort_by(fn(A, B) { A - B })   // custom comparator
 Arr.sort_by_key(fn(X) { X.abs() }) // sort by key
 Arr.reverse()        // [6, 2, 9, 5, 1, 4, 1, 3]
+Arr.flatten()        // [[1,2],[3]] → [1, 2, 3]
 Arr.contains(5)      // true
 Arr.join("-")        // "3-1-4-1-5-9-2-6"
+Arr.zip([10, 20])    // [[3,10], [1,20]]
+Arr.chunk(3)         // [[3,1,4], [1,5,9], [2,6]]
+Arr.take(3)          // [3, 1, 4]
+Arr.skip(3)          // [1, 5, 9, 2, 6]
+Arr.insert(0, 99)    // inserts 99 at index 0 (mutates)
+Arr.swap(0, 1)       // swaps elements at indices 0 and 1 (mutates)
+Arr.any(fn(X) { X > 5 })       // true
+Arr.all(fn(X) { X > 0 })       // true
+Arr.count(fn(X) { X > 3 })     // 3
+Arr.flat_map(fn(X) { [X, X] }) // [3,3,1,1,4,4,...]
 ```
 
 ### Map Methods
