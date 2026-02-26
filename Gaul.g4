@@ -4,7 +4,7 @@ grammar Gaul;
  * ============================================================================
  * GAUL LANGUAGE GRAMMAR
  * ============================================================================
- * 
+ *
  * Gaul (from Indonesian "bahasa gaul" meaning "slang language").
  *
  * KEY FEATURES:
@@ -14,17 +14,23 @@ grammar Gaul;
  *   - Immutable by default (let/var)
  *   - Jam karet operator for approximate equality (~=)
  *   - Number separators for readability (1_000_000)
+ *   - Modules with import/export
+ *   - Lambda expressions
+ *   - Maps and arrays with subscript indexing
+ *   - Bitwise operators
+ *   - Compound assignment operators (+=, -=, *=, /=)
+ *   - Tail call optimization
  *
  * LEXER NOTE:
  *   This grammar defines PARSER RULES ONLY.
- *   Gaul uses a custom Rust scanner (src/scanner/) because ANTLR cannot
- *   natively handle:
+ *   Gaul uses a custom Rust scanner (crates/gaul-core/src/scanner.rs) because
+ *   ANTLR cannot natively handle:
  *     - Spaces within identifiers
  *     - Runtime-configurable keywords
  *     - Number separators (1_000_000)
- *   
- *   See src/scanner/scanner.rs for lexer implementation.
- *   See src/scanner/token.rs for token type definitions.
+ *
+ *   See crates/gaul-core/src/scanner.rs for lexer implementation.
+ *   See crates/gaul-core/src/scanner/token.rs for token type definitions.
  *
  * EXPRESSION-BASED DESIGN:
  *   Everything in Gaul is an expression that returns a value.
@@ -58,6 +64,8 @@ declaration
     : letDecl
     | varDecl
     | fnDecl
+    | importDecl
+    | exportDecl
     | expression NEWLINE
     ;
 
@@ -66,7 +74,7 @@ declaration
  * VARIABLE DECLARATIONS
  * ============================================================================
  * Gaul uses let/var for immutable/mutable bindings (like Swift).
- * 
+ *
  * Examples:
  *   let My Constant = 100
  *   var My Counter = 0
@@ -109,6 +117,30 @@ parameters
 
 
 /* ============================================================================
+ * IMPORT / EXPORT DECLARATIONS
+ * ============================================================================
+ * Modules use import/export for code sharing across files.
+ * Stdlib modules (math, fs, sys) are imported by bare name.
+ *
+ * Examples:
+ *   import { sin, cos, PI } from "math"
+ *   import { read_file } from "fs"
+ *   import { My Helper } from "./utils.gaul"
+ *
+ *   export fn Add(A, B) { A + B }
+ *   export let Version = "1.0"
+ */
+
+importDecl
+    : IMPORT LBRACE IDENTIFIER (COMMA IDENTIFIER)* RBRACE FROM STRING NEWLINE
+    ;
+
+exportDecl
+    : EXPORT (letDecl | varDecl | fnDecl)
+    ;
+
+
+/* ============================================================================
  * EXPRESSIONS
  * ============================================================================
  * Everything in Gaul is an expression (returns a value).
@@ -120,16 +152,20 @@ parameters
  *   - returnExpr  : early exit, returns Null
  *
  * Operator precedence (lowest to highest):
- *   1. Assignment (=)
- *   2. Logical OR (or)
- *   3. Logical AND (and)
- *   4. Equality (==, !=, ~=)
- *   5. Comparison (<, >, <=, >=)
- *   6. Range (..)
- *   7. Additive (+, -)
- *   8. Multiplicative (*, /)
- *   9. Unary (!, -)
- *  10. Call and access ((), .)
+ *    1. Assignment       (=, +=, -=, *=, /=)
+ *    2. Logical OR       (||)
+ *    3. Logical AND      (&&)
+ *    4. Equality         (==, !=, ~=)
+ *    5. Comparison       (<, >, <=, >=)
+ *    6. Bitwise OR       (|)
+ *    7. Bitwise XOR      (^)
+ *    8. Bitwise AND      (&)
+ *    9. Shift            (<<, >>)
+ *   10. Range            (..)
+ *   11. Additive         (+, -)
+ *   12. Multiplicative   (*, /, %)
+ *   13. Unary            (!, -, ~)
+ *   14. Call and access   ((), ., [])
  */
 
 expression
@@ -148,13 +184,13 @@ expression
 
 // If expression - returns the value of the taken branch
 // Examples:
-//   If(X > 0) { "positive" } Else { "non-positive" }
+//   if(X > 0) { "positive" } else { "non-positive" }
 //
-//   If(A) {
+//   if(A) {
 //       One
-//   } Else If(B) {
+//   } else if(B) {
 //       Two
-//   } Else {
+//   } else {
 //       Three
 //   }
 ifExpr
@@ -167,24 +203,33 @@ elseClause
     ;
 
 // While expression - returns Null, executed for side effects
-// Example: While(X < 10) { X = X + 1 }
+// Example: while(X < 10) { X = X + 1 }
 whileExpr
     : WHILE LPAREN expression RPAREN block
     ;
 
 // For expression - returns Null, executed for side effects
 // Examples:
-//   For(I : 1..10) { Print(I) }
-//   For(Item : My Array) { Process(Item) }
+//   for(I : 1..10) { println(I) }
+//   for(Item : My Array) { Process(Item) }
 forExpr
     : FOR LPAREN IDENTIFIER COLON expression RPAREN block
     ;
 
-// Return expression - exits function early, returns Null as expression value
-// The returned value goes to the function, not to the enclosing expression
+// Return expression - exits function early
 // Example: return Compute Result()
 returnExpr
     : RETURN expression?
+    ;
+
+// Break - exits the innermost loop
+// Continue - skips to next iteration
+breakExpr
+    : BREAK
+    ;
+
+continueExpr
+    : CONTINUE
     ;
 
 
@@ -193,25 +238,34 @@ returnExpr
  * ============================================================================
  */
 
-// Assignment is right-associative: a = b = c means a = (b = c)
+// Assignment (right-associative)
+// Targets can be identifiers, field access, or subscript indexing.
+// Compound assignment (+=, -=, *=, /=) is desugared to binary op + assign.
+//
+// Examples:
+//   X = 5
+//   My Array[0] = "hello"
+//   Obj.field = 42
+//   Counter += 1
 assignment
-    : IDENTIFIER ASSIGN assignment
+    : (IDENTIFIER | call DOT IDENTIFIER | call LBRACKET expression RBRACKET)
+        (ASSIGN | PLUS_EQUAL | MINUS_EQUAL | STAR_EQUAL | SLASH_EQUAL) assignment
     | logicOr
     ;
 
-// Logical OR - short-circuit evaluation
+// Logical OR (||) - short-circuit evaluation
 logicOr
     : logicAnd (OR logicAnd)*
     ;
 
-// Logical AND - short-circuit evaluation
+// Logical AND (&&) - short-circuit evaluation
 logicAnd
     : equality (AND equality)*
     ;
 
 // Equality operators
 //   == : strict equality
-//   != : strict inequality  
+//   != : strict inequality
 //   ~= : approximate equality ("jam karet")
 equality
     : comparison ((EQUALS | NOT_EQUAL | APPROX_EQUAL) comparison)*
@@ -219,11 +273,31 @@ equality
 
 // Comparison operators
 comparison
-    : range ((LESS | GREATER | LESS_EQUAL | GREATER_EQUAL) range)*
+    : bitwiseOr ((LESS | GREATER | LESS_EQUAL | GREATER_EQUAL) bitwiseOr)*
     ;
 
-// Range operator - creates a range from start to end
-// Example: 1..10
+// Bitwise OR
+bitwiseOr
+    : bitwiseXor (PIPE bitwiseXor)*
+    ;
+
+// Bitwise XOR
+bitwiseXor
+    : bitwiseAnd (CARET bitwiseAnd)*
+    ;
+
+// Bitwise AND
+bitwiseAnd
+    : shift (AMPERSAND shift)*
+    ;
+
+// Bit shift operators
+shift
+    : range ((LEFT_SHIFT | RIGHT_SHIFT) range)*
+    ;
+
+// Range operator - creates a range from start to end (exclusive)
+// Example: 1..10 creates [1, 2, 3, ..., 9]
 range
     : term (RANGE term)?
     ;
@@ -233,20 +307,27 @@ term
     : factor ((PLUS | MINUS) factor)*
     ;
 
-// Multiplication and division
+// Multiplication, division, and modulo
 factor
-    : unary ((STAR | SLASH) unary)*
+    : unary ((STAR | SLASH | PERCENT) unary)*
     ;
 
-// Unary operators: logical not (!), negation (-)
+// Unary operators: logical not (!), negation (-), bitwise not (~)
 unary
-    : (BANG | MINUS) unary
+    : (BANG | MINUS | TILDE) unary
     | call
     ;
 
-// Function calls and property access
+// Function calls, property access, method calls, and subscript indexing
+// All of these chain left-to-right as postfix operations.
+//
+// Examples:
+//   My Func(A, B)                 // function call
+//   My Array.len()                // method call
+//   My Array[0]                   // subscript indexing
+//   My Array[0].to_str().len()    // chained
 call
-    : primary (LPAREN arguments? RPAREN | DOT IDENTIFIER)*
+    : primary (LPAREN arguments? RPAREN | DOT IDENTIFIER | LBRACKET expression RBRACKET)*
     ;
 
 arguments
@@ -257,7 +338,8 @@ arguments
 /* ============================================================================
  * PRIMARY EXPRESSIONS
  * ============================================================================
- * The atomic building blocks - literals, identifiers, grouping, and blocks.
+ * The atomic building blocks: literals, identifiers, grouping, blocks,
+ * arrays, maps, and lambdas.
  */
 
 primary
@@ -267,9 +349,13 @@ primary
     | FALSE
     | NULL
     | IDENTIFIER
+    | BREAK
+    | CONTINUE
     | LPAREN expression RPAREN
     | block
     | array
+    | map
+    | lambda
     ;
 
 
@@ -277,12 +363,12 @@ primary
  * BLOCKS
  * ============================================================================
  * Blocks are expressions that contain declarations and return the last
- * expression's value. If empty or ends with declaration, returns Null.
+ * expression's value. If empty or ends with a declaration, returns Null.
  *
  * Examples:
  *   { 5 }                              // returns 5
- *   { let X = 5; X + 1 }               // returns 6
- *   { Print("hi") }                    // returns result of Print
+ *   { let X = 5; X + 1 }              // returns 6
+ *   { println("hi") }                  // returns result of println
  */
 
 block
@@ -291,39 +377,76 @@ block
 
 
 /* ============================================================================
- * ARRAYS
+ * ARRAYS AND MAPS
  * ============================================================================
- * Arrays are expressions that create, er, arrays. They are sandwiched by
- * square brackets, just like in many other languages.
+ * Arrays and maps share bracket syntax. If the first element is followed
+ * by a colon, it's a map. Otherwise it's an array.
  *
- * Examples:
- *   [ 1, 2, 3 ]                        // array of number 1, 2, 3
- *   [ Func 1, Func 2, Func 3 ]         // array of functions
+ * Arrays:
+ *   [1, 2, 3]
+ *   ["hello", "world"]
+ *   []                                  // empty array
+ *
+ * Maps:
+ *   ["name": "Alice", "age": 30]
+ *   [1: "one", 2: "two"]
+ *   [:]                                 // empty map
  */
 
 array
     : LBRACKET (expression (COMMA expression)*)? RBRACKET
     ;
 
+map
+    : LBRACKET COLON RBRACKET
+    | LBRACKET expression COLON expression (COMMA expression COLON expression)* RBRACKET
+    ;
+
+
+/* ============================================================================
+ * LAMBDA EXPRESSIONS
+ * ============================================================================
+ * Anonymous functions, using the same keyword as fn declarations.
+ * The result is a function value that can be stored or passed around.
+ *
+ * Examples:
+ *   let Double = fn(X) { X * 2 }
+ *   My Array.map(fn(Item) { Item + 1 })
+ *   let Add = fn(A, B) { A + B }
+ */
+
+lambda
+    : FUNCTION LPAREN parameters? RPAREN block
+    ;
+
+
 /* ============================================================================
  * TOKEN DECLARATIONS (Documentation Only)
  * ============================================================================
- * These tokens are defined in src/scanner/token.rs and handled by the
- * custom Rust scanner. They are listed here for documentation purposes.
+ * These tokens are defined in crates/gaul-core/src/scanner/token.rs and
+ * handled by the custom Rust scanner. Listed here for documentation.
  *
  * CONFIGURABLE KEYWORDS (via JSON file):
- *   LET, VAR, FUNCTION, RETURN, IF, ELSE, WHILE, FOR, IN,
- *   AND, OR, TRUE, FALSE, NULL
+ *   LET, VAR, FUNCTION, RETURN, IF, ELSE, WHILE, FOR,
+ *   TRUE, FALSE, NULL, BREAK, CONTINUE, IMPORT, EXPORT, FROM
  *
  * OPERATORS:
- *   LPAREN '('    RPAREN ')'    LBRACE '{'    RBRACE '}'
- *   COMMA ','     DOT '.'       MINUS '-'     PLUS '+'
- *   SLASH '/'     STAR '*'      BANG '!'      RANGE '..'
- *   ASSIGN '='    EQUALS '=='   NOT_EQUAL '!='
- *   GREATER '>'   GREATER_EQUAL '>='
- *   LESS '<'      LESS_EQUAL '<='
- *   LBRACKET '['  RBRACKET ']'  COLON ':'
- *   APPROX_EQUAL '~='
+ *   LPAREN '('        RPAREN ')'        LBRACE '{'        RBRACE '}'
+ *   LBRACKET '['      RBRACKET ']'      COMMA ','         DOT '.'
+ *   COLON ':'         RANGE '..'
+ *
+ *   PLUS '+'          MINUS '-'         STAR '*'          SLASH '/'
+ *   PERCENT '%'       BANG '!'          TILDE '~'
+ *
+ *   ASSIGN '='        EQUALS '=='       NOT_EQUAL '!='    APPROX_EQUAL '~='
+ *   GREATER '>'       GREATER_EQUAL '>='
+ *   LESS '<'          LESS_EQUAL '<='
+ *
+ *   PLUS_EQUAL '+='   MINUS_EQUAL '-='  STAR_EQUAL '*='   SLASH_EQUAL '/='
+ *
+ *   AND '&&'          OR '||'
+ *   AMPERSAND '&'     PIPE '|'          CARET '^'
+ *   LEFT_SHIFT '<<'   RIGHT_SHIFT '>>'
  *
  * LITERALS:
  *   NUMBER      - integers, floats, hex (0x), binary (0b), octal (0o)
