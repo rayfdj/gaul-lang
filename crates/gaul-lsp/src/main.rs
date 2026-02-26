@@ -1,12 +1,14 @@
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
 
-use gaul_core::analysis::{self, SymbolTable};
+use gaul_core::analysis::{self, SymbolDef, SymbolTable};
 use gaul_core::builtins::{
     NATIVE_FUNCTION_NAMES, NATIVE_FUNCTIONS_INFO, NATIVE_METHODS, STANDARD_MODULES,
 };
 use gaul_core::keywords::load_keywords;
 use gaul_core::parser::Parser;
+use gaul_core::parser::ast::DeclarationKind;
 use gaul_core::resolver::Resolver;
 use gaul_core::scanner::Scanner;
 use gaul_core::scanner::token::{Token, TokenType};
@@ -37,12 +39,20 @@ struct DocumentState {
     source: String,
     tokens: Vec<Token>,
     symbols: Option<SymbolTable>,
+    import_map: HashMap<String, String>,
+}
+
+struct FileIndex {
+    exports: Vec<(String, Span)>,
+    symbols: Vec<SymbolDef>,
 }
 
 struct Backend {
     client: Client,
     keywords: RwLock<HashMap<String, TokenType>>,
     documents: Mutex<HashMap<Url, DocumentState>>,
+    workspace_root: Mutex<Option<PathBuf>>,
+    workspace_index: Mutex<HashMap<PathBuf, FileIndex>>,
 }
 
 impl Backend {
@@ -60,9 +70,19 @@ impl Backend {
         let tokens_for_parser = scan_result.tokens_without_comments();
 
         let mut symbols = None;
+        let mut import_map = HashMap::new();
         let parser = Parser::new(tokens_for_parser);
         match parser.parse() {
             Ok(mut program) => {
+                // Extract import map before resolver
+                for decl in &program.declarations {
+                    if let DeclarationKind::Import { path, items } = &decl.kind {
+                        for item in items {
+                            import_map.insert(item.clone(), path.clone());
+                        }
+                    }
+                }
+
                 let mut resolver = Resolver::new();
                 if let Err(e) = resolver.resolve(&mut program) {
                     diagnostics.push(span_to_diagnostic(e.span, &e.message, "resolve"));
@@ -87,6 +107,7 @@ impl Backend {
                     source: text.to_string(),
                     tokens: all_tokens.clone(),
                     symbols,
+                    import_map,
                 },
             );
         }
@@ -96,9 +117,36 @@ impl Backend {
 
     async fn on_change(&self, uri: Url, text: String) {
         let (_, diagnostics) = self.analyze(&uri, &text);
+
+        // Update workspace index for this file
+        if let Ok(path) = uri.to_file_path() {
+            let keywords = self.keywords.read().unwrap().clone();
+            if let Some(file_index) = build_file_index(&text, &keywords) {
+                self.workspace_index
+                    .lock()
+                    .unwrap()
+                    .insert(path, file_index);
+            }
+        }
+
         self.client
             .publish_diagnostics(uri, diagnostics, None)
             .await;
+    }
+
+    fn index_workspace(&self, root: &Path) {
+        let keywords = self.keywords.read().unwrap().clone();
+        let mut files = Vec::new();
+        walk_gaul_files(root, &mut files);
+
+        let mut index = self.workspace_index.lock().unwrap();
+        for path in files {
+            if let Ok(source) = std::fs::read_to_string(&path)
+                && let Some(file_index) = build_file_index(&source, &keywords)
+            {
+                index.insert(path, file_index);
+            }
+        }
     }
 }
 
@@ -297,6 +345,60 @@ fn encode_semantic_tokens(tokens: &[Token], symbols: Option<&SymbolTable>) -> Ve
     }
 
     result
+}
+
+fn build_file_index(source: &str, keywords: &HashMap<String, TokenType>) -> Option<FileIndex> {
+    let scanner = Scanner::new(source, keywords);
+    let scan_result = scanner.scan_tokens();
+    let tokens = scan_result.tokens_without_comments();
+    let parser = Parser::new(tokens);
+    let mut program = parser.parse().ok()?;
+    let mut resolver = Resolver::new();
+    resolver.resolve(&mut program).ok()?;
+
+    let exports = program
+        .declarations
+        .iter()
+        .filter_map(|decl| {
+            if let DeclarationKind::Export { inner } = &decl.kind {
+                let name = match &inner.kind {
+                    DeclarationKind::Fn { name, .. }
+                    | DeclarationKind::Let { name, .. }
+                    | DeclarationKind::Var { name, .. } => name.clone(),
+                    _ => return None,
+                };
+                Some((name, inner.span))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let table = analysis::build_symbol_table(&program);
+    Some(FileIndex {
+        exports,
+        symbols: table.definitions,
+    })
+}
+
+fn walk_gaul_files(dir: &Path, files: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                && !name.starts_with('.')
+                && name != "target"
+                && name != "node_modules"
+            {
+                walk_gaul_files(&path, files);
+            }
+        } else if path.extension().is_some_and(|e| e == "gaul") {
+            files.push(path);
+        }
+    }
 }
 
 fn compute_folding_ranges(tokens: &[Token]) -> Vec<FoldingRange> {
@@ -545,7 +647,14 @@ fn compute_selection_ranges(
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _params: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        // Store workspace root for file indexing
+        if let Some(root_uri) = params.root_uri
+            && let Ok(path) = root_uri.to_file_path()
+        {
+            *self.workspace_root.lock().unwrap() = Some(path);
+        }
+
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
@@ -573,6 +682,7 @@ impl LanguageServer for Backend {
                 document_symbol_provider: Some(OneOf::Left(true)),
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
                 selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
+                workspace_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -601,6 +711,12 @@ impl LanguageServer for Backend {
                     format!("Failed to register file watcher: {}", e),
                 )
                 .await;
+        }
+
+        // Build initial workspace index
+        let root = self.workspace_root.lock().unwrap().clone();
+        if let Some(root) = root {
+            self.index_workspace(&root);
         }
 
         self.client
@@ -697,30 +813,63 @@ impl LanguageServer for Backend {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        let docs = self.documents.lock().unwrap();
-        let Some(doc) = docs.get(&uri) else {
-            return Ok(None);
-        };
-        let Some(symbols) = &doc.symbols else {
-            return Ok(None);
+        // Extract what we need, then release the documents lock
+        let lookup = {
+            let docs = self.documents.lock().unwrap();
+            let Some(doc) = docs.get(&uri) else {
+                return Ok(None);
+            };
+            let Some(symbols) = &doc.symbols else {
+                return Ok(None);
+            };
+            let Some(token) = find_token_at_position(&doc.tokens, pos) else {
+                return Ok(None);
+            };
+            let token_key = (token.span.line, token.span.col);
+            let Some(sym_ref) = symbols
+                .references
+                .iter()
+                .find(|r| (r.span.line, r.span.col) == token_key)
+            else {
+                return Ok(None);
+            };
+            let def = symbols.definitions[sym_ref.def_index].clone();
+            let module_path = if def.kind == analysis::SymbolKind::Import {
+                doc.import_map.get(&def.name).cloned()
+            } else {
+                None
+            };
+            (def, module_path)
         };
 
-        // Find which token the cursor is on
-        let Some(token) = find_token_at_position(&doc.tokens, pos) else {
-            return Ok(None);
-        };
+        let (def, module_path) = lookup;
 
-        // Look up this token's span in symbol references
-        let token_key = (token.span.line, token.span.col);
-        let Some(sym_ref) = symbols
-            .references
-            .iter()
-            .find(|r| (r.span.line, r.span.col) == token_key)
-        else {
-            return Ok(None);
-        };
+        // Cross-file: if the definition is an import, look up in workspace index
+        if let Some(module_path) = module_path
+            && !STANDARD_MODULES.contains(&module_path.as_str())
+            && let Ok(current_path) = uri.to_file_path()
+        {
+            let dir = current_path.parent().unwrap_or(Path::new("."));
+            let target_path = if module_path.ends_with(".gaul") {
+                dir.join(&module_path)
+            } else {
+                dir.join(format!("{}.gaul", module_path))
+            };
 
-        let def = &symbols.definitions[sym_ref.def_index];
+            let index = self.workspace_index.lock().unwrap();
+            if let Some(file_idx) = index.get(&target_path)
+                && let Some((_, export_span)) =
+                    file_idx.exports.iter().find(|(name, _)| name == &def.name)
+                && let Ok(target_uri) = Url::from_file_path(&target_path)
+            {
+                return Ok(Some(GotoDefinitionResponse::Scalar(Location {
+                    uri: target_uri,
+                    range: span_to_range(*export_span),
+                })));
+            }
+        }
+
+        // Same-file definition
         Ok(Some(GotoDefinitionResponse::Scalar(Location {
             uri: uri.clone(),
             range: span_to_range(def.span),
@@ -1052,6 +1201,48 @@ impl LanguageServer for Backend {
             &doc.source,
         )))
     }
+
+    #[allow(deprecated)] // SymbolInformation.deprecated field is itself deprecated
+    async fn symbol(
+        &self,
+        params: WorkspaceSymbolParams,
+    ) -> Result<Option<Vec<SymbolInformation>>> {
+        let query = params.query.to_lowercase();
+        let index = self.workspace_index.lock().unwrap();
+
+        let symbols: Vec<SymbolInformation> = index
+            .iter()
+            .flat_map(|(path, file_idx)| {
+                let uri = Url::from_file_path(path).ok();
+                let query = &query;
+                file_idx.symbols.iter().filter_map(move |sym| {
+                    if !query.is_empty() && !sym.name.to_lowercase().contains(query.as_str()) {
+                        return None;
+                    }
+                    let uri = uri.clone()?;
+                    Some(SymbolInformation {
+                        name: sym.name.clone(),
+                        kind: match sym.kind {
+                            analysis::SymbolKind::Function => SymbolKind::FUNCTION,
+                            _ => SymbolKind::VARIABLE,
+                        },
+                        tags: None,
+                        deprecated: None,
+                        location: Location {
+                            uri,
+                            range: span_to_range(sym.span),
+                        },
+                        container_name: path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .map(|s| s.to_string()),
+                    })
+                })
+            })
+            .collect();
+
+        Ok(Some(symbols))
+    }
 }
 
 #[tokio::main]
@@ -1071,6 +1262,8 @@ async fn main() {
         client,
         keywords: RwLock::new(keywords),
         documents: Mutex::new(HashMap::new()),
+        workspace_root: Mutex::new(None),
+        workspace_index: Mutex::new(HashMap::new()),
     });
 
     Server::new(stdin, stdout, socket).serve(service).await;
