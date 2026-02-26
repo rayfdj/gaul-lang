@@ -700,6 +700,54 @@ echo "hello" | gaul greet.gaul
 
 ---
 
+## Editor Support
+
+### VS Code
+
+Install the extension from `editors/vscode/`:
+
+```bash
+cd editors/vscode
+npm install
+```
+
+Then open the `editors/vscode/` folder in VS Code's "Install from VSIX" or symlink it into `~/.vscode/extensions/`. The extension auto-detects `gaul-lsp` from your cargo build output or `PATH`.
+
+You can also set `gaul.lsp.path` in VS Code settings to point at a specific binary.
+
+### Neovim
+
+With [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig), add a custom server config:
+
+```lua
+local lspconfig = require('lspconfig')
+local configs = require('lspconfig.configs')
+
+if not configs.gaul_lsp then
+  configs.gaul_lsp = {
+    default_config = {
+      cmd = { 'gaul-lsp' },  -- or full path to the binary
+      filetypes = { 'gaul' },
+      root_dir = lspconfig.util.root_pattern('.git', '.gaul-keywords.json'),
+    },
+  }
+end
+
+lspconfig.gaul_lsp.setup({})
+```
+
+You'll also want to tell Neovim about `.gaul` files:
+
+```lua
+vim.filetype.add({
+  extension = {
+    gaul = 'gaul',
+  },
+})
+```
+
+---
+
 ## Implementation
 
 Gaul is implemented in Rust with:

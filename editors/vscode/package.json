@@ -2,7 +2,7 @@
   "name": "gaul-lang",
   "displayName": "Gaul Language",
   "description": "Language support for Gaul (.gaul files)",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "gaul",
   "engines": {
     "vscode": "^1.75.0"
@@ -25,16 +25,35 @@
         "extensions": [
           ".gaul"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icon.png",
+          "dark": "./icon.png"
+        }
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Gaul",
+      "properties": {
+        "gaul.lsp.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the gaul-lsp binary. Leave empty to auto-detect from cargo build output or PATH."
+        }
+      }
+    }
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "gaul",
+    "programming language",
+    "spaces in identifiers",
+    "custom keywords"
+  ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
