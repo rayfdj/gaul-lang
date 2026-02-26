@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use gaul_core::analysis::{self, SymbolTable};
+use gaul_core::builtins::NATIVE_FUNCTION_NAMES;
 use gaul_core::keywords::load_keywords;
 use gaul_core::parser::Parser;
 use gaul_core::resolver::Resolver;
@@ -14,16 +16,24 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 // LSP semantic token types we use, in registration order.
 // The index in this array becomes the token type ID in the encoded response.
 const TOKEN_TYPES: &[SemanticTokenType] = &[
-    SemanticTokenType::KEYWORD,  // 0
-    SemanticTokenType::NUMBER,   // 1
-    SemanticTokenType::STRING,   // 2
-    SemanticTokenType::COMMENT,  // 3
-    SemanticTokenType::VARIABLE, // 4
-    SemanticTokenType::OPERATOR, // 5
+    SemanticTokenType::KEYWORD,   // 0
+    SemanticTokenType::NUMBER,    // 1
+    SemanticTokenType::STRING,    // 2
+    SemanticTokenType::COMMENT,   // 3
+    SemanticTokenType::VARIABLE,  // 4
+    SemanticTokenType::OPERATOR,  // 5
+    SemanticTokenType::FUNCTION,  // 6
+    SemanticTokenType::PARAMETER, // 7
+];
+
+const TOKEN_MODIFIERS: &[SemanticTokenModifier] = &[
+    SemanticTokenModifier::DECLARATION,     // bit 0
+    SemanticTokenModifier::DEFAULT_LIBRARY, // bit 1
 ];
 
 struct DocumentState {
     tokens: Vec<Token>,
+    symbols: Option<SymbolTable>,
 }
 
 struct Backend {
@@ -45,12 +55,15 @@ impl Backend {
 
         let tokens_for_parser = scan_result.tokens_without_comments();
 
+        let mut symbols = None;
         let parser = Parser::new(tokens_for_parser);
         match parser.parse() {
             Ok(mut program) => {
                 let mut resolver = Resolver::new();
                 if let Err(e) = resolver.resolve(&mut program) {
                     diagnostics.push(span_to_diagnostic(e.span, &e.message, "resolve"));
+                } else {
+                    symbols = Some(analysis::build_symbol_table(&program));
                 }
             }
             Err(errors) => {
@@ -68,6 +81,7 @@ impl Backend {
                 uri.clone(),
                 DocumentState {
                     tokens: all_tokens.clone(),
+                    symbols,
                 },
             );
         }
@@ -99,6 +113,23 @@ fn span_to_diagnostic(span: Span, message: &str, source: &str) -> Diagnostic {
     }
 }
 
+fn span_to_range(span: Span) -> Range {
+    let line = span.line.saturating_sub(1) as u32;
+    let col = span.col.saturating_sub(1) as u32;
+    Range {
+        start: Position::new(line, col),
+        end: Position::new(line, col + span.length as u32),
+    }
+}
+
+fn find_token_at_position(tokens: &[Token], pos: Position) -> Option<&Token> {
+    let line = pos.line as usize + 1; // LSP 0-indexed → Gaul 1-indexed
+    let col = pos.character as usize + 1;
+    tokens
+        .iter()
+        .find(|t| t.span.line == line && col >= t.span.col && col < t.span.col + t.span.length)
+}
+
 fn semantic_token_type(tt: &TokenType) -> Option<u32> {
     match tt {
         // Keywords
@@ -122,7 +153,7 @@ fn semantic_token_type(tt: &TokenType) -> Option<u32> {
         TokenType::Number(_) => Some(1),  // NUMBER
         TokenType::String(_) => Some(2),  // STRING
         TokenType::Comment => Some(3),    // COMMENT
-        TokenType::Identifier => Some(4), // VARIABLE
+        TokenType::Identifier => Some(4), // VARIABLE (default, refined below)
 
         // Operators
         TokenType::Plus
@@ -158,14 +189,47 @@ fn semantic_token_type(tt: &TokenType) -> Option<u32> {
     }
 }
 
-fn encode_semantic_tokens(tokens: &[Token]) -> Vec<SemanticToken> {
+/// Build a lookup map from (line, col) → def_index for symbol references.
+fn build_ref_map(symbols: &SymbolTable) -> HashMap<(usize, usize), usize> {
+    symbols
+        .references
+        .iter()
+        .map(|r| ((r.span.line, r.span.col), r.def_index))
+        .collect()
+}
+
+fn encode_semantic_tokens(tokens: &[Token], symbols: Option<&SymbolTable>) -> Vec<SemanticToken> {
+    let ref_map = symbols.map(build_ref_map);
+
     let mut result = Vec::new();
     let mut prev_line: u32 = 0;
     let mut prev_start: u32 = 0;
 
     for token in tokens {
-        let Some(token_type) = semantic_token_type(&token.token_type) else {
-            continue;
+        let (token_type, modifiers) = if token.token_type == TokenType::Identifier {
+            // Try to refine identifier type using symbol table
+            if let Some(ref ref_map) = ref_map {
+                let symbols = symbols.unwrap();
+                let key = (token.span.line, token.span.col);
+                if let Some(&def_index) = ref_map.get(&key) {
+                    match symbols.definitions[def_index].kind {
+                        analysis::SymbolKind::Function => (6u32, 0u32), // FUNCTION
+                        analysis::SymbolKind::Parameter => (7, 0),      // PARAMETER
+                        _ => (4, 0),                                    // VARIABLE
+                    }
+                } else if NATIVE_FUNCTION_NAMES.contains(&token.lexeme.as_str()) {
+                    (6, 0b10) // FUNCTION + DEFAULT_LIBRARY (bit 1)
+                } else {
+                    (4, 0) // VARIABLE
+                }
+            } else {
+                (4, 0) // VARIABLE (no symbol info available)
+            }
+        } else {
+            match semantic_token_type(&token.token_type) {
+                Some(t) => (t, 0u32),
+                None => continue,
+            }
         };
 
         let line = token.span.line.saturating_sub(1) as u32;
@@ -188,7 +252,7 @@ fn encode_semantic_tokens(tokens: &[Token]) -> Vec<SemanticToken> {
             delta_start,
             length,
             token_type,
-            token_modifiers_bitset: 0,
+            token_modifiers_bitset: modifiers,
         });
 
         prev_line = line;
@@ -211,7 +275,7 @@ impl LanguageServer for Backend {
                         SemanticTokensOptions {
                             legend: SemanticTokensLegend {
                                 token_types: TOKEN_TYPES.to_vec(),
-                                token_modifiers: vec![],
+                                token_modifiers: TOKEN_MODIFIERS.to_vec(),
                             },
                             full: Some(SemanticTokensFullOptions::Bool(true)),
                             range: None,
@@ -219,6 +283,8 @@ impl LanguageServer for Backend {
                         },
                     ),
                 ),
+                definition_provider: Some(OneOf::Left(true)),
+                document_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -269,11 +335,95 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let encoded = encode_semantic_tokens(&doc.tokens);
+        let encoded = encode_semantic_tokens(&doc.tokens, doc.symbols.as_ref());
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
             result_id: None,
             data: encoded,
         })))
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+
+        let docs = self.documents.lock().unwrap();
+        let Some(doc) = docs.get(&uri) else {
+            return Ok(None);
+        };
+        let Some(symbols) = &doc.symbols else {
+            return Ok(None);
+        };
+
+        // Find which token the cursor is on
+        let Some(token) = find_token_at_position(&doc.tokens, pos) else {
+            return Ok(None);
+        };
+
+        // Look up this token's span in symbol references
+        let token_key = (token.span.line, token.span.col);
+        let Some(sym_ref) = symbols
+            .references
+            .iter()
+            .find(|r| (r.span.line, r.span.col) == token_key)
+        else {
+            return Ok(None);
+        };
+
+        let def = &symbols.definitions[sym_ref.def_index];
+        Ok(Some(GotoDefinitionResponse::Scalar(Location {
+            uri: uri.clone(),
+            range: span_to_range(def.span),
+        })))
+    }
+
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
+        let uri = params.text_document.uri;
+
+        let docs = self.documents.lock().unwrap();
+        let Some(doc) = docs.get(&uri) else {
+            return Ok(None);
+        };
+        let Some(symbols) = &doc.symbols else {
+            return Ok(None);
+        };
+
+        #[allow(deprecated)] // DocumentSymbol.deprecated field is itself deprecated
+        let lsp_symbols: Vec<DocumentSymbol> = symbols
+            .definitions
+            .iter()
+            .filter(|d| {
+                matches!(
+                    d.kind,
+                    analysis::SymbolKind::Function
+                        | analysis::SymbolKind::Variable
+                        | analysis::SymbolKind::Import
+                )
+            })
+            .map(|d| {
+                let range = span_to_range(d.span);
+                DocumentSymbol {
+                    name: d.name.clone(),
+                    detail: None,
+                    kind: match d.kind {
+                        analysis::SymbolKind::Function => SymbolKind::FUNCTION,
+                        _ => SymbolKind::VARIABLE,
+                    },
+                    tags: None,
+                    deprecated: None,
+                    range,
+                    selection_range: range,
+                    children: None,
+                }
+            })
+            .collect();
+
+        Ok(Some(DocumentSymbolResponse::Nested(lsp_symbols)))
     }
 }
 

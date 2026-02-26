@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod builtins;
 pub mod config;
 pub mod diagnostics;

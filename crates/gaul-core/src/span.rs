@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Span {
     pub line: usize,   // 1-indexed
     pub col: usize,    // 1-indexed, char offset within line
