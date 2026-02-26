@@ -284,18 +284,23 @@ impl Interpreter {
         use gaul_core::scanner::Scanner;
 
         let scanner = Scanner::new(source, &self.module_ctx.keywords.clone());
-        let tokens = scanner.scan_tokens().map_err(|errors| RuntimeError {
-            span,
-            message: format!(
-                "scan errors in module '{}':\n{}",
-                file_path.display(),
-                errors
-                    .iter()
-                    .map(|e| e.message.clone())
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ),
-        })?;
+        let result = scanner.scan_tokens();
+        if !result.errors.is_empty() {
+            return Err(RuntimeError {
+                span,
+                message: format!(
+                    "scan errors in module '{}':\n{}",
+                    file_path.display(),
+                    result
+                        .errors
+                        .iter()
+                        .map(|e| e.message.clone())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ),
+            });
+        }
+        let tokens = result.tokens_without_comments();
 
         let parser = Parser::new(tokens);
         let mut program = parser.parse().map_err(|errors| RuntimeError {
@@ -1292,19 +1297,19 @@ impl Interpreter {
                     }
                 }
                 Value::NativeFn(native_fun) => {
-                    if let Some(expected) = native_fun.arity {
-                        if current_args.len() != expected {
-                            return Err(RuntimeError {
-                                span,
-                                message: format!(
-                                    "'{}' expects {} argument{}, got {}",
-                                    native_fun.name,
-                                    expected,
-                                    if expected == 1 { "" } else { "s" },
-                                    current_args.len()
-                                ),
-                            });
-                        }
+                    if let Some(expected) = native_fun.arity
+                        && current_args.len() != expected
+                    {
+                        return Err(RuntimeError {
+                            span,
+                            message: format!(
+                                "'{}' expects {} argument{}, got {}",
+                                native_fun.name,
+                                expected,
+                                if expected == 1 { "" } else { "s" },
+                                current_args.len()
+                            ),
+                        });
                     }
                     return (native_fun.func)(&current_args)
                         .map_err(|msg| RuntimeError { span, message: msg });

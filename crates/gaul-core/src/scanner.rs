@@ -17,6 +17,21 @@ pub struct ScanError {
     pub message: String,
 }
 
+pub struct ScanResult {
+    pub tokens: Vec<Token>,
+    pub errors: Vec<ScanError>,
+}
+
+impl ScanResult {
+    pub fn tokens_without_comments(&self) -> Vec<Token> {
+        self.tokens
+            .iter()
+            .filter(|t| !matches!(t.token_type, TokenType::Comment))
+            .cloned()
+            .collect()
+    }
+}
+
 pub struct Scanner {
     source: Vec<char>,
     tokens: Vec<Token>,
@@ -48,7 +63,7 @@ impl Scanner {
         self.current >= self.source.len()
     }
 
-    pub fn scan_tokens(mut self) -> Result<Vec<Token>, Vec<ScanError>> {
+    pub fn scan_tokens(mut self) -> ScanResult {
         while !self.is_at_end() {
             self.start = self.current;
             self.scan_token();
@@ -60,10 +75,9 @@ impl Scanner {
             length: 0,
         };
         self.tokens.push(Token::new(TokenType::Eof, "", eof_span));
-        if self.errors.is_empty() {
-            Ok(self.tokens)
-        } else {
-            Err(self.errors)
+        ScanResult {
+            tokens: self.tokens,
+            errors: self.errors,
         }
     }
 
@@ -218,6 +232,7 @@ impl Scanner {
                     while self.peek() != Some('\n') && !self.is_at_end() {
                         self.advance();
                     }
+                    self.add_token(TokenType::Comment);
                 } else if self.match_char('=') {
                     self.add_token(TokenType::SlashEqual);
                 } else if self.match_char('*') {
@@ -243,6 +258,7 @@ impl Scanner {
 
                         self.advance();
                     }
+                    self.add_token(TokenType::Comment);
                 } else {
                     self.add_token(TokenType::Slash);
                 }
@@ -603,5 +619,130 @@ impl Scanner {
             span,
             message: message.into(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::keywords::load_keywords;
+
+    fn scan(source: &str) -> ScanResult {
+        let keywords = load_keywords(None).unwrap();
+        Scanner::new(source, &keywords).scan_tokens()
+    }
+
+    fn token_types(result: &ScanResult) -> Vec<&TokenType> {
+        result.tokens.iter().map(|t| &t.token_type).collect()
+    }
+
+    // --- Baseline tests (current behavior) ---
+
+    #[test]
+    fn scan_basic_tokens() {
+        let result = scan("let X = 5");
+        assert!(result.errors.is_empty());
+        assert_eq!(
+            token_types(&result),
+            vec![
+                &TokenType::Let,
+                &TokenType::Identifier,
+                &TokenType::Assign,
+                &TokenType::Number(5.0),
+                &TokenType::Eof,
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_single_line_comment_ignored() {
+        let result = scan("// hello\n5");
+        assert!(result.errors.is_empty());
+        let filtered = result.tokens_without_comments();
+        let types: Vec<_> = filtered.iter().map(|t| &t.token_type).collect();
+        assert_eq!(
+            types,
+            vec![
+                &TokenType::Newline,
+                &TokenType::Number(5.0),
+                &TokenType::Eof
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_multi_line_comment_ignored() {
+        let result = scan("/* hi */ 5");
+        assert!(result.errors.is_empty());
+        let filtered = result.tokens_without_comments();
+        let types: Vec<_> = filtered.iter().map(|t| &t.token_type).collect();
+        assert_eq!(types, vec![&TokenType::Number(5.0), &TokenType::Eof]);
+    }
+
+    #[test]
+    fn scan_error_on_unterminated_string() {
+        let result = scan("\"unterminated");
+        assert!(!result.errors.is_empty());
+        assert!(result.errors[0].message.contains("Unterminated string"));
+    }
+
+    // --- New behavior tests ---
+
+    #[test]
+    fn scan_always_returns_tokens_and_errors() {
+        let result = scan("let X = 5\n\"unterminated");
+        // Has tokens from the valid part
+        let types: Vec<_> = result.tokens.iter().map(|t| &t.token_type).collect();
+        assert!(types.contains(&&TokenType::Let));
+        assert!(types.contains(&&TokenType::Identifier));
+        assert!(types.contains(&&TokenType::Assign));
+        assert!(types.contains(&&TokenType::Number(5.0)));
+        assert!(types.contains(&&TokenType::Newline));
+        assert!(types.contains(&&TokenType::Eof));
+        // AND has errors
+        assert!(!result.errors.is_empty());
+        assert!(result.errors[0].message.contains("Unterminated string"));
+    }
+
+    #[test]
+    fn scan_emits_single_line_comment() {
+        let result = scan("// hello\n5");
+        assert!(result.errors.is_empty());
+        let types = token_types(&result);
+        assert!(types.contains(&&TokenType::Comment));
+    }
+
+    #[test]
+    fn scan_emits_multi_line_comment() {
+        let result = scan("/* hi */ 5");
+        assert!(result.errors.is_empty());
+        let types = token_types(&result);
+        assert!(types.contains(&&TokenType::Comment));
+    }
+
+    #[test]
+    fn scan_comment_span_covers_full_text() {
+        let result = scan("// hello world");
+        let comment = result
+            .tokens
+            .iter()
+            .find(|t| t.token_type == TokenType::Comment)
+            .expect("should have a comment token");
+        assert_eq!(comment.lexeme, "// hello world");
+        assert_eq!(comment.span.col, 1);
+        assert_eq!(comment.span.length, 14);
+    }
+
+    #[test]
+    fn tokens_without_comments_filters() {
+        let result = scan("// hello\n5 /* inline */ + 3");
+        let filtered = result.tokens_without_comments();
+        let types: Vec<_> = filtered.iter().map(|t| &t.token_type).collect();
+        // No Comment tokens in filtered output
+        assert!(!types.contains(&&TokenType::Comment));
+        // But the actual tokens should be there
+        assert!(types.contains(&&TokenType::Number(5.0)));
+        assert!(types.contains(&&TokenType::Plus));
+        assert!(types.contains(&&TokenType::Number(3.0)));
     }
 }

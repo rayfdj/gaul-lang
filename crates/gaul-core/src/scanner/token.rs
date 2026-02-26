@@ -91,4 +91,7 @@ pub enum TokenType {
     // Control
     Newline, // significant for ending identifier
     Eof,     // end of file
+
+    // LSP support
+    Comment, // single-line (//) and multi-line (/* */) comments
 }

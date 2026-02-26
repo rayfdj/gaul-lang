@@ -68,12 +68,12 @@ pub fn render(source: &str, kind: &str, span: Span, message: &str, hint: Option<
 pub fn suggest_hint(message: &str) -> Option<String> {
     let msg = message.to_lowercase();
 
-    if msg.contains("cannot apply") && msg.contains("plus") {
-        if (msg.contains("num") && msg.contains("str"))
-            || (msg.contains("str") && msg.contains("num"))
-        {
-            return Some("use .to_str() to convert the number first".into());
-        }
+    if msg.contains("cannot apply")
+        && msg.contains("plus")
+        && ((msg.contains("num") && msg.contains("str"))
+            || (msg.contains("str") && msg.contains("num")))
+    {
+        return Some("use .to_str() to convert the number first".into());
     }
 
     if msg.contains("cannot assign to immutable variable") || msg.contains("immutable") {

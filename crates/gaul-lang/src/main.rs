@@ -172,64 +172,52 @@ fn run(
     interpreter: &mut Interpreter,
 ) -> Result<()> {
     let scanner = Scanner::new(source, keywords);
+    let result = scanner.scan_tokens();
 
-    match scanner.scan_tokens() {
-        Ok(tokens) => {
-            let parser = Parser::new(tokens);
-            match parser.parse() {
-                Ok(mut program) => {
-                    match resolver.resolve(&mut program) {
-                        Ok(()) => {}
-                        Err(e) => {
-                            let hint = diagnostics::suggest_hint(&e.message);
-                            eprint!(
-                                "{}",
-                                diagnostics::render(
-                                    source,
-                                    "resolve",
-                                    e.span,
-                                    &e.message,
-                                    hint.as_deref()
-                                )
-                            );
-                            return Ok(());
-                        }
-                    }
+    if !result.errors.is_empty() {
+        for e in &result.errors {
+            let hint = diagnostics::suggest_hint(&e.message);
+            eprint!(
+                "{}",
+                diagnostics::render(source, "scan", e.span, &e.message, hint.as_deref())
+            );
+        }
+        return Ok(());
+    }
 
-                    match interpreter.interpret(program) {
-                        Ok(Value::Null) => {}
-                        Ok(value) => println!("{}", value),
-                        Err(e) => {
-                            let hint = diagnostics::suggest_hint(&e.message);
-                            eprint!(
-                                "{}",
-                                diagnostics::render(
-                                    source,
-                                    "runtime",
-                                    e.span,
-                                    &e.message,
-                                    hint.as_deref()
-                                )
-                            );
-                        }
-                    }
+    let tokens = result.tokens_without_comments();
+    let parser = Parser::new(tokens);
+    match parser.parse() {
+        Ok(mut program) => {
+            match resolver.resolve(&mut program) {
+                Ok(()) => {}
+                Err(e) => {
+                    let hint = diagnostics::suggest_hint(&e.message);
+                    eprint!(
+                        "{}",
+                        diagnostics::render(source, "resolve", e.span, &e.message, hint.as_deref())
+                    );
+                    return Ok(());
                 }
-                Err(errors) => {
-                    for e in &errors {
-                        eprint!(
-                            "{}",
-                            diagnostics::render(source, "parse", e.span, &e.message, None)
-                        );
-                    }
+            }
+
+            match interpreter.interpret(program) {
+                Ok(Value::Null) => {}
+                Ok(value) => println!("{}", value),
+                Err(e) => {
+                    let hint = diagnostics::suggest_hint(&e.message);
+                    eprint!(
+                        "{}",
+                        diagnostics::render(source, "runtime", e.span, &e.message, hint.as_deref())
+                    );
                 }
             }
         }
         Err(errors) => {
             for e in &errors {
-                let hint = diagnostics::suggest_hint(&e.message);
                 eprint!(
                     "{}",
-                    diagnostics::render(source, "scan", e.span, &e.message, hint.as_deref())
+                    diagnostics::render(source, "parse", e.span, &e.message, None)
                 );
             }
         }

@@ -32,7 +32,11 @@ fn eval(source: &str) -> Result<Value, String> {
         Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
 
     let scanner = Scanner::new(source, &keywords);
-    let tokens = scanner.scan_tokens().map_err(|e| format!("{:?}", e))?;
+    let result = scanner.scan_tokens();
+    if !result.errors.is_empty() {
+        return Err(format!("{:?}", result.errors));
+    }
+    let tokens = result.tokens_without_comments();
 
     let parser = Parser::new(tokens);
     let mut program = parser.parse().map_err(|e| format!("{:?}", e))?;
@@ -4789,51 +4793,49 @@ fn eval_diagnostic(source: &str) -> Result<Value, String> {
         Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
 
     let scanner = Scanner::new(source, &keywords);
-    match scanner.scan_tokens() {
+    let scan_result = scanner.scan_tokens();
+    if !scan_result.errors.is_empty() {
+        let e = &scan_result.errors[0];
+        let hint = diagnostics::suggest_hint(&e.message);
+        return Err(diagnostics::render(
+            source,
+            "scan",
+            e.span,
+            &e.message,
+            hint.as_deref(),
+        ));
+    }
+    let tokens = scan_result.tokens_without_comments();
+    let parser = Parser::new(tokens);
+    match parser.parse() {
         Err(errors) => {
             let e = &errors[0];
-            let hint = diagnostics::suggest_hint(&e.message);
-            return Err(diagnostics::render(
-                source,
-                "scan",
-                e.span,
-                &e.message,
-                hint.as_deref(),
-            ));
+            Err(diagnostics::render(
+                source, "parse", e.span, &e.message, None,
+            ))
         }
-        Ok(tokens) => {
-            let parser = Parser::new(tokens);
-            match parser.parse() {
-                Err(errors) => {
-                    let e = &errors[0];
-                    return Err(diagnostics::render(
-                        source, "parse", e.span, &e.message, None,
-                    ));
-                }
-                Ok(mut program) => {
-                    if let Err(e) = resolver.resolve(&mut program) {
-                        let hint = diagnostics::suggest_hint(&e.message);
-                        return Err(diagnostics::render(
-                            source,
-                            "resolve",
-                            e.span,
-                            &e.message,
-                            hint.as_deref(),
-                        ));
-                    }
-                    match interpreter.interpret(program) {
-                        Ok(v) => Ok(v),
-                        Err(e) => {
-                            let hint = diagnostics::suggest_hint(&e.message);
-                            Err(diagnostics::render(
-                                source,
-                                "runtime",
-                                e.span,
-                                &e.message,
-                                hint.as_deref(),
-                            ))
-                        }
-                    }
+        Ok(mut program) => {
+            if let Err(e) = resolver.resolve(&mut program) {
+                let hint = diagnostics::suggest_hint(&e.message);
+                return Err(diagnostics::render(
+                    source,
+                    "resolve",
+                    e.span,
+                    &e.message,
+                    hint.as_deref(),
+                ));
+            }
+            match interpreter.interpret(program) {
+                Ok(v) => Ok(v),
+                Err(e) => {
+                    let hint = diagnostics::suggest_hint(&e.message);
+                    Err(diagnostics::render(
+                        source,
+                        "runtime",
+                        e.span,
+                        &e.message,
+                        hint.as_deref(),
+                    ))
                 }
             }
         }
@@ -4849,20 +4851,20 @@ fn eval_span(source: &str) -> Option<Span> {
         Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
 
     let scanner = Scanner::new(source, &keywords);
-    match scanner.scan_tokens() {
+    let scan_result = scanner.scan_tokens();
+    if !scan_result.errors.is_empty() {
+        return Some(scan_result.errors[0].span);
+    }
+    let tokens = scan_result.tokens_without_comments();
+    let parser = Parser::new(tokens);
+    match parser.parse() {
         Err(errors) => return Some(errors[0].span),
-        Ok(tokens) => {
-            let parser = Parser::new(tokens);
-            match parser.parse() {
-                Err(errors) => return Some(errors[0].span),
-                Ok(mut program) => {
-                    if let Err(e) = resolver.resolve(&mut program) {
-                        return Some(e.span);
-                    }
-                    if let Err(e) = interpreter.interpret(program) {
-                        return Some(e.span);
-                    }
-                }
+        Ok(mut program) => {
+            if let Err(e) = resolver.resolve(&mut program) {
+                return Some(e.span);
+            }
+            if let Err(e) = interpreter.interpret(program) {
+                return Some(e.span);
             }
         }
     }
@@ -8174,7 +8176,11 @@ fn eval_file(path: &Path) -> Result<Value, String> {
         Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
 
     let scanner = Scanner::new(&source, &keywords);
-    let tokens = scanner.scan_tokens().map_err(|e| format!("{:?}", e))?;
+    let result = scanner.scan_tokens();
+    if !result.errors.is_empty() {
+        return Err(format!("{:?}", result.errors));
+    }
+    let tokens = result.tokens_without_comments();
     let parser = Parser::new(tokens);
     let mut program = parser.parse().map_err(|e| format!("{:?}", e))?;
     resolver

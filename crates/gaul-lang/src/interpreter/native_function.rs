@@ -100,8 +100,7 @@ fn native_format() -> Value {
                     "format: template has {} placeholder(s) but {} argument(s) given",
                     placeholder_count,
                     fill_args.len()
-                )
-                .into());
+                ));
             }
             let mut result = String::new();
             for (i, part) in parts.iter().enumerate() {

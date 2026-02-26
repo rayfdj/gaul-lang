@@ -6,10 +6,12 @@ use std::rc::Rc;
 
 use crate::interpreter::value::Value;
 
+type ModuleCache = HashMap<PathBuf, Rc<HashMap<String, Value>>>;
+
 pub struct ModuleContext {
     pub current_file: Option<PathBuf>,
     pub keywords: HashMap<String, TokenType>,
-    pub cache: Rc<RefCell<HashMap<PathBuf, Rc<HashMap<String, Value>>>>>,
+    pub cache: Rc<RefCell<ModuleCache>>,
     pub loading: Rc<RefCell<HashSet<PathBuf>>>,
 }
 
