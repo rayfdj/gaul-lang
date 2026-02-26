@@ -76,7 +76,7 @@ fn test_stmt_at_eof_no_newline() {
 
     // Assert it parsed successfully and returned true
     match result {
-        Ok(Value::Bool(b)) => assert_eq!(b, true),
+        Ok(Value::Bool(b)) => assert!(b),
         Ok(val) => panic!("Expected Value::Bool(true), got {:?}", val),
         Err(e) => panic!("Parser failed at EOF: {}", e),
     }
@@ -407,7 +407,7 @@ fn test_logic_precedence() {
     let code = "true || false && false";
     let result = eval(code);
     match result {
-        Ok(Value::Bool(b)) => assert_eq!(b, true),
+        Ok(Value::Bool(b)) => assert!(b),
         _ => panic!("Logic precedence failed: expected true, got {:?}", result),
     }
 }
@@ -421,7 +421,7 @@ fn test_comparison_precedence() {
     let code = "1 < 2 == true";
     let result = eval(code);
     match result {
-        Ok(Value::Bool(b)) => assert_eq!(b, true),
+        Ok(Value::Bool(b)) => assert!(b),
         _ => panic!(
             "Comparison precedence failed: expected true, got {:?}",
             result
@@ -2593,6 +2593,29 @@ fn test_map_closure_captures_variable() {
 }
 
 #[test]
+fn test_map_callback_can_mutate_source_array_without_panicking() {
+    let code = r#"
+    var arr = [1, 2, 3]
+    let mapped = arr.map(fn(x) {
+        arr.push(99)
+        return x
+    })
+    mapped
+    "#;
+    let result = eval(code);
+    match result {
+        Ok(Value::Array(elements)) => {
+            let arr = elements.borrow();
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0], Value::Num(1.0));
+            assert_eq!(arr[1], Value::Num(2.0));
+            assert_eq!(arr[2], Value::Num(3.0));
+        }
+        _ => panic!("Expected [1,2,3], got {:?}", result),
+    }
+}
+
+#[test]
 fn test_map_chained() {
     let code = r#"
     [1, 2, 3].map(fn(x) { return x + 1 }).map(fn(x) { return x * 2 })
@@ -3445,7 +3468,11 @@ fn test_jam_karet_in_while_condition() {
     match result {
         Ok(Value::Num(n)) => {
             // Should iterate while within 5% of 100 (up to 105)
-            assert!(n >= 5.0 && n <= 6.0, "Expected ~5-6 iterations, got {}", n);
+            assert!(
+                (5.0..=6.0).contains(&n),
+                "Expected ~5-6 iterations, got {}",
+                n
+            );
         }
         _ => panic!("Expected number, got {:?}", result),
     }
@@ -4252,6 +4279,20 @@ fn test_map_equality() {
         Ok(Value::Bool(true)) => {}
         _ => panic!("Expected true for equal maps, got {:?}", result),
     }
+}
+
+#[test]
+fn test_function_equality_is_reflexive() {
+    let code = r#"
+    let f = fn(x) { x }
+    f == f
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_native_function_equality_is_reflexive() {
+    assert_eq!(eval("println == println").unwrap(), Value::Bool(true));
 }
 
 #[test]
@@ -5400,14 +5441,14 @@ fn test_llms_full_documents_all_native_methods() {
             let prefix = format!("(Value::{}(", variant);
             if let Some(rest) = trimmed.strip_prefix(&prefix) {
                 // rest looks like: s), "method_name") => {  or  ...), "name") =>
-                if let Some(quote_start) = rest.find('"') {
-                    if let Some(quote_end) = rest[quote_start + 1..].find('"') {
-                        let method = &rest[quote_start + 1..quote_start + 1 + quote_end];
-                        methods_by_type
-                            .entry(type_name)
-                            .or_default()
-                            .insert(method.to_string());
-                    }
+                if let Some(quote_start) = rest.find('"')
+                    && let Some(quote_end) = rest[quote_start + 1..].find('"')
+                {
+                    let method = &rest[quote_start + 1..quote_start + 1 + quote_end];
+                    methods_by_type
+                        .entry(type_name)
+                        .or_default()
+                        .insert(method.to_string());
                 }
             }
         }
@@ -5527,10 +5568,10 @@ fn test_llms_full_documents_all_native_methods() {
     for line in fn_source.lines() {
         let trimmed = line.trim();
         // Pattern: ("name", name())
-        if trimmed.starts_with("(\"") {
-            if let Some(end) = trimmed[2..].find('"') {
-                native_fns.push(trimmed[2..2 + end].to_string());
-            }
+        if let Some(stripped) = trimmed.strip_prefix("(\"")
+            && let Some(end) = stripped.find('"')
+        {
+            native_fns.push(stripped[..end].to_string());
         }
     }
     let mut missing_fns = Vec::new();
@@ -7706,6 +7747,16 @@ fn test_subscript_array_write_out_of_bounds_errors() {
 }
 
 #[test]
+fn test_subscript_array_write_negative_index_errors() {
+    assert!(eval("var arr = [1, 2, 3]\narr[-1] = 99").is_err());
+}
+
+#[test]
+fn test_subscript_array_write_fractional_index_errors() {
+    assert!(eval("var arr = [1, 2, 3]\narr[1.5] = 99").is_err());
+}
+
+#[test]
 fn test_subscript_array_compound_assign() {
     assert_eq!(
         eval("var arr = [0, 0, 0]\narr[1] += 5\narr[1]").unwrap(),
@@ -8632,6 +8683,20 @@ fn test_sys_env_get_and_set() {
 }
 
 #[test]
+fn test_sys_env_set_does_not_mutate_host_process_environment() {
+    static ENV_COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let id = ENV_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let name = format!("GAUL_TEST_LOCAL_ENV_ONLY_{}_{}", std::process::id(), id);
+    let code = format!(
+        r#"import {{ env_get, env_set }} from "sys"
+        env_set("{name}", "hello")
+        env_get("{name}")"#
+    );
+    assert_eq!(eval(&code).unwrap(), Value::Str("hello".into()));
+    assert!(std::env::var(&name).is_err());
+}
+
+#[test]
 fn test_sys_env_get_missing() {
     let code = r#"import { env_get } from "sys"
     env_get("GAUL_DEFINITELY_NOT_SET_XYZ")"#;
@@ -8905,6 +8970,18 @@ fn test_array_swap_out_of_bounds() {
 fn test_array_any_true() {
     let code = r#"[1, 2, 3, 4, 5].any(fn(X) { X > 3 })"#;
     assert_eq!(eval(code).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn test_array_any_callback_can_mutate_source_array_without_panicking() {
+    let code = r#"
+    var arr = [1, 2, 3]
+    arr.any(fn(x) {
+        if (x == 1) { arr.push(99) }
+        return false
+    })
+    "#;
+    assert_eq!(eval(code).unwrap(), Value::Bool(false));
 }
 
 #[test]

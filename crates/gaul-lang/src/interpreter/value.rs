@@ -124,10 +124,8 @@ impl PartialEq for Value {
             (Self::Range(s1, s2), Self::Range(s3, s4)) => (s1 == s3) && (s2 == s4),
             (Self::Array(a1), Self::Array(a2)) => *a1.borrow() == *a2.borrow(),
             (Self::Map(m1), Self::Map(m2)) => *m1.borrow() == *m2.borrow(),
-            (Self::Fn(_), Self::Fn(_)) => panic!("Cannot compare two functions"),
-            (Self::NativeFn { .. }, Self::NativeFn { .. }) => {
-                panic!("Cannot compare two functions")
-            }
+            (Self::Fn(f1), Self::Fn(f2)) => Rc::ptr_eq(f1, f2),
+            (Self::NativeFn(f1), Self::NativeFn(f2)) => Rc::ptr_eq(f1, f2),
             (_, _) => false,
         }
     }

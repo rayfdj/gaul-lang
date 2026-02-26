@@ -1,6 +1,23 @@
 use super::value::{NativeFunction, Value};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+
+thread_local! {
+    static ENV_OVERRIDES: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+}
+
+fn env_override_get(name: &str) -> Option<String> {
+    ENV_OVERRIDES.with(|overrides| overrides.borrow().get(name).cloned())
+}
+
+fn env_override_set(name: &str, value: &str) {
+    ENV_OVERRIDES.with(|overrides| {
+        overrides
+            .borrow_mut()
+            .insert(name.to_string(), value.to_string());
+    });
+}
 
 /// Returns the exports for a built-in stdlib module, or None if not a stdlib name.
 pub fn get_stdlib_module(name: &str) -> Option<HashMap<String, Value>> {
@@ -266,27 +283,27 @@ fn sys_module() -> HashMap<String, Value> {
     m.insert(
         "env_get".into(),
         native("env_get", Some(1), |args| match &args[0] {
-            Value::Str(name) => match std::env::var(name.as_ref()) {
-                Ok(val) => Ok(Value::Str(Rc::from(val.as_str()))),
-                Err(_) => Ok(Value::Null),
-            },
+            Value::Str(name) => {
+                if let Some(val) = env_override_get(name.as_ref()) {
+                    return Ok(Value::Str(Rc::from(val.as_str())));
+                }
+                match std::env::var(name.as_ref()) {
+                    Ok(val) => Ok(Value::Str(Rc::from(val.as_str()))),
+                    Err(_) => Ok(Value::Null),
+                }
+            }
             _ => Err("env_get expects a string".into()),
         }),
     );
 
     m.insert(
         "env_set".into(),
-        native("env_set", Some(2), |args| {
-            match (&args[0], &args[1]) {
-                (Value::Str(name), Value::Str(value)) => {
-                    // SAFETY: we only set env vars from single-threaded Gaul scripts
-                    unsafe {
-                        std::env::set_var(name.as_ref(), value.as_ref());
-                    }
-                    Ok(Value::Null)
-                }
-                _ => Err("env_set expects (string name, string value)".into()),
+        native("env_set", Some(2), |args| match (&args[0], &args[1]) {
+            (Value::Str(name), Value::Str(value)) => {
+                env_override_set(name.as_ref(), value.as_ref());
+                Ok(Value::Null)
             }
+            _ => Err("env_set expects (string name, string value)".into()),
         }),
     );
 

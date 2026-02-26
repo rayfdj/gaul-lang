@@ -96,6 +96,34 @@ impl Interpreter {
         }
     }
 
+    fn checked_index(n: f64, span: Span) -> Result<usize, RuntimeError> {
+        if !n.is_finite() {
+            return Err(RuntimeError {
+                span,
+                message: format!("index {} is not finite", n),
+            });
+        }
+        if n < 0.0 {
+            return Err(RuntimeError {
+                span,
+                message: format!("index {} is negative", n),
+            });
+        }
+        if n.fract() != 0.0 {
+            return Err(RuntimeError {
+                span,
+                message: format!("index {} is not an integer", n),
+            });
+        }
+        if n > usize::MAX as f64 {
+            return Err(RuntimeError {
+                span,
+                message: format!("index {} is too large", n),
+            });
+        }
+        Ok(n as usize)
+    }
+
     pub fn interpret(&mut self, program: Program) -> Result<Value, RuntimeError> {
         let mut last = Value::Null;
         for decl in program.declarations.iter() {
@@ -765,15 +793,11 @@ impl Interpreter {
                                         span: expression.span,
                                         message: "map expects a function".into(),
                                     })?;
-                                let result: Result<Vec<Value>, RuntimeError> = elements
-                                    .borrow()
-                                    .iter()
+                                let items = elements.borrow().clone();
+                                let result: Result<Vec<Value>, RuntimeError> = items
+                                    .into_iter()
                                     .map(|e| {
-                                        self.call_function(
-                                            callable,
-                                            smallvec![e.clone()],
-                                            expression.span,
-                                        )
+                                        self.call_function(callable, smallvec![e], expression.span)
                                     })
                                     .collect();
                                 return Ok(Value::Array(Rc::new(RefCell::new(result?))).into());
@@ -784,10 +808,10 @@ impl Interpreter {
                                         span: expression.span,
                                         message: "filter expects a predicate".into(),
                                     })?;
-                                let arr = elements.borrow();
+                                let items = elements.borrow().clone();
                                 let mut result = Vec::new();
 
-                                for item in arr.iter() {
+                                for item in &items {
                                     let keep = self.call_function(
                                         predicate,
                                         smallvec![item.clone()],
@@ -820,10 +844,10 @@ impl Interpreter {
                                         message: "reduce expects a function".into(),
                                     })?;
 
-                                let arr = elements.borrow();
+                                let items = elements.borrow().clone();
                                 let mut acc = initial_value.clone();
 
-                                for item in arr.iter() {
+                                for item in &items {
                                     acc = self.call_function(
                                         callback,
                                         smallvec![acc, item.clone()],
@@ -839,9 +863,9 @@ impl Interpreter {
                                         span: expression.span,
                                         message: "find expects a predicate".into(),
                                     })?;
-                                let arr = elements.borrow();
+                                let items = elements.borrow().clone();
 
-                                for item in arr.iter() {
+                                for item in &items {
                                     let result = self.call_function(
                                         predicate,
                                         smallvec![item.clone()],
@@ -878,11 +902,12 @@ impl Interpreter {
                                         span: expression.span,
                                         message: "sort_by_key expects a key function".into(),
                                     })?;
-                                let arr = elements.borrow();
+                                let items = elements.borrow().clone();
 
                                 // Schwartzian transform: extract keys first
-                                let mut pairs: Vec<(Value, Value)> = Vec::with_capacity(arr.len());
-                                for item in arr.iter() {
+                                let mut pairs: Vec<(Value, Value)> =
+                                    Vec::with_capacity(items.len());
+                                for item in &items {
                                     let key = self.call_function(
                                         key_fn,
                                         smallvec![item.clone()],
@@ -1050,13 +1075,7 @@ impl Interpreter {
     ) -> Result<ControlFlow, RuntimeError> {
         match (obj, &idx) {
             (Value::Array(arr), Value::Num(n)) => {
-                if *n < 0.0 {
-                    return Err(RuntimeError {
-                        span,
-                        message: format!("index {} is negative", n),
-                    });
-                }
-                let i = *n as usize;
+                let i = Self::checked_index(*n, span)?;
                 let arr = arr.borrow();
                 arr.get(i)
                     .cloned()
@@ -1077,13 +1096,7 @@ impl Interpreter {
                     .into())
             }
             (Value::Str(s), Value::Num(n)) => {
-                if *n < 0.0 {
-                    return Err(RuntimeError {
-                        span,
-                        message: format!("index {} is negative", n),
-                    });
-                }
-                let i = *n as usize;
+                let i = Self::checked_index(*n, span)?;
                 match s.chars().nth(i) {
                     Some(c) => Ok(Value::Str(c.to_string().into()).into()),
                     None => Err(RuntimeError {
@@ -1109,7 +1122,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         match (obj, &idx) {
             (Value::Array(arr), Value::Num(n)) => {
-                let i = *n as usize;
+                let i = Self::checked_index(*n, span)?;
                 let mut arr = arr.borrow_mut();
                 if i < arr.len() {
                     arr[i] = value;
@@ -1152,8 +1165,8 @@ impl Interpreter {
                     span,
                     message: "any expects a predicate".into(),
                 })?;
-                let arr = elements.borrow();
-                for item in arr.iter() {
+                let items = elements.borrow().clone();
+                for item in &items {
                     let result = self.call_function(predicate, smallvec![item.clone()], span)?;
                     match result {
                         Value::Bool(true) => return Ok(Value::Bool(true).into()),
@@ -1173,8 +1186,8 @@ impl Interpreter {
                     span,
                     message: "all expects a predicate".into(),
                 })?;
-                let arr = elements.borrow();
-                for item in arr.iter() {
+                let items = elements.borrow().clone();
+                for item in &items {
                     let result = self.call_function(predicate, smallvec![item.clone()], span)?;
                     match result {
                         Value::Bool(false) => return Ok(Value::Bool(false).into()),
@@ -1194,9 +1207,9 @@ impl Interpreter {
                     span,
                     message: "count expects a predicate".into(),
                 })?;
-                let arr = elements.borrow();
+                let items = elements.borrow().clone();
                 let mut count = 0i64;
-                for item in arr.iter() {
+                for item in &items {
                     let result = self.call_function(predicate, smallvec![item.clone()], span)?;
                     match result {
                         Value::Bool(true) => count += 1,
@@ -1216,9 +1229,9 @@ impl Interpreter {
                     span,
                     message: "flat_map expects a function".into(),
                 })?;
-                let arr = elements.borrow();
+                let items = elements.borrow().clone();
                 let mut result = Vec::new();
-                for item in arr.iter() {
+                for item in &items {
                     let mapped = self.call_function(callable, smallvec![item.clone()], span)?;
                     match mapped {
                         Value::Array(inner) => result.extend(inner.borrow().iter().cloned()),
