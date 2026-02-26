@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 
 use gaul_core::analysis::{self, SymbolTable};
 use gaul_core::builtins::{
@@ -41,13 +41,14 @@ struct DocumentState {
 
 struct Backend {
     client: Client,
-    keywords: HashMap<String, TokenType>,
+    keywords: RwLock<HashMap<String, TokenType>>,
     documents: Mutex<HashMap<Url, DocumentState>>,
 }
 
 impl Backend {
     fn analyze(&self, uri: &Url, text: &str) -> (Vec<Token>, Vec<Diagnostic>) {
-        let scanner = Scanner::new(text, &self.keywords);
+        let keywords = self.keywords.read().unwrap();
+        let scanner = Scanner::new(text, &keywords);
         let scan_result = scanner.scan_tokens();
 
         let mut diagnostics: Vec<Diagnostic> = scan_result
@@ -579,6 +580,29 @@ impl LanguageServer for Backend {
     }
 
     async fn initialized(&self, _params: InitializedParams) {
+        // Register file watcher for keyword config changes
+        let registration = Registration {
+            id: "keyword-watcher".to_string(),
+            method: "workspace/didChangeWatchedFiles".to_string(),
+            register_options: Some(
+                serde_json::to_value(DidChangeWatchedFilesRegistrationOptions {
+                    watchers: vec![FileSystemWatcher {
+                        glob_pattern: GlobPattern::String("**/.gaul-keywords.json".to_string()),
+                        kind: Some(WatchKind::Create | WatchKind::Change | WatchKind::Delete),
+                    }],
+                })
+                .unwrap(),
+            ),
+        };
+        if let Err(e) = self.client.register_capability(vec![registration]).await {
+            self.client
+                .log_message(
+                    MessageType::WARNING,
+                    format!("Failed to register file watcher: {}", e),
+                )
+                .await;
+        }
+
         self.client
             .log_message(MessageType::INFO, "gaul-lsp initialized")
             .await;
@@ -610,6 +634,43 @@ impl LanguageServer for Backend {
         }
         // Clear diagnostics for the closed file
         self.client.publish_diagnostics(uri, vec![], None).await;
+    }
+
+    async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        for change in &params.changes {
+            if !change.uri.as_str().ends_with(".gaul-keywords.json") {
+                continue;
+            }
+
+            let new_keywords = if change.typ == FileChangeType::DELETED {
+                load_keywords(None).expect("default keywords must load")
+            } else {
+                match change.uri.to_file_path() {
+                    Ok(path) => load_keywords(path.to_str()).unwrap_or_else(|_| {
+                        load_keywords(None).expect("default keywords must load")
+                    }),
+                    Err(_) => continue,
+                }
+            };
+
+            {
+                let mut kw = self.keywords.write().unwrap();
+                *kw = new_keywords;
+            }
+
+            // Re-analyze all open documents with new keywords
+            let uris_and_sources: Vec<_> = {
+                let docs = self.documents.lock().unwrap();
+                docs.iter()
+                    .map(|(uri, doc)| (uri.clone(), doc.source.clone()))
+                    .collect()
+            };
+            for (uri, source) in uris_and_sources {
+                self.on_change(uri, source).await;
+            }
+
+            break;
+        }
     }
 
     async fn semantic_tokens_full(
@@ -834,7 +895,8 @@ impl LanguageServer for Backend {
         }
 
         // Keywords
-        for (lexeme, tt) in &self.keywords {
+        let keywords = self.keywords.read().unwrap();
+        for (lexeme, tt) in keywords.iter() {
             let kind = match tt {
                 TokenType::True | TokenType::False | TokenType::Null => {
                     CompletionItemKind::CONSTANT
@@ -1007,7 +1069,7 @@ async fn main() {
 
     let (service, socket) = LspService::new(|client| Backend {
         client,
-        keywords,
+        keywords: RwLock::new(keywords),
         documents: Mutex::new(HashMap::new()),
     });
 
