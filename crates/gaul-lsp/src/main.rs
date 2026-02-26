@@ -34,6 +34,7 @@ const TOKEN_MODIFIERS: &[SemanticTokenModifier] = &[
 ];
 
 struct DocumentState {
+    source: String,
     tokens: Vec<Token>,
     symbols: Option<SymbolTable>,
 }
@@ -82,6 +83,7 @@ impl Backend {
             docs.insert(
                 uri.clone(),
                 DocumentState {
+                    source: text.to_string(),
                     tokens: all_tokens.clone(),
                     symbols,
                 },
@@ -296,6 +298,250 @@ fn encode_semantic_tokens(tokens: &[Token], symbols: Option<&SymbolTable>) -> Ve
     result
 }
 
+fn compute_folding_ranges(tokens: &[Token]) -> Vec<FoldingRange> {
+    let mut ranges = Vec::new();
+
+    // Bracket-based folding ({} and [])
+    let mut stack: Vec<(u32, bool)> = Vec::new(); // (0-indexed line, true=brace false=bracket)
+    for token in tokens {
+        match &token.token_type {
+            TokenType::LeftBrace => {
+                stack.push((token.span.line.saturating_sub(1) as u32, true));
+            }
+            TokenType::LeftBracket => {
+                stack.push((token.span.line.saturating_sub(1) as u32, false));
+            }
+            TokenType::RightBrace | TokenType::RightBracket => {
+                let is_brace = token.token_type == TokenType::RightBrace;
+                while let Some((start_line, open_is_brace)) = stack.pop() {
+                    if open_is_brace == is_brace {
+                        let end_line = token.span.line.saturating_sub(1) as u32;
+                        if start_line != end_line {
+                            ranges.push(FoldingRange {
+                                start_line,
+                                start_character: None,
+                                end_line,
+                                end_character: None,
+                                kind: None,
+                                collapsed_text: None,
+                            });
+                        }
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Multi-line comments (block comments containing newlines)
+    for token in tokens {
+        if token.token_type == TokenType::Comment && token.lexeme.contains('\n') {
+            let start_line = token.span.line.saturating_sub(1) as u32;
+            let newline_count = token.lexeme.chars().filter(|&c| c == '\n').count() as u32;
+            ranges.push(FoldingRange {
+                start_line,
+                start_character: None,
+                end_line: start_line + newline_count,
+                end_character: None,
+                kind: Some(FoldingRangeKind::Comment),
+                collapsed_text: None,
+            });
+        }
+    }
+
+    // Consecutive single-line comments on adjacent lines
+    let comment_lines: Vec<u32> = tokens
+        .iter()
+        .filter(|t| t.token_type == TokenType::Comment && !t.lexeme.contains('\n'))
+        .map(|t| t.span.line.saturating_sub(1) as u32)
+        .collect();
+    let mut i = 0;
+    while i < comment_lines.len() {
+        let group_start = comment_lines[i];
+        let mut group_end = group_start;
+        while i + 1 < comment_lines.len() && comment_lines[i + 1] == group_end + 1 {
+            i += 1;
+            group_end = comment_lines[i];
+        }
+        if group_start != group_end {
+            ranges.push(FoldingRange {
+                start_line: group_start,
+                start_character: None,
+                end_line: group_end,
+                end_character: None,
+                kind: Some(FoldingRangeKind::Comment),
+                collapsed_text: None,
+            });
+        }
+        i += 1;
+    }
+
+    // Consecutive import lines
+    let import_lines: Vec<u32> = tokens
+        .iter()
+        .filter(|t| t.token_type == TokenType::Import)
+        .map(|t| t.span.line.saturating_sub(1) as u32)
+        .collect();
+    let mut i = 0;
+    while i < import_lines.len() {
+        let group_start = import_lines[i];
+        let mut group_end = group_start;
+        while i + 1 < import_lines.len() && import_lines[i + 1] == group_end + 1 {
+            i += 1;
+            group_end = import_lines[i];
+        }
+        if group_start != group_end {
+            ranges.push(FoldingRange {
+                start_line: group_start,
+                start_character: None,
+                end_line: group_end,
+                end_character: None,
+                kind: Some(FoldingRangeKind::Imports),
+                collapsed_text: None,
+            });
+        }
+        i += 1;
+    }
+
+    ranges
+}
+
+struct BracketPair {
+    open: Range,
+    close: Range,
+}
+
+impl BracketPair {
+    fn full_range(&self) -> Range {
+        Range {
+            start: self.open.start,
+            end: self.close.end,
+        }
+    }
+
+    fn content_range(&self) -> Range {
+        Range {
+            start: self.open.end,
+            end: self.close.start,
+        }
+    }
+}
+
+fn bracket_kind(tt: &TokenType) -> Option<(u8, bool)> {
+    match tt {
+        TokenType::LeftBrace => Some((0, true)),
+        TokenType::RightBrace => Some((0, false)),
+        TokenType::LeftBracket => Some((1, true)),
+        TokenType::RightBracket => Some((1, false)),
+        TokenType::LeftParen => Some((2, true)),
+        TokenType::RightParen => Some((2, false)),
+        _ => None,
+    }
+}
+
+fn compute_bracket_pairs(tokens: &[Token]) -> Vec<BracketPair> {
+    let mut stack: Vec<(Range, u8)> = Vec::new();
+    let mut pairs = Vec::new();
+
+    for token in tokens {
+        if let Some((kind, is_open)) = bracket_kind(&token.token_type) {
+            if is_open {
+                stack.push((span_to_range(token.span), kind));
+            } else {
+                while let Some((open_range, open_kind)) = stack.pop() {
+                    if open_kind == kind {
+                        pairs.push(BracketPair {
+                            open: open_range,
+                            close: span_to_range(token.span),
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    pairs
+}
+
+fn range_contains_pos(range: &Range, pos: &Position) -> bool {
+    let after_start = pos.line > range.start.line
+        || (pos.line == range.start.line && pos.character >= range.start.character);
+    let before_end = pos.line < range.end.line
+        || (pos.line == range.end.line && pos.character < range.end.character);
+    after_start && before_end
+}
+
+fn compute_selection_ranges(
+    tokens: &[Token],
+    positions: &[Position],
+    source: &str,
+) -> Vec<SelectionRange> {
+    let line_count = source.split('\n').count().max(1);
+    let last_line_len = source.split('\n').next_back().map(|l| l.len()).unwrap_or(0);
+    let doc_range = Range {
+        start: Position::new(0, 0),
+        end: Position::new(line_count.saturating_sub(1) as u32, last_line_len as u32),
+    };
+
+    let pairs = compute_bracket_pairs(tokens);
+
+    positions
+        .iter()
+        .map(|pos| {
+            let token_range = find_token_at_position(tokens, *pos).map(|t| span_to_range(t.span));
+
+            // Bracket pairs whose full range contains this position, innermost first
+            let mut containing: Vec<&BracketPair> = pairs
+                .iter()
+                .filter(|p| range_contains_pos(&p.full_range(), pos))
+                .collect();
+            containing.sort_by(|a, b| {
+                b.open
+                    .start
+                    .line
+                    .cmp(&a.open.start.line)
+                    .then(b.open.start.character.cmp(&a.open.start.character))
+            });
+
+            // Build chain from outermost (document) inward
+            let mut current = SelectionRange {
+                range: doc_range,
+                parent: None,
+            };
+
+            for pair in containing.iter().rev() {
+                let full = pair.full_range();
+                if full != current.range {
+                    current = SelectionRange {
+                        range: full,
+                        parent: Some(Box::new(current)),
+                    };
+                }
+                let content = pair.content_range();
+                if content != full && content != current.range {
+                    current = SelectionRange {
+                        range: content,
+                        parent: Some(Box::new(current)),
+                    };
+                }
+            }
+
+            if let Some(tr) = token_range
+                && tr != current.range
+            {
+                current = SelectionRange {
+                    range: tr,
+                    parent: Some(Box::new(current)),
+                };
+            }
+
+            current
+        })
+        .collect()
+}
+
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _params: InitializeParams) -> Result<InitializeResult> {
@@ -324,6 +570,8 @@ impl LanguageServer for Backend {
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
+                folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+                selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -716,6 +964,32 @@ impl LanguageServer for Backend {
 
         Ok(None)
     }
+
+    async fn folding_range(&self, params: FoldingRangeParams) -> Result<Option<Vec<FoldingRange>>> {
+        let uri = params.text_document.uri;
+        let docs = self.documents.lock().unwrap();
+        let Some(doc) = docs.get(&uri) else {
+            return Ok(None);
+        };
+        Ok(Some(compute_folding_ranges(&doc.tokens)))
+    }
+
+    async fn selection_range(
+        &self,
+        params: SelectionRangeParams,
+    ) -> Result<Option<Vec<SelectionRange>>> {
+        let uri = params.text_document.uri;
+        let positions = params.positions;
+        let docs = self.documents.lock().unwrap();
+        let Some(doc) = docs.get(&uri) else {
+            return Ok(None);
+        };
+        Ok(Some(compute_selection_ranges(
+            &doc.tokens,
+            &positions,
+            &doc.source,
+        )))
+    }
 }
 
 #[tokio::main]
@@ -738,4 +1012,105 @@ async fn main() {
     });
 
     Server::new(stdin, stdout, socket).serve(service).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gaul_core::keywords::load_keywords;
+    use gaul_core::scanner::Scanner;
+
+    fn scan(source: &str) -> Vec<Token> {
+        let keywords = load_keywords(None).unwrap();
+        let scanner = Scanner::new(source, &keywords);
+        scanner.scan_tokens().tokens
+    }
+
+    #[test]
+    fn folding_multi_line_block() {
+        let tokens = scan("fn foo() {\n  let x = 1\n  x\n}");
+        let ranges = compute_folding_ranges(&tokens);
+        assert!(
+            ranges
+                .iter()
+                .any(|r| r.start_line == 0 && r.end_line == 3 && r.kind.is_none())
+        );
+    }
+
+    #[test]
+    fn folding_nested_blocks() {
+        let tokens = scan("fn foo() {\n  if(true) {\n    1\n  }\n}");
+        let ranges = compute_folding_ranges(&tokens);
+        let block_ranges: Vec<_> = ranges.iter().filter(|r| r.kind.is_none()).collect();
+        assert_eq!(block_ranges.len(), 2);
+    }
+
+    #[test]
+    fn folding_multi_line_array() {
+        let tokens = scan("let x = [\n  1,\n  2,\n  3\n]");
+        let ranges = compute_folding_ranges(&tokens);
+        assert!(
+            ranges
+                .iter()
+                .any(|r| r.start_line == 0 && r.end_line == 4 && r.kind.is_none())
+        );
+    }
+
+    #[test]
+    fn folding_consecutive_comments() {
+        let tokens = scan("// line 1\n// line 2\n// line 3\nlet x = 1");
+        let ranges = compute_folding_ranges(&tokens);
+        assert!(ranges.iter().any(|r| r.start_line == 0
+            && r.end_line == 2
+            && r.kind == Some(FoldingRangeKind::Comment)));
+    }
+
+    #[test]
+    fn folding_consecutive_imports() {
+        let source = "import { foo } from \"a\"\nimport { bar } from \"b\"\nlet x = 1";
+        let tokens = scan(source);
+        let ranges = compute_folding_ranges(&tokens);
+        assert!(ranges.iter().any(|r| r.start_line == 0
+            && r.end_line == 1
+            && r.kind == Some(FoldingRangeKind::Imports)));
+    }
+
+    #[test]
+    fn selection_range_nested_brackets() {
+        let source = "fn foo() {\n  let x = [1, 2]\n}";
+        let tokens = scan(source);
+        let one_token = tokens.iter().find(|t| t.lexeme == "1").unwrap();
+        let pos = Position::new(
+            one_token.span.line.saturating_sub(1) as u32,
+            one_token.span.col.saturating_sub(1) as u32,
+        );
+        let result = compute_selection_ranges(&tokens, &[pos], source);
+        assert_eq!(result.len(), 1);
+
+        // Walk the chain and count depth
+        let mut depth = 0;
+        let mut current = Some(&result[0]);
+        while let Some(r) = current {
+            depth += 1;
+            current = r.parent.as_deref();
+        }
+        // token + array content + array full + paren content + paren full + block content + block full + document
+        assert!(depth >= 4, "expected at least 4 levels, got {}", depth);
+    }
+
+    #[test]
+    fn selection_range_outermost_is_document() {
+        let source = "let x = 1";
+        let tokens = scan(source);
+        let pos = Position::new(0, 4); // on 'x'
+        let result = compute_selection_ranges(&tokens, &[pos], source);
+        assert_eq!(result.len(), 1);
+
+        // Walk to the outermost range
+        let mut current = &result[0];
+        while let Some(ref parent) = current.parent {
+            current = parent;
+        }
+        assert_eq!(current.range.start, Position::new(0, 0));
+    }
 }
