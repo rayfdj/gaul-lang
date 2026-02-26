@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use gaul_core::analysis::{self, SymbolTable};
-use gaul_core::builtins::NATIVE_FUNCTION_NAMES;
+use gaul_core::builtins::{
+    NATIVE_FUNCTION_NAMES, NATIVE_FUNCTIONS_INFO, NATIVE_METHODS, STANDARD_MODULES,
+};
 use gaul_core::keywords::load_keywords;
 use gaul_core::parser::Parser;
 use gaul_core::resolver::Resolver;
@@ -128,6 +130,38 @@ fn find_token_at_position(tokens: &[Token], pos: Position) -> Option<&Token> {
     tokens
         .iter()
         .find(|t| t.span.line == line && col >= t.span.col && col < t.span.col + t.span.length)
+}
+
+/// Find the token immediately before the given LSP position.
+fn token_before_position(tokens: &[Token], pos: Position) -> Option<&Token> {
+    let line = pos.line as usize + 1;
+    let col = pos.character as usize + 1;
+    tokens
+        .iter()
+        .rev()
+        .find(|t| t.span.line < line || (t.span.line == line && t.span.col + t.span.length <= col))
+}
+
+fn keyword_description(tt: &TokenType) -> Option<(&'static str, &'static str)> {
+    match tt {
+        TokenType::If => Some(("if", "Conditional expression")),
+        TokenType::Else => Some(("else", "Else branch")),
+        TokenType::While => Some(("while", "While loop")),
+        TokenType::For => Some(("for", "For loop")),
+        TokenType::Function => Some(("fn", "Function declaration")),
+        TokenType::Return => Some(("return", "Return from function")),
+        TokenType::Break => Some(("break", "Break out of loop")),
+        TokenType::Continue => Some(("continue", "Skip to next iteration")),
+        TokenType::Let => Some(("let", "Immutable binding")),
+        TokenType::Var => Some(("var", "Mutable binding")),
+        TokenType::Import => Some(("import", "Import from module")),
+        TokenType::Export => Some(("export", "Export declaration")),
+        TokenType::From => Some(("from", "Module source")),
+        TokenType::True => Some(("true", "Boolean true")),
+        TokenType::False => Some(("false", "Boolean false")),
+        TokenType::Null => Some(("null", "Null value")),
+        _ => None,
+    }
 }
 
 fn semantic_token_type(tt: &TokenType) -> Option<u32> {
@@ -283,6 +317,11 @@ impl LanguageServer for Backend {
                         },
                     ),
                 ),
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec![".".into(), "\"".into()]),
+                    ..Default::default()
+                }),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
@@ -409,7 +448,7 @@ impl LanguageServer for Backend {
                 let range = span_to_range(d.span);
                 DocumentSymbol {
                     name: d.name.clone(),
-                    detail: None,
+                    detail: Some(d.detail.clone()),
                     kind: match d.kind {
                         analysis::SymbolKind::Function => SymbolKind::FUNCTION,
                         _ => SymbolKind::VARIABLE,
@@ -424,6 +463,258 @@ impl LanguageServer for Backend {
             .collect();
 
         Ok(Some(DocumentSymbolResponse::Nested(lsp_symbols)))
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let uri = params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+
+        let docs = self.documents.lock().unwrap();
+        let Some(doc) = docs.get(&uri) else {
+            return Ok(None);
+        };
+
+        let trigger = params
+            .context
+            .as_ref()
+            .and_then(|c| c.trigger_character.as_deref());
+
+        // (A) Dot completion — return all methods
+        if trigger == Some(".") {
+            let items: Vec<CompletionItem> = NATIVE_METHODS
+                .iter()
+                .map(|m| {
+                    let sig = format!("{}.{}{}", m.receiver_type, m.name, m.params);
+                    CompletionItem {
+                        label: m.name.to_string(),
+                        kind: Some(CompletionItemKind::METHOD),
+                        detail: Some(format!("{} -> {}", sig, m.returns)),
+                        documentation: Some(Documentation::String(m.doc.to_string())),
+                        ..Default::default()
+                    }
+                })
+                .collect();
+            return Ok(Some(CompletionResponse::Array(items)));
+        }
+
+        // (B) Import path completion — trigger char is `"`
+        if trigger == Some("\"") {
+            // Check if a recent token is `from`
+            let prev = token_before_position(&doc.tokens, pos);
+            let is_import = prev.is_some_and(|t| {
+                // The `"` itself isn't tokenized yet (being typed), so prev should be `from`
+                // or there might be whitespace tokens. Walk backwards to find `from`.
+                t.token_type == TokenType::From
+            }) || {
+                // Walk backwards through tokens looking for `from` keyword
+                let line = pos.line as usize + 1;
+                let col = pos.character as usize + 1;
+                doc.tokens
+                    .iter()
+                    .rev()
+                    .filter(|t| {
+                        t.token_type != TokenType::Newline
+                            && (t.span.line < line
+                                || (t.span.line == line && t.span.col + t.span.length <= col))
+                    })
+                    .take(3)
+                    .any(|t| t.token_type == TokenType::From)
+            };
+
+            if is_import {
+                let mut items: Vec<CompletionItem> = STANDARD_MODULES
+                    .iter()
+                    .map(|m| CompletionItem {
+                        label: m.to_string(),
+                        kind: Some(CompletionItemKind::MODULE),
+                        ..Default::default()
+                    })
+                    .collect();
+
+                // Scan directory for .gaul files
+                if let Ok(path) = uri.to_file_path()
+                    && let Some(dir) = path.parent()
+                    && let Ok(entries) = std::fs::read_dir(dir)
+                {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.extension().is_some_and(|e| e == "gaul")
+                            && let Some(stem) = p.file_stem().and_then(|s| s.to_str())
+                            && p.as_path() != path.as_path()
+                        {
+                            items.push(CompletionItem {
+                                label: stem.to_string(),
+                                kind: Some(CompletionItemKind::FILE),
+                                ..Default::default()
+                            });
+                        }
+                    }
+                }
+
+                return Ok(Some(CompletionResponse::Array(items)));
+            }
+        }
+
+        // (C) Normal completion — symbols, native functions, keywords
+        let mut items: Vec<CompletionItem> = Vec::new();
+
+        // User-defined symbols
+        if let Some(symbols) = &doc.symbols {
+            for def in &symbols.definitions {
+                let kind = match def.kind {
+                    analysis::SymbolKind::Function => CompletionItemKind::FUNCTION,
+                    _ => CompletionItemKind::VARIABLE,
+                };
+                items.push(CompletionItem {
+                    label: def.name.clone(),
+                    kind: Some(kind),
+                    detail: Some(def.detail.clone()),
+                    ..Default::default()
+                });
+            }
+        }
+
+        // Native functions
+        for info in NATIVE_FUNCTIONS_INFO {
+            items.push(CompletionItem {
+                label: info.name.to_string(),
+                kind: Some(CompletionItemKind::FUNCTION),
+                detail: Some(format!("{}{} -> {}", info.name, info.params, info.returns)),
+                documentation: Some(Documentation::String(info.doc.to_string())),
+                ..Default::default()
+            });
+        }
+
+        // Keywords
+        for (lexeme, tt) in &self.keywords {
+            let kind = match tt {
+                TokenType::True | TokenType::False | TokenType::Null => {
+                    CompletionItemKind::CONSTANT
+                }
+                _ => CompletionItemKind::KEYWORD,
+            };
+            items.push(CompletionItem {
+                label: lexeme.clone(),
+                kind: Some(kind),
+                ..Default::default()
+            });
+        }
+
+        Ok(Some(CompletionResponse::Array(items)))
+    }
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+
+        let docs = self.documents.lock().unwrap();
+        let Some(doc) = docs.get(&uri) else {
+            return Ok(None);
+        };
+
+        let Some(token) = find_token_at_position(&doc.tokens, pos) else {
+            return Ok(None);
+        };
+
+        // 1. Keyword hover
+        if let Some((english, desc)) = keyword_description(&token.token_type) {
+            let text = if token.lexeme != english {
+                // Localized keyword — show both
+                format!("**{}** — {} (`{}`)", token.lexeme, desc, english)
+            } else {
+                format!("**{}** — {}", english, desc)
+            };
+            return Ok(Some(Hover {
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: text,
+                }),
+                range: Some(span_to_range(token.span)),
+            }));
+        }
+
+        // Only identifiers from here on
+        if token.token_type != TokenType::Identifier {
+            return Ok(None);
+        }
+
+        // 2. Method call — identifier preceded by a dot
+        let prev = token_before_position(&doc.tokens, pos);
+        if prev.is_some_and(|t| t.token_type == TokenType::Dot) {
+            let methods: Vec<String> = NATIVE_METHODS
+                .iter()
+                .filter(|m| m.name == token.lexeme)
+                .map(|m| {
+                    format!(
+                        "```\n{}.{}{} -> {}\n```\n{}",
+                        m.receiver_type, m.name, m.params, m.returns, m.doc
+                    )
+                })
+                .collect();
+
+            if !methods.is_empty() {
+                return Ok(Some(Hover {
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: methods.join("\n\n---\n\n"),
+                    }),
+                    range: Some(span_to_range(token.span)),
+                }));
+            }
+        }
+
+        // 3. Identifier that's a SymbolRef — show detail
+        if let Some(symbols) = &doc.symbols {
+            let token_key = (token.span.line, token.span.col);
+            if let Some(sym_ref) = symbols
+                .references
+                .iter()
+                .find(|r| (r.span.line, r.span.col) == token_key)
+            {
+                let def = &symbols.definitions[sym_ref.def_index];
+                return Ok(Some(Hover {
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: format!("```\n{}\n```", def.detail),
+                    }),
+                    range: Some(span_to_range(token.span)),
+                }));
+            }
+
+            // Also check if the token IS a definition site
+            if let Some(def) = symbols
+                .definitions
+                .iter()
+                .find(|d| d.span.line == token.span.line && d.span.col == token.span.col)
+            {
+                return Ok(Some(Hover {
+                    contents: HoverContents::Markup(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: format!("```\n{}\n```", def.detail),
+                    }),
+                    range: Some(span_to_range(token.span)),
+                }));
+            }
+        }
+
+        // 4. Native function
+        if let Some(info) = NATIVE_FUNCTIONS_INFO
+            .iter()
+            .find(|f| f.name == token.lexeme)
+        {
+            return Ok(Some(Hover {
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: format!(
+                        "```\n{}{} -> {}\n```\n{}",
+                        info.name, info.params, info.returns, info.doc
+                    ),
+                }),
+                range: Some(span_to_range(token.span)),
+            }));
+        }
+
+        Ok(None)
     }
 }
 

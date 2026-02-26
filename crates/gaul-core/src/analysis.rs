@@ -16,6 +16,7 @@ pub struct SymbolDef {
     pub name: String,
     pub span: Span,
     pub kind: SymbolKind,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone)]
@@ -54,9 +55,14 @@ impl Builder {
         }
     }
 
-    fn define(&mut self, name: String, span: Span, kind: SymbolKind) {
+    fn define(&mut self, name: String, span: Span, kind: SymbolKind, detail: String) {
         let def_index = self.definitions.len();
-        self.definitions.push(SymbolDef { name, span, kind });
+        self.definitions.push(SymbolDef {
+            name,
+            span,
+            kind,
+            detail,
+        });
         self.scopes.last_mut().unwrap().push(Some(def_index));
     }
 
@@ -89,16 +95,27 @@ impl Builder {
 
     fn walk_declaration(&mut self, decl: &Declaration) {
         match &decl.kind {
-            DeclarationKind::Let { name, initializer }
-            | DeclarationKind::Var { name, initializer } => {
-                self.define(name.clone(), decl.span, SymbolKind::Variable);
+            DeclarationKind::Let { name, initializer } => {
+                let detail = format!("let {}", name);
+                self.define(name.clone(), decl.span, SymbolKind::Variable, detail);
+                self.walk_expr(initializer);
+            }
+            DeclarationKind::Var { name, initializer } => {
+                let detail = format!("var {}", name);
+                self.define(name.clone(), decl.span, SymbolKind::Variable, detail);
                 self.walk_expr(initializer);
             }
             DeclarationKind::Fn { name, params, body } => {
-                self.define(name.clone(), decl.span, SymbolKind::Function);
+                let detail = format!("fn {}({})", name, params.join(", "));
+                self.define(name.clone(), decl.span, SymbolKind::Function, detail);
                 self.push_scope();
                 for param in params {
-                    self.define(param.clone(), decl.span, SymbolKind::Parameter);
+                    self.define(
+                        param.clone(),
+                        decl.span,
+                        SymbolKind::Parameter,
+                        "parameter".into(),
+                    );
                 }
                 self.walk_expr(body);
                 self.pop_scope();
@@ -108,7 +125,7 @@ impl Builder {
             }
             DeclarationKind::Import { items, .. } => {
                 for item in items {
-                    self.define(item.clone(), decl.span, SymbolKind::Import);
+                    self.define(item.clone(), decl.span, SymbolKind::Import, "import".into());
                 }
             }
             DeclarationKind::Export { inner } => {
@@ -149,14 +166,24 @@ impl Builder {
             } => {
                 self.walk_expr(iterable);
                 self.push_scope();
-                self.define(variable.clone(), expr.span, SymbolKind::ForVariable);
+                self.define(
+                    variable.clone(),
+                    expr.span,
+                    SymbolKind::ForVariable,
+                    "for variable".into(),
+                );
                 self.walk_expr(body);
                 self.pop_scope();
             }
             ExprKind::Lambda { params, body } => {
                 self.push_scope();
                 for param in params {
-                    self.define(param.clone(), expr.span, SymbolKind::Parameter);
+                    self.define(
+                        param.clone(),
+                        expr.span,
+                        SymbolKind::Parameter,
+                        "parameter".into(),
+                    );
                 }
                 self.walk_expr(body);
                 self.pop_scope();
@@ -266,6 +293,7 @@ mod tests {
         assert_eq!(table.definitions.len(), 1);
         assert_eq!(table.definitions[0].name, "x");
         assert_eq!(table.definitions[0].kind, SymbolKind::Variable);
+        assert_eq!(table.definitions[0].detail, "let x");
 
         assert_eq!(table.references.len(), 1);
         assert_eq!(table.references[0].def_index, 0);
@@ -279,8 +307,10 @@ mod tests {
         assert_eq!(table.definitions.len(), 3);
         assert_eq!(table.definitions[0].name, "add");
         assert_eq!(table.definitions[0].kind, SymbolKind::Function);
+        assert_eq!(table.definitions[0].detail, "fn add(a, b)");
         assert_eq!(table.definitions[1].name, "a");
         assert_eq!(table.definitions[1].kind, SymbolKind::Parameter);
+        assert_eq!(table.definitions[1].detail, "parameter");
         assert_eq!(table.definitions[2].name, "b");
         assert_eq!(table.definitions[2].kind, SymbolKind::Parameter);
 
@@ -322,6 +352,7 @@ mod tests {
         assert_eq!(table.definitions[0].kind, SymbolKind::Variable);
         assert_eq!(table.definitions[1].name, "x");
         assert_eq!(table.definitions[1].kind, SymbolKind::ForVariable);
+        assert_eq!(table.definitions[1].detail, "for variable");
 
         // References: items (in for iterable), x (in for body)
         assert_eq!(table.references.len(), 2);
