@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/gaul-core", "crates/gaul-lang"]
+members = ["crates/gaul-core", "crates/gaul-lang", "crates/gaul-lsp"]
 resolver = "3"
 
 [profile.release]
