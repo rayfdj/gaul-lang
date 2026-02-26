@@ -186,12 +186,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaul-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "strsim",
+]
+
+[[package]]
 name = "gaul-lang"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
  "dirs",
+ "gaul-core",
  "rustyline",
  "serde_json",
  "smallvec",

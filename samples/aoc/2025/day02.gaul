@@ -18,7 +18,7 @@ fn Is Repeating Pattern(S, Exactly Twice Only) {
         return false
     } else {
         if(Exactly Twice Only) {
-            if(Len.mod(2) != 0) {
+            if(Len % 2 != 0) {
                 return false
             } else {
                 let Half = Len.floor_div(2)
@@ -26,7 +26,7 @@ fn Is Repeating Pattern(S, Exactly Twice Only) {
             }
         } else {
             for(Pattern Len : 1..(Len.floor_div(2) + 1)) {
-                if(Len.mod(Pattern Len) == 0) {
+                if(Len % Pattern Len == 0) {
                     let Pattern = S.substring(0, Pattern Len)
                     var Matches = true
                     for(i : 1..Len.floor_div(Pattern Len)) {

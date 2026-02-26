@@ -1,6 +1,6 @@
-use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
 #[allow(unused_imports)]
 use crate::parser::ast::DeclarationKind::{Export, Import};
+use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
 use crate::span::Span;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -36,8 +36,7 @@ impl Resolver {
     }
 
     fn define_native_functions(&mut self) {
-        for (name, _native_function) in crate::interpreter::native_function::all_native_functions()
-        {
+        for name in crate::builtins::NATIVE_FUNCTION_NAMES {
             self.define(name, Span::default()).unwrap();
         }
     }

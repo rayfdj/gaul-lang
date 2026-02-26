@@ -82,7 +82,7 @@ fn Point On Segment(X, Y, P1, P2) {
 fn Point On Edge(X, Y, Polygon) {
     let N = Polygon.len()
     for(I : 0..N) {
-        let J = (I + 1).mod(N)
+        let J = (I + 1) % N
         if(Point On Segment(X, Y, Polygon.get(I), Polygon.get(J))) {
             return true
         }
@@ -136,7 +136,7 @@ fn Rectangle All Red Green(X1, Y1, X2, Y2, Polygon) {
     // MinY and MaxY and X range overlapping [MinX, MaxX]
     let N = Polygon.len()
     for(I : 0..N) {
-        let J = (I + 1).mod(N)
+        let J = (I + 1) % N
         let P1 = Polygon.get(I)
         let P2 = Polygon.get(J)
         let Ex1 = P1.get(0)

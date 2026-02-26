@@ -253,7 +253,7 @@ fn Solve With Free Vars(Buttons, Joltage, Pivot Cols, Matrix, Free Vals) {
             Check Pivot = 0 - Check Pivot
         }
 
-        if((Check RHS.mod(Check Pivot)) != 0) { return [-1] }
+        if((Check RHS % Check Pivot) != 0) { return [-1] }
 
         let Val = Check RHS.floor_div(Check Pivot)
         if(Val < 0) { return [-1] }

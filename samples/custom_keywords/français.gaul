@@ -1,10 +1,10 @@
 // 🎮 Le Jeu de Devinette Magique
 // Des sortilèges pour deviner le nombre secret!
 // Lancez ce programme avec l'option keywords, comme ceci:
-// gaul-lang src/samples/custom_keywords/france.gaul --keywords src/samples/custom_keywords/france.json
+// gaul-lang samples/custom_keywords/français.gaul --keywords samples/custom_keywords/français.json
 
 sortilège Créer Nombre Secret(Graine) {
-    soit Nombre = (Graine * 7 + 13).mod(100)
+    soit Nombre = (Graine * 7 + 13) % 100
     renvoie Nombre
 }
 
@@ -57,10 +57,10 @@ sortilège Fizzbuzz Français(N) {
     mut Résultats = []
 
     tantque(I <= N) {
-        soit Divisible Par 3 = I.mod(3) == 0
-        soit Divisible Par 5 = I.mod(5) == 0
+        soit Divisible Par 3 = I % 3 == 0
+        soit Divisible Par 5 = I % 5 == 0
 
-        si((Divisible Par 3) et (Divisible Par 5)) {
+        si((Divisible Par 3) && (Divisible Par 5)) {
             Résultats.push("✨ Magnifique!")
         } sinon {
             si(Divisible Par 3) {
@@ -84,7 +84,7 @@ sortilège Chercher Pairs(Liste Nombres) {
     mut Résultats = []
 
     pour(Nombre : Liste Nombres) {
-        si(Nombre.mod(2) == 0) {
+        si(Nombre % 2 == 0) {
             Résultats.push(Nombre)
         }
     }

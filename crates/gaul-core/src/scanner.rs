@@ -107,16 +107,28 @@ impl Scanner {
             }
             ',' => self.add_token(TokenType::Comma),
             '-' => {
-                let t = if self.match_char('=') { TokenType::MinusEqual } else { TokenType::Minus };
+                let t = if self.match_char('=') {
+                    TokenType::MinusEqual
+                } else {
+                    TokenType::Minus
+                };
                 self.add_token(t);
             }
             '+' => {
-                let t = if self.match_char('=') { TokenType::PlusEqual } else { TokenType::Plus };
+                let t = if self.match_char('=') {
+                    TokenType::PlusEqual
+                } else {
+                    TokenType::Plus
+                };
                 self.add_token(t);
             }
             ':' => self.add_token(TokenType::Colon),
             '*' => {
-                let t = if self.match_char('=') { TokenType::StarEqual } else { TokenType::Star };
+                let t = if self.match_char('=') {
+                    TokenType::StarEqual
+                } else {
+                    TokenType::Star
+                };
                 self.add_token(t);
             }
             '%' => self.add_token(TokenType::Percent),

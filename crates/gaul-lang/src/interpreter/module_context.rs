@@ -1,4 +1,4 @@
-use crate::scanner::token::TokenType;
+use gaul_core::scanner::token::TokenType;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;

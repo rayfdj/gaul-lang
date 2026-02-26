@@ -1,5 +1,5 @@
-use crate::interpreter::environment::Environment;
-use crate::parser::ast::Expr;
+use super::environment::Environment;
+use gaul_core::parser::ast::Expr;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;

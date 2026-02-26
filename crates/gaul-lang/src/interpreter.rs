@@ -5,15 +5,15 @@ pub mod native_method;
 pub mod stdlib;
 pub mod value;
 
-use crate::config::RuntimeConfig;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::module_context::ModuleContext;
 use crate::interpreter::native_function::all_native_functions;
 use crate::interpreter::native_method::call_native_method;
 use crate::interpreter::value::{Function, MapKey, Value};
-use crate::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
-use crate::scanner::token::TokenType;
-use crate::span::Span;
+use gaul_core::config::RuntimeConfig;
+use gaul_core::parser::ast::{Declaration, DeclarationKind, Expr, ExprKind, Program};
+use gaul_core::scanner::token::TokenType;
+use gaul_core::span::Span;
 use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -167,10 +167,14 @@ impl Interpreter {
             DeclarationKind::Import { path, items } => {
                 let exports = self.load_module(path, declaration.span)?;
                 for item in items {
-                    let value = exports.get(item.as_str()).cloned().ok_or_else(|| RuntimeError {
-                        span: declaration.span,
-                        message: format!("module '{}' does not export '{}'", path, item),
-                    })?;
+                    let value =
+                        exports
+                            .get(item.as_str())
+                            .cloned()
+                            .ok_or_else(|| RuntimeError {
+                                span: declaration.span,
+                                message: format!("module '{}' does not export '{}'", path, item),
+                            })?;
                     self.env.define(value, false);
                 }
                 Ok(Value::Null.into())
@@ -186,7 +190,7 @@ impl Interpreter {
                         return Err(RuntimeError {
                             span: declaration.span,
                             message: "export must wrap let, var, or fn".to_string(),
-                        })
+                        });
                     }
                 };
                 let value = self.env.get_at(0, slot);
@@ -196,7 +200,11 @@ impl Interpreter {
         }
     }
 
-    fn load_module(&mut self, path_str: &str, span: Span) -> Result<Rc<HashMap<String, Value>>, RuntimeError> {
+    fn load_module(
+        &mut self,
+        path_str: &str,
+        span: Span,
+    ) -> Result<Rc<HashMap<String, Value>>, RuntimeError> {
         // Check for built-in stdlib modules (bare names like "math", "fs", "sys")
         if !path_str.contains('/') && !path_str.contains('\\') && !path_str.contains('.') {
             let cache_key = PathBuf::from(format!("@@stdlib/{}", path_str));
@@ -205,13 +213,18 @@ impl Interpreter {
             }
             if let Some(exports) = stdlib::get_stdlib_module(path_str) {
                 let rc = Rc::new(exports);
-                self.module_ctx.cache.borrow_mut().insert(cache_key, Rc::clone(&rc));
+                self.module_ctx
+                    .cache
+                    .borrow_mut()
+                    .insert(cache_key, Rc::clone(&rc));
                 return Ok(rc);
             }
         }
 
         // Resolve path relative to the current file's directory
-        let base_dir = self.module_ctx.current_file
+        let base_dir = self
+            .module_ctx
+            .current_file
             .as_ref()
             .and_then(|f| f.parent().map(|p| p.to_path_buf()))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
@@ -236,7 +249,10 @@ impl Interpreter {
         }
 
         // Mark as loading
-        self.module_ctx.loading.borrow_mut().insert(canonical.clone());
+        self.module_ctx
+            .loading
+            .borrow_mut()
+            .insert(canonical.clone());
 
         let source = std::fs::read_to_string(&canonical).map_err(|e| RuntimeError {
             span,
@@ -250,7 +266,10 @@ impl Interpreter {
 
         let exports_map = result?;
         let rc = Rc::new(exports_map);
-        self.module_ctx.cache.borrow_mut().insert(canonical, Rc::clone(&rc));
+        self.module_ctx
+            .cache
+            .borrow_mut()
+            .insert(canonical, Rc::clone(&rc));
         Ok(rc)
     }
 
@@ -260,9 +279,9 @@ impl Interpreter {
         file_path: PathBuf,
         span: Span,
     ) -> Result<HashMap<String, Value>, RuntimeError> {
-        use crate::parser::Parser;
-        use crate::resolver::Resolver;
-        use crate::scanner::Scanner;
+        use gaul_core::parser::Parser;
+        use gaul_core::resolver::Resolver;
+        use gaul_core::scanner::Scanner;
 
         let scanner = Scanner::new(source, &self.module_ctx.keywords.clone());
         let tokens = scanner.scan_tokens().map_err(|errors| RuntimeError {
@@ -270,7 +289,11 @@ impl Interpreter {
             message: format!(
                 "scan errors in module '{}':\n{}",
                 file_path.display(),
-                errors.iter().map(|e| e.message.clone()).collect::<Vec<_>>().join("\n")
+                errors
+                    .iter()
+                    .map(|e| e.message.clone())
+                    .collect::<Vec<_>>()
+                    .join("\n")
             ),
         })?;
 
@@ -280,7 +303,11 @@ impl Interpreter {
             message: format!(
                 "parse errors in module '{}':\n{}",
                 file_path.display(),
-                errors.iter().map(|e| e.message.clone()).collect::<Vec<_>>().join("\n")
+                errors
+                    .iter()
+                    .map(|e| e.message.clone())
+                    .collect::<Vec<_>>()
+                    .join("\n")
             ),
         })?;
 
@@ -1026,14 +1053,23 @@ impl Interpreter {
                 }
                 let i = *n as usize;
                 let arr = arr.borrow();
-                arr.get(i).cloned().ok_or_else(|| RuntimeError {
-                    span,
-                    message: format!("index {} out of bounds (len {})", i, arr.len()),
-                }).map(ControlFlow::Value)
+                arr.get(i)
+                    .cloned()
+                    .ok_or_else(|| RuntimeError {
+                        span,
+                        message: format!("index {} out of bounds (len {})", i, arr.len()),
+                    })
+                    .map(ControlFlow::Value)
             }
             (Value::Map(map), _) => {
-                let key = MapKey::from_value(&idx).map_err(|msg| RuntimeError { span, message: msg })?;
-                Ok(map.borrow().get(&key).cloned().unwrap_or(Value::Null).into())
+                let key =
+                    MapKey::from_value(&idx).map_err(|msg| RuntimeError { span, message: msg })?;
+                Ok(map
+                    .borrow()
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or(Value::Null)
+                    .into())
             }
             (Value::Str(s), Value::Num(n)) => {
                 if *n < 0.0 {
@@ -1081,7 +1117,8 @@ impl Interpreter {
                 }
             }
             (Value::Map(map), _) => {
-                let key = MapKey::from_value(&idx).map_err(|msg| RuntimeError { span, message: msg })?;
+                let key =
+                    MapKey::from_value(&idx).map_err(|msg| RuntimeError { span, message: msg })?;
                 map.borrow_mut().insert(key, value);
                 Ok(())
             }
@@ -1112,8 +1149,7 @@ impl Interpreter {
                 })?;
                 let arr = elements.borrow();
                 for item in arr.iter() {
-                    let result =
-                        self.call_function(predicate, smallvec![item.clone()], span)?;
+                    let result = self.call_function(predicate, smallvec![item.clone()], span)?;
                     match result {
                         Value::Bool(true) => return Ok(Value::Bool(true).into()),
                         Value::Bool(false) => {}
@@ -1134,8 +1170,7 @@ impl Interpreter {
                 })?;
                 let arr = elements.borrow();
                 for item in arr.iter() {
-                    let result =
-                        self.call_function(predicate, smallvec![item.clone()], span)?;
+                    let result = self.call_function(predicate, smallvec![item.clone()], span)?;
                     match result {
                         Value::Bool(false) => return Ok(Value::Bool(false).into()),
                         Value::Bool(true) => {}
@@ -1157,8 +1192,7 @@ impl Interpreter {
                 let arr = elements.borrow();
                 let mut count = 0i64;
                 for item in arr.iter() {
-                    let result =
-                        self.call_function(predicate, smallvec![item.clone()], span)?;
+                    let result = self.call_function(predicate, smallvec![item.clone()], span)?;
                     match result {
                         Value::Bool(true) => count += 1,
                         Value::Bool(false) => {}
@@ -1180,12 +1214,9 @@ impl Interpreter {
                 let arr = elements.borrow();
                 let mut result = Vec::new();
                 for item in arr.iter() {
-                    let mapped =
-                        self.call_function(callable, smallvec![item.clone()], span)?;
+                    let mapped = self.call_function(callable, smallvec![item.clone()], span)?;
                     match mapped {
-                        Value::Array(inner) => {
-                            result.extend(inner.borrow().iter().cloned())
-                        }
+                        Value::Array(inner) => result.extend(inner.borrow().iter().cloned()),
                         _ => {
                             return Err(RuntimeError {
                                 span,

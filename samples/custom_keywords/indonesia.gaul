@@ -1,10 +1,10 @@
 // 🎮 Permainan Tebak Angka Ajaib
 // Mantra-mantra untuk menebak angka rahasia!
 // Jalankan program ini dengan memakai opsi keyword, seperti ini
-// gaul-lang src/samples/custom_keywords/indonesia.gaul --keywords src/samples/custom_keywords/indonesia.json
+// gaul-lang samples/custom_keywords/indonesia.gaul --keywords samples/custom_keywords/indonesia.json
 
 mantra Buat Angka Rahasia(Seed) {
-    biarin Angka = (Seed * 7 + 13).mod(100)
+    biarin Angka = (Seed * 7 + 13) % 100
     balikin Angka
 }
 
@@ -57,10 +57,10 @@ mantra Fizzbuzz Gaul(N) {
     anggep Hasil = []
 
     selama(I <= N) {
-        biarin Bisa Bagi 3 = I.mod(3) == 0
-        biarin Bisa Bagi 5 = I.mod(5) == 0
+        biarin Bisa Bagi 3 = I % 3 == 0
+        biarin Bisa Bagi 5 = I % 5 == 0
 
-        kalo((Bisa Bagi 3) dan (Bisa Bagi 5)) {
+        kalo((Bisa Bagi 3) && (Bisa Bagi 5)) {
             Hasil.push("✨ Mantul!")
         } eh {
             kalo(Bisa Bagi 3) {
@@ -84,7 +84,7 @@ mantra Cari Genap(Angka List) {
     anggep Hasil = []
 
     untuk(Angka : Angka List) {
-        kalo(Angka.mod(2) == 0) {
+        kalo(Angka % 2 == 0) {
             Hasil.push(Angka)
         }
     }

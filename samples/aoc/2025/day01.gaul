@@ -15,7 +15,7 @@ fn Count Dial At 0(Starting Point, Rotations, Max Dial, Include Dial Passing 0) 
         let Movement = Sign * Distance
 
         let Unwrapped Ending Point = Current Point + Movement
-        let Ending Point = Unwrapped Ending Point.mod(Dial Size)
+        let Ending Point = Unwrapped Ending Point % Dial Size
 
         let Landed At 0 = if(Ending Point == 0) { 1 } else { 0 }
 

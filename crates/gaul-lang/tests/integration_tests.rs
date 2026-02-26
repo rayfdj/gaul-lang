@@ -1,6 +1,15 @@
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
 
 use gaul_lang::config::RuntimeConfig;
 use gaul_lang::diagnostics;
@@ -19,7 +28,8 @@ fn eval(source: &str) -> Result<Value, String> {
     let keywords = load_keywords(None).map_err(|e| e.to_string())?;
     let mut resolver = Resolver::new();
     let module_ctx = ModuleContext::new(None, keywords.clone());
-    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
+    let mut interpreter =
+        Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
 
     let scanner = Scanner::new(source, &keywords);
     let tokens = scanner.scan_tokens().map_err(|e| format!("{:?}", e))?;
@@ -4775,7 +4785,8 @@ fn eval_diagnostic(source: &str) -> Result<Value, String> {
     let keywords = load_keywords(None).map_err(|e| e.to_string())?;
     let mut resolver = Resolver::new();
     let module_ctx = ModuleContext::new(None, keywords.clone());
-    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
+    let mut interpreter =
+        Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
 
     let scanner = Scanner::new(source, &keywords);
     match scanner.scan_tokens() {
@@ -4834,7 +4845,8 @@ fn eval_span(source: &str) -> Option<Span> {
     let keywords = load_keywords(None).ok()?;
     let mut resolver = Resolver::new();
     let module_ctx = ModuleContext::new(None, keywords.clone());
-    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
+    let mut interpreter =
+        Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
 
     let scanner = Scanner::new(source, &keywords);
     match scanner.scan_tokens() {
@@ -5317,7 +5329,7 @@ fn test_approx_equal_still_works() {
 fn test_keyword_jsons_match_default_keywords() {
     let concept_words: HashSet<String> = default_keywords().keys().cloned().collect();
 
-    let json_dir = std::path::Path::new("src/samples/custom_keywords");
+    let json_dir = workspace_root().join("samples/custom_keywords");
     let json_files: Vec<_> = std::fs::read_dir(json_dir)
         .expect("custom_keywords directory should exist")
         .filter_map(|e| e.ok())
@@ -5358,12 +5370,15 @@ fn test_keyword_jsons_match_default_keywords() {
 
 #[test]
 fn test_llms_full_documents_all_native_methods() {
-    let doc = std::fs::read_to_string("llms-full.txt").expect("llms-full.txt should exist");
+    let doc = std::fs::read_to_string(workspace_root().join("llms-full.txt"))
+        .expect("llms-full.txt should exist");
 
     // Extract method names directly from native_method.rs so new methods
     // automatically fail the test if undocumented.
-    let source = std::fs::read_to_string("src/interpreter/native_method.rs")
-        .expect("native_method.rs should exist");
+    let source = std::fs::read_to_string(
+        workspace_root().join("crates/gaul-lang/src/interpreter/native_method.rs"),
+    )
+    .expect("native_method.rs should exist");
 
     // Pattern in source: (Value::Variant(...), "method_name")
     // We map Value variant -> type name for error messages.
@@ -5399,7 +5414,8 @@ fn test_llms_full_documents_all_native_methods() {
     // Higher-order array methods live in interpreter.rs, not native_method.rs.
     // Extract them from the match arms there too.
     let interp_source =
-        std::fs::read_to_string("src/interpreter.rs").expect("interpreter.rs should exist");
+        std::fs::read_to_string(workspace_root().join("crates/gaul-lang/src/interpreter.rs"))
+            .expect("interpreter.rs should exist");
     // These appear as string literals in match arms: "map" => {, "filter" => {, etc.
     // inside a block guarded by Value::Array. We look for the pattern directly.
     for line in interp_source.lines() {
@@ -5417,8 +5433,19 @@ fn test_llms_full_documents_all_native_methods() {
                     // Verify it's actually a method call on arrays by checking the
                     // surrounding context: these are the only quoted "name" => { patterns
                     // in the interpreter's array method dispatch
-                    if ["map", "filter", "reduce", "find", "sort_by", "sort_by_key", "any", "all", "count", "flat_map"]
-                        .contains(&candidate)
+                    if [
+                        "map",
+                        "filter",
+                        "reduce",
+                        "find",
+                        "sort_by",
+                        "sort_by_key",
+                        "any",
+                        "all",
+                        "count",
+                        "flat_map",
+                    ]
+                    .contains(&candidate)
                     {
                         methods_by_type
                             .entry("Array")
@@ -5490,8 +5517,10 @@ fn test_llms_full_documents_all_native_methods() {
     }
 
     // Verify native functions are documented
-    let fn_source = std::fs::read_to_string("src/interpreter/native_function.rs")
-        .expect("native_function.rs should exist");
+    let fn_source = std::fs::read_to_string(
+        workspace_root().join("crates/gaul-lang/src/interpreter/native_function.rs"),
+    )
+    .expect("native_function.rs should exist");
     let mut native_fns = Vec::new();
     for line in fn_source.lines() {
         let trimmed = line.trim();
@@ -7403,90 +7432,182 @@ fn test_enumerate_single_element() {
 
 #[test]
 fn test_min_basic() {
-    assert_eq!(eval(r#"import { min } from "math"
-    min(3, 5)"#).unwrap(), Value::Num(3.0));
+    assert_eq!(
+        eval(
+            r#"import { min } from "math"
+    min(3, 5)"#
+        )
+        .unwrap(),
+        Value::Num(3.0)
+    );
 }
 
 #[test]
 fn test_min_reversed() {
-    assert_eq!(eval(r#"import { min } from "math"
-    min(5, 3)"#).unwrap(), Value::Num(3.0));
+    assert_eq!(
+        eval(
+            r#"import { min } from "math"
+    min(5, 3)"#
+        )
+        .unwrap(),
+        Value::Num(3.0)
+    );
 }
 
 #[test]
 fn test_min_equal() {
-    assert_eq!(eval(r#"import { min } from "math"
-    min(4, 4)"#).unwrap(), Value::Num(4.0));
+    assert_eq!(
+        eval(
+            r#"import { min } from "math"
+    min(4, 4)"#
+        )
+        .unwrap(),
+        Value::Num(4.0)
+    );
 }
 
 #[test]
 fn test_min_negative() {
-    assert_eq!(eval(r#"import { min } from "math"
-    min(-1, 1)"#).unwrap(), Value::Num(-1.0));
+    assert_eq!(
+        eval(
+            r#"import { min } from "math"
+    min(-1, 1)"#
+        )
+        .unwrap(),
+        Value::Num(-1.0)
+    );
 }
 
 #[test]
 fn test_min_floats() {
-    assert_eq!(eval(r#"import { min } from "math"
-    min(1.5, 1.4)"#).unwrap(), Value::Num(1.4));
+    assert_eq!(
+        eval(
+            r#"import { min } from "math"
+    min(1.5, 1.4)"#
+        )
+        .unwrap(),
+        Value::Num(1.4)
+    );
 }
 
 #[test]
 fn test_max_basic() {
-    assert_eq!(eval(r#"import { max } from "math"
-    max(3, 5)"#).unwrap(), Value::Num(5.0));
+    assert_eq!(
+        eval(
+            r#"import { max } from "math"
+    max(3, 5)"#
+        )
+        .unwrap(),
+        Value::Num(5.0)
+    );
 }
 
 #[test]
 fn test_max_reversed() {
-    assert_eq!(eval(r#"import { max } from "math"
-    max(5, 3)"#).unwrap(), Value::Num(5.0));
+    assert_eq!(
+        eval(
+            r#"import { max } from "math"
+    max(5, 3)"#
+        )
+        .unwrap(),
+        Value::Num(5.0)
+    );
 }
 
 #[test]
 fn test_max_equal() {
-    assert_eq!(eval(r#"import { max } from "math"
-    max(4, 4)"#).unwrap(), Value::Num(4.0));
+    assert_eq!(
+        eval(
+            r#"import { max } from "math"
+    max(4, 4)"#
+        )
+        .unwrap(),
+        Value::Num(4.0)
+    );
 }
 
 #[test]
 fn test_max_negative() {
-    assert_eq!(eval(r#"import { max } from "math"
-    max(-1, 1)"#).unwrap(), Value::Num(1.0));
+    assert_eq!(
+        eval(
+            r#"import { max } from "math"
+    max(-1, 1)"#
+        )
+        .unwrap(),
+        Value::Num(1.0)
+    );
 }
 
 #[test]
 fn test_max_floats() {
-    assert_eq!(eval(r#"import { max } from "math"
-    max(1.5, 1.4)"#).unwrap(), Value::Num(1.5));
+    assert_eq!(
+        eval(
+            r#"import { max } from "math"
+    max(1.5, 1.4)"#
+        )
+        .unwrap(),
+        Value::Num(1.5)
+    );
 }
 
 #[test]
 fn test_min_in_expression() {
-    assert_eq!(eval(r#"import { min } from "math"
-    min(10, 3) + 2"#).unwrap(), Value::Num(5.0));
+    assert_eq!(
+        eval(
+            r#"import { min } from "math"
+    min(10, 3) + 2"#
+        )
+        .unwrap(),
+        Value::Num(5.0)
+    );
 }
 
 #[test]
 fn test_max_in_expression() {
-    assert_eq!(eval(r#"import { max } from "math"
-    max(10, 3) * 2"#).unwrap(), Value::Num(20.0));
+    assert_eq!(
+        eval(
+            r#"import { max } from "math"
+    max(10, 3) * 2"#
+        )
+        .unwrap(),
+        Value::Num(20.0)
+    );
 }
 
 #[test]
 fn test_min_wrong_args_errors() {
-    assert!(eval(r#"import { min } from "math"
-    min(1)"#).is_err());
-    assert!(eval(r#"import { min } from "math"
-    min(1, 2, 3)"#).is_err());
+    assert!(
+        eval(
+            r#"import { min } from "math"
+    min(1)"#
+        )
+        .is_err()
+    );
+    assert!(
+        eval(
+            r#"import { min } from "math"
+    min(1, 2, 3)"#
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn test_max_wrong_args_errors() {
-    assert!(eval(r#"import { max } from "math"
-    max(1)"#).is_err());
-    assert!(eval(r#"import { max } from "math"
-    max(1, 2, 3)"#).is_err());
+    assert!(
+        eval(
+            r#"import { max } from "math"
+    max(1)"#
+        )
+        .is_err()
+    );
+    assert!(
+        eval(
+            r#"import { max } from "math"
+    max(1, 2, 3)"#
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -7522,12 +7643,18 @@ fn test_subscript_array_literal_index() {
 
 #[test]
 fn test_subscript_array_variable() {
-    assert_eq!(eval("var arr = [10, 20, 30]\narr[1]").unwrap(), Value::Num(20.0));
+    assert_eq!(
+        eval("var arr = [10, 20, 30]\narr[1]").unwrap(),
+        Value::Num(20.0)
+    );
 }
 
 #[test]
 fn test_subscript_array_variable_index() {
-    assert_eq!(eval("var arr = [10, 20, 30]\nvar i = 2\narr[i]").unwrap(), Value::Num(30.0));
+    assert_eq!(
+        eval("var arr = [10, 20, 30]\nvar i = 2\narr[i]").unwrap(),
+        Value::Num(30.0)
+    );
 }
 
 #[test]
@@ -7537,7 +7664,10 @@ fn test_subscript_array_expression_index() {
 
 #[test]
 fn test_subscript_array_in_expression() {
-    assert_eq!(eval("[10, 20, 30][0] + [10, 20, 30][1]").unwrap(), Value::Num(30.0));
+    assert_eq!(
+        eval("[10, 20, 30][0] + [10, 20, 30][1]").unwrap(),
+        Value::Num(30.0)
+    );
 }
 
 #[test]
@@ -7554,12 +7684,18 @@ fn test_subscript_array_negative_index_errors() {
 
 #[test]
 fn test_subscript_array_write() {
-    assert_eq!(eval("var arr = [1, 2, 3]\narr[0] = 99\narr[0]").unwrap(), Value::Num(99.0));
+    assert_eq!(
+        eval("var arr = [1, 2, 3]\narr[0] = 99\narr[0]").unwrap(),
+        Value::Num(99.0)
+    );
 }
 
 #[test]
 fn test_subscript_array_write_last() {
-    assert_eq!(eval("var arr = [1, 2, 3]\narr[2] = 42\narr[2]").unwrap(), Value::Num(42.0));
+    assert_eq!(
+        eval("var arr = [1, 2, 3]\narr[2] = 42\narr[2]").unwrap(),
+        Value::Num(42.0)
+    );
 }
 
 #[test]
@@ -7569,12 +7705,18 @@ fn test_subscript_array_write_out_of_bounds_errors() {
 
 #[test]
 fn test_subscript_array_compound_assign() {
-    assert_eq!(eval("var arr = [0, 0, 0]\narr[1] += 5\narr[1]").unwrap(), Value::Num(5.0));
+    assert_eq!(
+        eval("var arr = [0, 0, 0]\narr[1] += 5\narr[1]").unwrap(),
+        Value::Num(5.0)
+    );
 }
 
 #[test]
 fn test_subscript_array_compound_assign_multiply() {
-    assert_eq!(eval("var arr = [2, 3, 4]\narr[0] *= 10\narr[0]").unwrap(), Value::Num(20.0));
+    assert_eq!(
+        eval("var arr = [2, 3, 4]\narr[0] *= 10\narr[0]").unwrap(),
+        Value::Num(20.0)
+    );
 }
 
 // --- map reads ---
@@ -7586,7 +7728,10 @@ fn test_subscript_map_string_key() {
 
 #[test]
 fn test_subscript_map_variable_key() {
-    assert_eq!(eval("var key = \"b\"\nvar m = [\"a\": 1, \"b\": 2]\nm[key]").unwrap(), Value::Num(2.0));
+    assert_eq!(
+        eval("var key = \"b\"\nvar m = [\"a\": 1, \"b\": 2]\nm[key]").unwrap(),
+        Value::Num(2.0)
+    );
 }
 
 #[test]
@@ -7596,24 +7741,36 @@ fn test_subscript_map_missing_key_returns_null() {
 
 #[test]
 fn test_subscript_map_variable() {
-    assert_eq!(eval("var m = [\"x\": 10, \"y\": 20]\nm[\"x\"]").unwrap(), Value::Num(10.0));
+    assert_eq!(
+        eval("var m = [\"x\": 10, \"y\": 20]\nm[\"x\"]").unwrap(),
+        Value::Num(10.0)
+    );
 }
 
 // --- map writes ---
 
 #[test]
 fn test_subscript_map_write_existing() {
-    assert_eq!(eval("var m = [\"a\": 1]\nm[\"a\"] = 99\nm[\"a\"]").unwrap(), Value::Num(99.0));
+    assert_eq!(
+        eval("var m = [\"a\": 1]\nm[\"a\"] = 99\nm[\"a\"]").unwrap(),
+        Value::Num(99.0)
+    );
 }
 
 #[test]
 fn test_subscript_map_write_new_key() {
-    assert_eq!(eval("var m = [:]\nm[\"x\"] = 42\nm[\"x\"]").unwrap(), Value::Num(42.0));
+    assert_eq!(
+        eval("var m = [:]\nm[\"x\"] = 42\nm[\"x\"]").unwrap(),
+        Value::Num(42.0)
+    );
 }
 
 #[test]
 fn test_subscript_map_compound_assign() {
-    assert_eq!(eval("var m = [\"n\": 10]\nm[\"n\"] += 5\nm[\"n\"]").unwrap(), Value::Num(15.0));
+    assert_eq!(
+        eval("var m = [\"n\": 10]\nm[\"n\"] += 5\nm[\"n\"]").unwrap(),
+        Value::Num(15.0)
+    );
 }
 
 // --- string reads ---
@@ -7630,7 +7787,10 @@ fn test_subscript_string_last_char() {
 
 #[test]
 fn test_subscript_string_variable() {
-    assert_eq!(eval("var s = \"abc\"\ns[1]").unwrap(), Value::Str("b".into()));
+    assert_eq!(
+        eval("var s = \"abc\"\ns[1]").unwrap(),
+        Value::Str("b".into())
+    );
 }
 
 #[test]
@@ -7652,12 +7812,18 @@ fn test_subscript_nested_array() {
 
 #[test]
 fn test_subscript_nested_array_variable() {
-    assert_eq!(eval("var grid = [[1, 2], [3, 4]]\ngrid[1][0]").unwrap(), Value::Num(3.0));
+    assert_eq!(
+        eval("var grid = [[1, 2], [3, 4]]\ngrid[1][0]").unwrap(),
+        Value::Num(3.0)
+    );
 }
 
 #[test]
 fn test_subscript_chained_with_method() {
-    assert_eq!(eval(r#"["hello", "world"][1].len()"#).unwrap(), Value::Num(5.0));
+    assert_eq!(
+        eval(r#"["hello", "world"][1].len()"#).unwrap(),
+        Value::Num(5.0)
+    );
 }
 
 // --- in loops ---
@@ -7695,7 +7861,10 @@ fn test_subscript_write_in_loop() {
 
 #[test]
 fn test_subscript_spaces_in_name() {
-    assert_eq!(eval("var my array = [10, 20, 30]\nmy array[1]").unwrap(), Value::Num(20.0));
+    assert_eq!(
+        eval("var my array = [10, 20, 30]\nmy array[1]").unwrap(),
+        Value::Num(20.0)
+    );
 }
 
 // --- immutability ---
@@ -7865,11 +8034,7 @@ fn run_with_stdin(code: &str, stdin_input: &str) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let tmp = std::env::temp_dir().join(format!(
-        "gaul_test_{}_{}.gaul",
-        std::process::id(),
-        id
-    ));
+    let tmp = std::env::temp_dir().join(format!("gaul_test_{}_{}.gaul", std::process::id(), id));
     std::fs::write(&tmp, code).expect("write temp gaul file");
 
     let mut child = Command::new(GAUL_BIN)
@@ -7908,7 +8073,10 @@ fn test_read_stdin_reads_all() {
 
 #[test]
 fn test_read_stdin_multiline() {
-    let out = run_with_stdin("let s = read_stdin()\nprintln(s.lines().len())", "a\nb\nc\n");
+    let out = run_with_stdin(
+        "let s = read_stdin()\nprintln(s.lines().len())",
+        "a\nb\nc\n",
+    );
     assert_eq!(out, "3");
 }
 
@@ -8002,21 +8170,29 @@ fn eval_file(path: &Path) -> Result<Value, String> {
     let mut resolver = Resolver::new();
     let canonical = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
     let module_ctx = ModuleContext::new(Some(canonical), keywords.clone());
-    let mut interpreter = Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
+    let mut interpreter =
+        Interpreter::new(Environment::new(), RuntimeConfig::default(), module_ctx);
 
     let scanner = Scanner::new(&source, &keywords);
     let tokens = scanner.scan_tokens().map_err(|e| format!("{:?}", e))?;
     let parser = Parser::new(tokens);
     let mut program = parser.parse().map_err(|e| format!("{:?}", e))?;
-    resolver.resolve(&mut program).map_err(|e| format!("{:?}", e))?;
-    interpreter.interpret(program).map_err(|e| format!("{:?}", e))
+    resolver
+        .resolve(&mut program)
+        .map_err(|e| format!("{:?}", e))?;
+    interpreter
+        .interpret(program)
+        .map_err(|e| format!("{:?}", e))
 }
 
 #[test]
 fn test_export_and_import_fn() {
     let dir = TempDir::new();
     dir.write("math.gaul", "export fn double(x) { x * 2 }\n");
-    let main = dir.write("main.gaul", "import { double } from \"math.gaul\"\ndouble(21)\n");
+    let main = dir.write(
+        "main.gaul",
+        "import { double } from \"math.gaul\"\ndouble(21)\n",
+    );
     let result = eval_file(&main);
     match result {
         Ok(Value::Num(n)) => assert_eq!(n, 42.0),
@@ -8028,7 +8204,10 @@ fn test_export_and_import_fn() {
 fn test_export_and_import_let() {
     let dir = TempDir::new();
     dir.write("constants.gaul", "export let Pi = 3\n");
-    let main = dir.write("main.gaul", "import { Pi } from \"constants.gaul\"\nPi + 1\n");
+    let main = dir.write(
+        "main.gaul",
+        "import { Pi } from \"constants.gaul\"\nPi + 1\n",
+    );
     let result = eval_file(&main);
     match result {
         Ok(Value::Num(n)) => assert_eq!(n, 4.0),
@@ -8070,11 +8249,23 @@ fn test_circular_import_errors() {
     let dir = TempDir::new();
     let a_path = dir.path.join("a.gaul");
     let b_path = dir.path.join("b.gaul");
-    std::fs::write(&a_path, "import { bval } from \"b.gaul\"\nexport let aval = 1\n").unwrap();
-    std::fs::write(&b_path, "import { aval } from \"a.gaul\"\nexport let bval = 2\n").unwrap();
+    std::fs::write(
+        &a_path,
+        "import { bval } from \"b.gaul\"\nexport let aval = 1\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &b_path,
+        "import { aval } from \"a.gaul\"\nexport let bval = 2\n",
+    )
+    .unwrap();
     let result = eval_file(&a_path);
     match result {
-        Err(msg) => assert!(msg.contains("circular"), "expected circular error, got: {}", msg),
+        Err(msg) => assert!(
+            msg.contains("circular"),
+            "expected circular error, got: {}",
+            msg
+        ),
         Ok(v) => panic!("Expected circular import error, got {:?}", v),
     }
 }
@@ -8150,7 +8341,10 @@ fn test_relative_path_resolution() {
     std::fs::create_dir_all(&subdir).unwrap();
     std::fs::write(subdir.join("math.gaul"), "export fn triple(x) { x * 3 }\n").unwrap();
     // Main imports from the subdirectory
-    let main = dir.write("main.gaul", "import { triple } from \"lib/math.gaul\"\ntriple(7)\n");
+    let main = dir.write(
+        "main.gaul",
+        "import { triple } from \"lib/math.gaul\"\ntriple(7)\n",
+    );
     let result = eval_file(&main);
     match result {
         Ok(Value::Num(n)) => assert_eq!(n, 21.0),
@@ -8185,7 +8379,10 @@ fn test_type_of_number() {
 
 #[test]
 fn test_type_of_string() {
-    assert_eq!(eval(r#"type_of("hello")"#).unwrap(), Value::Str("string".into()));
+    assert_eq!(
+        eval(r#"type_of("hello")"#).unwrap(),
+        Value::Str("string".into())
+    );
 }
 
 #[test]
@@ -8205,7 +8402,10 @@ fn test_type_of_array() {
 
 #[test]
 fn test_type_of_map() {
-    assert_eq!(eval(r#"type_of(["a": 1])"#).unwrap(), Value::Str("map".into()));
+    assert_eq!(
+        eval(r#"type_of(["a": 1])"#).unwrap(),
+        Value::Str("map".into())
+    );
 }
 
 #[test]
@@ -8215,7 +8415,10 @@ fn test_type_of_range() {
 
 #[test]
 fn test_type_of_function() {
-    assert_eq!(eval("type_of(println)").unwrap(), Value::Str("function".into()));
+    assert_eq!(
+        eval("type_of(println)").unwrap(),
+        Value::Str("function".into())
+    );
 }
 
 #[test]
@@ -8229,7 +8432,10 @@ fn test_type_of_user_function() {
 
 #[test]
 fn test_type_of_lambda() {
-    assert_eq!(eval("type_of(fn(x) { x })").unwrap(), Value::Str("function".into()));
+    assert_eq!(
+        eval("type_of(fn(x) { x })").unwrap(),
+        Value::Str("function".into())
+    );
 }
 
 // ── stdlib "math" module ────────────────────────────────────────────────────

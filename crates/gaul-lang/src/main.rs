@@ -46,7 +46,10 @@ fn main() -> Result<()> {
         jam_karet_num: cli.jam_karet_num,
         jam_karet_str: cli.jam_karet_str,
     };
-    let current_file = cli.script.as_deref().and_then(|p| std::fs::canonicalize(p).ok());
+    let current_file = cli
+        .script
+        .as_deref()
+        .and_then(|p| std::fs::canonicalize(p).ok());
     let module_ctx = ModuleContext::new(current_file, keywords.clone());
     let mut interpreter = Interpreter::new(Environment::new(), runtime_config, module_ctx);
 

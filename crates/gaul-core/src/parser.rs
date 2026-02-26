@@ -1,6 +1,6 @@
 pub mod ast;
 
-use crate::parser::ast::DeclarationKind::{ExprStmt, Export, Fn, Import, Let, Var};
+use crate::parser::ast::DeclarationKind::{Export, ExprStmt, Fn, Import, Let, Var};
 use crate::parser::ast::ExprKind::{
     Assign, Block, Bool, Call, For, Get, Identifier, If, Index, Null, Num, Range, Return, Str,
     Unary, While,
@@ -460,7 +460,7 @@ impl Parser {
                     return Err(ParseError {
                         span,
                         message: "Invalid assignment target".to_string(),
-                    })
+                    });
                 }
             }
 
@@ -608,7 +608,10 @@ impl Parser {
     }
 
     fn factor(&mut self) -> Result<Expr, ParseError> {
-        self.binary_expression(&[TokenType::Star, TokenType::Slash, TokenType::Percent], |p| p.unary())
+        self.binary_expression(
+            &[TokenType::Star, TokenType::Slash, TokenType::Percent],
+            |p| p.unary(),
+        )
     }
 
     fn unary(&mut self) -> Result<Expr, ParseError> {
