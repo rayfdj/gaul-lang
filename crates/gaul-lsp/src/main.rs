@@ -438,24 +438,13 @@ fn find_import_insertion_line(source: &str) -> u32 {
     }
 }
 
-/// Compute a relative module path from one file to another, stripping the .gaul extension.
+/// Compute a relative module path from one file to another, keeping .gaul extension.
 fn relative_module_path(from: &Path, to: &Path) -> Option<String> {
     let from_dir = from.parent()?;
-    let to_dir = to.parent()?;
-    let to_stem = to.file_stem()?.to_str()?;
-
-    // If same directory, just use the filename stem
-    if from_dir == to_dir {
-        return Some(to_stem.to_string());
-    }
 
     // Try to make a relative path
     if let Ok(rel) = to.strip_prefix(from_dir) {
-        let mut path = rel.to_string_lossy().to_string();
-        if path.ends_with(".gaul") {
-            path.truncate(path.len() - 5);
-        }
-        return Some(path);
+        return Some(import_path_string(rel));
     }
 
     // Fall back: compute relative by walking up from `from_dir`
@@ -463,17 +452,22 @@ fn relative_module_path(from: &Path, to: &Path) -> Option<String> {
     let mut ancestor = from_dir.parent();
     while let Some(anc) = ancestor {
         if let Ok(rel) = to.strip_prefix(anc) {
-            let mut path = prefix.join(rel).to_string_lossy().to_string();
-            if path.ends_with(".gaul") {
-                path.truncate(path.len() - 5);
-            }
-            return Some(path);
+            return Some(import_path_string(&prefix.join(rel)));
         }
         prefix = prefix.join("..");
         ancestor = anc.parent();
     }
 
     None
+}
+
+fn import_path_string(path: &Path) -> String {
+    // Gaul module strings should always use forward slashes, even on Windows.
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn escape_gaul_string_literal(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 /// Generate parameter name inlay hints for function/method call sites.
@@ -1625,7 +1619,11 @@ impl LanguageServer for Backend {
                     .map(find_import_insertion_line)
                     .unwrap_or(0);
 
-                let import_text = format!("import {{ {} }} from \"{}\"\n", name, module_path);
+                let import_text = format!(
+                    "import {{ {} }} from \"{}\"\n",
+                    name,
+                    escape_gaul_string_literal(&module_path)
+                );
 
                 let edit = TextEdit {
                     range: Range {
@@ -1638,13 +1636,8 @@ impl LanguageServer for Backend {
                 let mut changes = HashMap::new();
                 changes.insert(uri.clone(), vec![edit]);
 
-                let filename = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or(&module_path);
-
                 actions.push(CodeActionOrCommand::CodeAction(CodeAction {
-                    title: format!("Import '{}' from \"{}\"", name, filename),
+                    title: format!("Import '{}' from \"{}\"", name, module_path),
                     kind: Some(CodeActionKind::QUICKFIX),
                     diagnostics: Some(vec![diag.clone()]),
                     edit: Some(WorkspaceEdit {
@@ -2188,7 +2181,10 @@ mod tests {
     fn relative_module_path_same_dir() {
         let from = Path::new("/project/src/main.gaul");
         let to = Path::new("/project/src/utils.gaul");
-        assert_eq!(relative_module_path(from, to), Some("utils".to_string()));
+        assert_eq!(
+            relative_module_path(from, to),
+            Some("utils.gaul".to_string())
+        );
     }
 
     #[test]
@@ -2197,7 +2193,7 @@ mod tests {
         let to = Path::new("/project/src/lib/helpers.gaul");
         assert_eq!(
             relative_module_path(from, to),
-            Some("lib/helpers".to_string())
+            Some("lib/helpers.gaul".to_string())
         );
     }
 
@@ -2205,6 +2201,25 @@ mod tests {
     fn relative_module_path_parent_dir() {
         let from = Path::new("/project/src/sub/main.gaul");
         let to = Path::new("/project/src/utils.gaul");
-        assert_eq!(relative_module_path(from, to), Some("../utils".to_string()));
+        assert_eq!(
+            relative_module_path(from, to),
+            Some("../utils.gaul".to_string())
+        );
+    }
+
+    #[test]
+    fn import_path_string_normalizes_backslashes() {
+        assert_eq!(
+            import_path_string(Path::new("lib\\helpers.gaul")),
+            "lib/helpers.gaul"
+        );
+    }
+
+    #[test]
+    fn escape_gaul_string_literal_escapes_quotes_and_backslashes() {
+        assert_eq!(
+            escape_gaul_string_literal("lib\\foo\"bar.gaul"),
+            "lib\\\\foo\\\"bar.gaul"
+        );
     }
 }
