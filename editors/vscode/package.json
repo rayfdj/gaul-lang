@@ -39,6 +39,11 @@
           "type": "string",
           "default": "",
           "description": "Path to the gaul-lsp binary. Leave empty to auto-detect from cargo build output or PATH."
+        },
+        "gaul.inlayHints.parameterNames.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show parameter name hints at function call sites."
         }
       }
     }
@@ -50,7 +55,10 @@
     "gaul",
     "programming language",
     "spaces in identifiers",
-    "custom keywords"
+    "custom keywords",
+    "lsp",
+    "rename",
+    "inlay hints"
   ],
   "author": "",
   "license": "MIT",

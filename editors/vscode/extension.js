@@ -41,6 +41,9 @@ function activate(context) {
 
   const clientOptions = {
     documentSelector: [{ scheme: "file", language: "gaul" }],
+    initializationOptions: {
+      inlayHints: config.get("inlayHints.parameterNames.enabled", true),
+    },
   };
 
   client = new LanguageClient(
