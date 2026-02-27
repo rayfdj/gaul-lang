@@ -719,20 +719,22 @@ Settings:
 
 ### Neovim
 
-Install the plugin from `editors/neovim/`. It gives you filetype detection, syntax highlighting, and proper editor settings out of the box.
-
-With **lazy.nvim**:
+Install via any plugin manager to get filetype detection, syntax highlighting, and editor settings:
 
 ```lua
-{
-  'yourusername/gaul-lang',
-  config = function(plugin)
-    vim.opt.rtp:append(plugin.dir .. '/editors/neovim')
-  end,
-}
+-- lazy.nvim
+{ 'rayfdj/gaul-lang' }
+
+-- packer
+use 'rayfdj/gaul-lang'
 ```
 
-Then configure the LSP separately (nvim-lspconfig or native `vim.lsp.config`). See [`editors/neovim/README.md`](editors/neovim/README.md) for full setup instructions including LSP configuration and inlay hints.
+```vim
+" vim-plug
+Plug 'rayfdj/gaul-lang'
+```
+
+Then configure the LSP separately (nvim-lspconfig or native `vim.lsp.config`). See [`editors/neovim/README.md`](editors/neovim/README.md) for full LSP setup instructions.
 
 ### LSP Features
 

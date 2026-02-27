@@ -7,35 +7,27 @@ Syntax highlighting and filetype settings for [Gaul](../../README.md) in Neovim 
 ### lazy.nvim
 
 ```lua
-{
-  'yourusername/gaul-lang',
-  config = function(plugin)
-    vim.opt.rtp:append(plugin.dir .. '/editors/neovim')
-  end,
-}
+{ 'rayfdj/gaul-lang' }
 ```
 
 ### packer
 
 ```lua
-use {
-  'yourusername/gaul-lang',
-  rtp = 'editors/neovim',
-}
+use 'rayfdj/gaul-lang'
 ```
 
 ### vim-plug
 
 ```vim
-Plug 'yourusername/gaul-lang', { 'rtp': 'editors/neovim' }
+Plug 'rayfdj/gaul-lang'
 ```
 
 ### Manual
 
-Clone the repo and add the plugin path to your config:
+Clone the repo and add it to your runtimepath:
 
 ```lua
-vim.opt.rtp:prepend('/path/to/gaul-lang/editors/neovim')
+vim.opt.rtp:prepend('/path/to/gaul-lang')
 ```
 
 ## LSP Setup
