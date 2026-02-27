@@ -510,6 +510,61 @@ fn local_module_completion_label(current_file: &Path, candidate: &Path) -> Optio
         .map(ToString::to_string)
 }
 
+fn completion_kind_rank(kind: Option<CompletionItemKind>) -> u8 {
+    match kind {
+        Some(CompletionItemKind::MODULE) => 0,
+        Some(CompletionItemKind::FILE) => 1,
+        Some(CompletionItemKind::METHOD) => 2,
+        Some(CompletionItemKind::FUNCTION) => 3,
+        Some(CompletionItemKind::VARIABLE) => 4,
+        Some(CompletionItemKind::CONSTANT) => 5,
+        Some(CompletionItemKind::KEYWORD) => 6,
+        _ => 7,
+    }
+}
+
+fn normalize_completion_items(items: &mut Vec<CompletionItem>) {
+    let mut seen = HashSet::new();
+    items.retain(|item| seen.insert((completion_kind_rank(item.kind), item.label.to_lowercase())));
+    items.sort_by(|a, b| {
+        completion_kind_rank(a.kind)
+            .cmp(&completion_kind_rank(b.kind))
+            .then_with(|| a.label.to_lowercase().cmp(&b.label.to_lowercase()))
+            .then_with(|| a.label.cmp(&b.label))
+    });
+}
+
+fn normalize_workspace_symbols(symbols: &mut [SymbolInformation]) {
+    symbols.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then_with(|| a.location.uri.as_str().cmp(b.location.uri.as_str()))
+            .then_with(|| {
+                a.location
+                    .range
+                    .start
+                    .line
+                    .cmp(&b.location.range.start.line)
+            })
+            .then_with(|| {
+                a.location
+                    .range
+                    .start
+                    .character
+                    .cmp(&b.location.range.start.character)
+            })
+    });
+}
+
+fn clamp_active_parameter(active: u32, param_count: usize) -> Option<u32> {
+    if param_count == 0 {
+        None
+    } else {
+        Some(active.min((param_count - 1) as u32))
+    }
+}
+
 /// Generate parameter name inlay hints for function/method call sites.
 fn compute_inlay_hints(
     tokens: &[Token],
@@ -1370,7 +1425,7 @@ impl LanguageServer for Backend {
 
         // (A) Dot completion — return all methods
         if trigger == Some(".") {
-            let items: Vec<CompletionItem> = NATIVE_METHODS
+            let mut items: Vec<CompletionItem> = NATIVE_METHODS
                 .iter()
                 .map(|m| {
                     let sig = format!("{}.{}{}", m.receiver_type, m.name, m.params);
@@ -1383,6 +1438,7 @@ impl LanguageServer for Backend {
                     }
                 })
                 .collect();
+            normalize_completion_items(&mut items);
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
@@ -1437,6 +1493,7 @@ impl LanguageServer for Backend {
                     }
                 }
 
+                normalize_completion_items(&mut items);
                 return Ok(Some(CompletionResponse::Array(items)));
             }
         }
@@ -1487,6 +1544,7 @@ impl LanguageServer for Backend {
             });
         }
 
+        normalize_completion_items(&mut items);
         Ok(Some(CompletionResponse::Array(items)))
     }
 
@@ -1794,17 +1852,19 @@ impl LanguageServer for Backend {
             })
             .collect();
 
+        let active_parameter = clamp_active_parameter(active_param, param_names.len());
+
         let sig = SignatureInformation {
             label,
             documentation: None,
             parameters: Some(parameters),
-            active_parameter: Some(active_param),
+            active_parameter,
         };
 
         Ok(Some(SignatureHelp {
             signatures: vec![sig],
             active_signature: Some(0),
-            active_parameter: Some(active_param),
+            active_parameter,
         }))
     }
 
@@ -1896,7 +1956,7 @@ impl LanguageServer for Backend {
         let query = params.query.to_lowercase();
         let index = self.workspace_index.lock().unwrap();
 
-        let symbols: Vec<SymbolInformation> = index
+        let mut symbols: Vec<SymbolInformation> = index
             .iter()
             .flat_map(|(path, file_idx)| {
                 let uri = Url::from_file_path(path).ok();
@@ -1927,6 +1987,7 @@ impl LanguageServer for Backend {
             })
             .collect();
 
+        normalize_workspace_symbols(&mut symbols);
         Ok(Some(symbols))
     }
 }
@@ -2348,5 +2409,77 @@ mod tests {
             workspace_root_from_initialize(&params),
             Some(PathBuf::from("/project/folder"))
         );
+    }
+
+    #[test]
+    fn clamp_active_parameter_bounds() {
+        assert_eq!(clamp_active_parameter(0, 0), None);
+        assert_eq!(clamp_active_parameter(0, 2), Some(0));
+        assert_eq!(clamp_active_parameter(5, 2), Some(1));
+    }
+
+    #[test]
+    fn normalize_completion_items_sorts_and_deduplicates() {
+        let mut items = vec![
+            CompletionItem {
+                label: "println".to_string(),
+                kind: Some(CompletionItemKind::FUNCTION),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: "println".to_string(),
+                kind: Some(CompletionItemKind::FUNCTION),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: "math".to_string(),
+                kind: Some(CompletionItemKind::MODULE),
+                ..Default::default()
+            },
+            CompletionItem {
+                label: "alpha".to_string(),
+                kind: Some(CompletionItemKind::VARIABLE),
+                ..Default::default()
+            },
+        ];
+
+        normalize_completion_items(&mut items);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].label, "math");
+        assert_eq!(items[1].label, "println");
+        assert_eq!(items[2].label, "alpha");
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn normalize_workspace_symbols_sorts_stably() {
+        let mut symbols = vec![
+            SymbolInformation {
+                name: "beta".to_string(),
+                kind: SymbolKind::VARIABLE,
+                tags: None,
+                deprecated: None,
+                location: Location {
+                    uri: Url::parse("file:///b.gaul").unwrap(),
+                    range: Range::new(Position::new(0, 0), Position::new(0, 1)),
+                },
+                container_name: None,
+            },
+            SymbolInformation {
+                name: "Alpha".to_string(),
+                kind: SymbolKind::VARIABLE,
+                tags: None,
+                deprecated: None,
+                location: Location {
+                    uri: Url::parse("file:///a.gaul").unwrap(),
+                    range: Range::new(Position::new(0, 0), Position::new(0, 1)),
+                },
+                container_name: None,
+            },
+        ];
+
+        normalize_workspace_symbols(&mut symbols);
+        assert_eq!(symbols[0].name, "Alpha");
+        assert_eq!(symbols[1].name, "beta");
     }
 }
