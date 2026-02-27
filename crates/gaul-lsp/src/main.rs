@@ -618,6 +618,16 @@ fn normalize_workspace_symbols(symbols: &mut [SymbolInformation]) {
     });
 }
 
+fn workspace_server_capabilities() -> WorkspaceServerCapabilities {
+    WorkspaceServerCapabilities {
+        workspace_folders: Some(WorkspaceFoldersServerCapabilities {
+            supported: Some(true),
+            change_notifications: Some(OneOf::Left(true)),
+        }),
+        file_operations: None,
+    }
+}
+
 fn clamp_active_parameter(active: u32, param_count: usize) -> Option<u32> {
     if param_count == 0 {
         None
@@ -884,7 +894,13 @@ fn walk_gaul_files(dir: &Path, files: &mut Vec<PathBuf>) {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str())
                 && !name.starts_with('.')
                 && name != "target"
@@ -892,7 +908,7 @@ fn walk_gaul_files(dir: &Path, files: &mut Vec<PathBuf>) {
             {
                 walk_gaul_files(&path, files);
             }
-        } else if path.extension().is_some_and(|e| e == "gaul") {
+        } else if file_type.is_file() && path.extension().is_some_and(|e| e == "gaul") {
             files.push(path);
         }
     }
@@ -1194,6 +1210,7 @@ impl LanguageServer for Backend {
                         resolve_provider: None,
                     },
                 )),
+                workspace: Some(workspace_server_capabilities()),
                 ..Default::default()
             },
             ..Default::default()
@@ -2642,5 +2659,56 @@ mod tests {
         normalize_workspace_symbols(&mut symbols);
         assert_eq!(symbols[0].name, "Alpha");
         assert_eq!(symbols[1].name, "beta");
+    }
+
+    #[test]
+    fn workspace_server_capabilities_enable_folder_change_notifications() {
+        let caps = workspace_server_capabilities();
+        let folders = caps
+            .workspace_folders
+            .expect("workspace folders capability should be present");
+        assert_eq!(folders.supported, Some(true));
+        assert_eq!(folders.change_notifications, Some(OneOf::Left(true)));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn walk_gaul_files_ignores_symlinked_directories() {
+        use std::fs;
+        use std::os::unix::fs::symlink;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        let tmp = std::env::temp_dir();
+        let workspace = tmp.join(format!(
+            "gaul_lsp_walk_workspace_{}_{}",
+            std::process::id(),
+            nonce
+        ));
+        let outside = tmp.join(format!(
+            "gaul_lsp_walk_outside_{}_{}",
+            std::process::id(),
+            nonce
+        ));
+
+        fs::create_dir_all(&workspace).expect("workspace dir should be created");
+        fs::create_dir_all(&outside).expect("outside dir should be created");
+        fs::write(outside.join("secret.gaul"), "export let secret = 1")
+            .expect("outside file should be created");
+        symlink(&outside, workspace.join("linked_outside")).expect("symlink should be created");
+
+        let mut files = Vec::new();
+        walk_gaul_files(&workspace, &mut files);
+        assert!(
+            files.is_empty(),
+            "symlinked external directories should not be traversed"
+        );
+
+        fs::remove_file(workspace.join("linked_outside")).expect("symlink should be removed");
+        fs::remove_dir_all(&workspace).expect("workspace dir should be removed");
+        fs::remove_dir_all(&outside).expect("outside dir should be removed");
     }
 }
