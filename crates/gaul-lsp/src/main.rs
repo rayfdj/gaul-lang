@@ -336,6 +336,84 @@ fn resolve_token_to_def<'a>(
     None
 }
 
+/// Parse parameter names from a params string like "(a, b, c)" or "a, b, c".
+fn parse_param_names(params_str: &str) -> Vec<String> {
+    let s = params_str.trim();
+    let s = s.strip_prefix('(').unwrap_or(s);
+    let s = s.strip_suffix(')').unwrap_or(s);
+    if s.trim().is_empty() {
+        return Vec::new();
+    }
+    s.split(',').map(|p| p.trim().to_string()).collect()
+}
+
+/// Find the call context at the cursor position by walking backwards through tokens.
+/// Returns (function_name, is_method, active_param_index).
+fn find_call_context(tokens: &[Token], pos: Position) -> Option<(String, bool, u32)> {
+    let line = pos.line as usize + 1;
+    let col = pos.character as usize + 1;
+
+    // Find token index at or just before cursor
+    let mut cursor_idx = None;
+    for (i, t) in tokens.iter().enumerate() {
+        if t.span.line > line || (t.span.line == line && t.span.col > col) {
+            break;
+        }
+        cursor_idx = Some(i);
+    }
+    let cursor_idx = cursor_idx?;
+
+    // Walk backwards to find the opening paren, tracking bracket depth
+    let mut depth: i32 = 0;
+    let mut comma_count: u32 = 0;
+    let mut open_paren_idx = None;
+
+    for i in (0..=cursor_idx).rev() {
+        match &tokens[i].token_type {
+            TokenType::RightParen | TokenType::RightBracket | TokenType::RightBrace => {
+                depth += 1;
+            }
+            TokenType::LeftBracket | TokenType::LeftBrace => {
+                if depth > 0 {
+                    depth -= 1;
+                } else {
+                    return None; // Inside brackets, not a call
+                }
+            }
+            TokenType::LeftParen => {
+                if depth > 0 {
+                    depth -= 1;
+                } else {
+                    open_paren_idx = Some(i);
+                    break;
+                }
+            }
+            TokenType::Comma if depth == 0 => {
+                comma_count += 1;
+            }
+            _ => {}
+        }
+    }
+
+    let paren_idx = open_paren_idx?;
+    if paren_idx == 0 {
+        return None;
+    }
+
+    // The identifier before the opening paren is the function name
+    let name_idx = paren_idx - 1;
+    if tokens[name_idx].token_type != TokenType::Identifier {
+        return None;
+    }
+
+    let func_name = tokens[name_idx].lexeme.clone();
+
+    // Check if this is a method call (dot before the identifier)
+    let is_method = name_idx > 0 && tokens[name_idx - 1].token_type == TokenType::Dot;
+
+    Some((func_name, is_method, comma_count))
+}
+
 fn encode_semantic_tokens(tokens: &[Token], symbols: Option<&SymbolTable>) -> Vec<SemanticToken> {
     let ref_map = symbols.map(build_ref_map);
 
@@ -740,6 +818,11 @@ impl LanguageServer for Backend {
                     prepare_provider: Some(true),
                     work_done_progress_options: WorkDoneProgressOptions::default(),
                 })),
+                signature_help_provider: Some(SignatureHelpOptions {
+                    trigger_characters: Some(vec!["(".into(), ",".into()]),
+                    retrigger_characters: None,
+                    work_done_progress_options: WorkDoneProgressOptions::default(),
+                }),
                 ..Default::default()
             },
             ..Default::default()
@@ -1259,6 +1342,69 @@ impl LanguageServer for Backend {
         )))
     }
 
+    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+
+        let docs = self.documents.lock().unwrap();
+        let Some(doc) = docs.get(&uri) else {
+            return Ok(None);
+        };
+
+        let Some((func_name, is_method, active_param)) = find_call_context(&doc.tokens, pos) else {
+            return Ok(None);
+        };
+
+        // Look up signature: native methods, native functions, user-defined functions
+        let (label, param_names) = if is_method {
+            let Some(method) = NATIVE_METHODS.iter().find(|m| m.name == func_name) else {
+                return Ok(None);
+            };
+            let label = format!("{}.{}{}", method.receiver_type, method.name, method.params);
+            let params = parse_param_names(method.params);
+            (label, params)
+        } else if let Some(info) = NATIVE_FUNCTIONS_INFO.iter().find(|f| f.name == func_name) {
+            let label = format!("{}{}", info.name, info.params);
+            let params = parse_param_names(info.params);
+            (label, params)
+        } else if let Some(symbols) = &doc.symbols {
+            // User-defined function
+            if let Some(def) = symbols
+                .definitions
+                .iter()
+                .find(|d| d.kind == analysis::SymbolKind::Function && d.name == func_name)
+            {
+                let params = parse_param_names(&def.detail[def.detail.find('(').unwrap_or(0)..]);
+                (def.detail.clone(), params)
+            } else {
+                return Ok(None);
+            }
+        } else {
+            return Ok(None);
+        };
+
+        let parameters: Vec<ParameterInformation> = param_names
+            .iter()
+            .map(|name| ParameterInformation {
+                label: ParameterLabel::Simple(name.clone()),
+                documentation: None,
+            })
+            .collect();
+
+        let sig = SignatureInformation {
+            label,
+            documentation: None,
+            parameters: Some(parameters),
+            active_parameter: Some(active_param),
+        };
+
+        Ok(Some(SignatureHelp {
+            signatures: vec![sig],
+            active_signature: Some(0),
+            active_parameter: Some(active_param),
+        }))
+    }
+
     async fn prepare_rename(
         &self,
         params: TextDocumentPositionParams,
@@ -1586,5 +1732,47 @@ mod tests {
         // Cursor on "let" keyword (Position(0, 0))
         let result = resolve_token_to_def(&tokens, &symbols, Position::new(0, 0));
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_param_names_basic() {
+        assert_eq!(parse_param_names("(a, b, c)"), vec!["a", "b", "c"]);
+        assert_eq!(parse_param_names("(x)"), vec!["x"]);
+        assert!(parse_param_names("()").is_empty());
+        assert_eq!(parse_param_names("a, b"), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn find_call_context_simple() {
+        let tokens = scan("println(x, y)");
+        // Cursor after first comma: on 'y' at col 12 (0-indexed 11)
+        let result = find_call_context(&tokens, Position::new(0, 11));
+        assert!(result.is_some());
+        let (name, is_method, param_idx) = result.unwrap();
+        assert_eq!(name, "println");
+        assert!(!is_method);
+        assert_eq!(param_idx, 1);
+    }
+
+    #[test]
+    fn find_call_context_method() {
+        let tokens = scan("x.split(\",\")");
+        // Cursor inside the parens
+        let result = find_call_context(&tokens, Position::new(0, 10));
+        assert!(result.is_some());
+        let (name, is_method, _) = result.unwrap();
+        assert_eq!(name, "split");
+        assert!(is_method);
+    }
+
+    #[test]
+    fn find_call_context_nested() {
+        let tokens = scan("foo(bar(1), 2)");
+        // Cursor on '2' at col 13 (0-indexed 12)
+        let result = find_call_context(&tokens, Position::new(0, 12));
+        assert!(result.is_some());
+        let (name, _, param_idx) = result.unwrap();
+        assert_eq!(name, "foo");
+        assert_eq!(param_idx, 1);
     }
 }
