@@ -414,6 +414,160 @@ fn find_call_context(tokens: &[Token], pos: Position) -> Option<(String, bool, u
     Some((func_name, is_method, comma_count))
 }
 
+/// Generate parameter name inlay hints for function/method call sites.
+fn compute_inlay_hints(
+    tokens: &[Token],
+    symbols: Option<&SymbolTable>,
+    range: &Range,
+) -> Vec<InlayHint> {
+    let mut hints = Vec::new();
+
+    let mut i = 0;
+    while i < tokens.len() {
+        // Look for Identifier followed by LeftParen (call site)
+        if tokens[i].token_type == TokenType::Identifier
+            && i + 1 < tokens.len()
+            && tokens[i + 1].token_type == TokenType::LeftParen
+        {
+            let func_name = &tokens[i].lexeme;
+            let is_method = i > 0 && tokens[i - 1].token_type == TokenType::Dot;
+            let paren_idx = i + 1;
+
+            // Look up param names
+            let param_names = if is_method {
+                NATIVE_METHODS
+                    .iter()
+                    .find(|m| m.name == func_name.as_str())
+                    .map(|m| parse_param_names(m.params))
+            } else if let Some(info) = NATIVE_FUNCTIONS_INFO
+                .iter()
+                .find(|f| f.name == func_name.as_str())
+            {
+                Some(parse_param_names(info.params))
+            } else if let Some(syms) = symbols {
+                syms.definitions
+                    .iter()
+                    .find(|d| d.kind == analysis::SymbolKind::Function && d.name == *func_name)
+                    .map(|d| parse_param_names(&d.detail[d.detail.find('(').unwrap_or(0)..]))
+            } else {
+                None
+            };
+
+            let Some(param_names) = param_names else {
+                i += 1;
+                continue;
+            };
+
+            if param_names.is_empty() {
+                i += 1;
+                continue;
+            }
+
+            // Walk arguments inside parens: split by commas at depth 0
+            let mut depth = 0;
+            let mut param_idx = 0;
+            let mut j = paren_idx + 1; // skip the opening paren
+            let mut arg_start = j;
+
+            while j < tokens.len() && param_idx < param_names.len() {
+                match &tokens[j].token_type {
+                    TokenType::LeftParen | TokenType::LeftBracket | TokenType::LeftBrace => {
+                        depth += 1;
+                    }
+                    TokenType::RightParen | TokenType::RightBracket | TokenType::RightBrace => {
+                        if depth > 0 {
+                            depth -= 1;
+                        } else {
+                            // End of call - emit hint for last arg if needed
+                            if arg_start < j {
+                                emit_param_hint(
+                                    tokens,
+                                    arg_start,
+                                    &param_names,
+                                    param_idx,
+                                    range,
+                                    &mut hints,
+                                );
+                            }
+                            break;
+                        }
+                    }
+                    TokenType::Comma if depth == 0 => {
+                        if arg_start < j {
+                            emit_param_hint(
+                                tokens,
+                                arg_start,
+                                &param_names,
+                                param_idx,
+                                range,
+                                &mut hints,
+                            );
+                        }
+                        param_idx += 1;
+                        arg_start = j + 1;
+                    }
+                    _ => {}
+                }
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+
+    hints
+}
+
+/// Emit a parameter hint at the start of an argument, skipping if the argument
+/// identifier already matches the parameter name.
+fn emit_param_hint(
+    tokens: &[Token],
+    arg_start_idx: usize,
+    param_names: &[String],
+    param_idx: usize,
+    range: &Range,
+    hints: &mut Vec<InlayHint>,
+) {
+    if param_idx >= param_names.len() {
+        return;
+    }
+
+    // Skip whitespace/newline tokens to find the actual first token of the argument
+    let first_token = tokens[arg_start_idx..].iter().find(|t| {
+        t.token_type != TokenType::Newline && !matches!(t.token_type, TokenType::Comment)
+    });
+    let Some(first_token) = first_token else {
+        return;
+    };
+
+    // Skip if the argument is just an identifier matching the param name
+    if first_token.token_type == TokenType::Identifier
+        && first_token.lexeme == param_names[param_idx]
+    {
+        return;
+    }
+
+    let hint_pos = Position::new(
+        first_token.span.line.saturating_sub(1) as u32,
+        first_token.span.col.saturating_sub(1) as u32,
+    );
+
+    // Only emit if within requested range
+    if hint_pos.line < range.start.line || hint_pos.line > range.end.line {
+        return;
+    }
+
+    hints.push(InlayHint {
+        position: hint_pos,
+        label: InlayHintLabel::String(format!("{}: ", param_names[param_idx])),
+        kind: Some(InlayHintKind::PARAMETER),
+        text_edits: None,
+        tooltip: None,
+        padding_left: None,
+        padding_right: None,
+        data: None,
+    });
+}
+
 fn encode_semantic_tokens(tokens: &[Token], symbols: Option<&SymbolTable>) -> Vec<SemanticToken> {
     let ref_map = symbols.map(build_ref_map);
 
@@ -823,6 +977,7 @@ impl LanguageServer for Backend {
                     retrigger_characters: None,
                     work_done_progress_options: WorkDoneProgressOptions::default(),
                 }),
+                inlay_hint_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -1342,6 +1497,19 @@ impl LanguageServer for Backend {
         )))
     }
 
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        let uri = params.text_document.uri;
+        let range = params.range;
+
+        let docs = self.documents.lock().unwrap();
+        let Some(doc) = docs.get(&uri) else {
+            return Ok(None);
+        };
+
+        let hints = compute_inlay_hints(&doc.tokens, doc.symbols.as_ref(), &range);
+        Ok(Some(hints))
+    }
+
     async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
@@ -1774,5 +1942,47 @@ mod tests {
         let (name, _, param_idx) = result.unwrap();
         assert_eq!(name, "foo");
         assert_eq!(param_idx, 1);
+    }
+
+    fn full_range() -> Range {
+        Range {
+            start: Position::new(0, 0),
+            end: Position::new(1000, 0),
+        }
+    }
+
+    fn hint_label_str(hint: &InlayHint) -> &str {
+        match &hint.label {
+            InlayHintLabel::String(s) => s,
+            _ => panic!("expected string label"),
+        }
+    }
+
+    #[test]
+    fn inlay_hints_native_call() {
+        let tokens = scan("println(42)");
+        let hints = compute_inlay_hints(&tokens, None, &full_range());
+        assert_eq!(hints.len(), 1);
+        assert_eq!(hint_label_str(&hints[0]), "value: ");
+    }
+
+    #[test]
+    fn inlay_hints_skip_matching_name() {
+        let source = "fn greet(name) {\n  println(name)\n}";
+        let (tokens, symbols) = analyze_source(source);
+        let hints = compute_inlay_hints(&tokens, Some(&symbols), &full_range());
+        let println_hints: Vec<_> = hints.iter().filter(|h| h.position.line == 1).collect();
+        assert_eq!(println_hints.len(), 1);
+    }
+
+    #[test]
+    fn inlay_hints_user_function() {
+        let source = "fn add(a, b) {\n  a + b\n}\nadd(1, 2)";
+        let (tokens, symbols) = analyze_source(source);
+        let hints = compute_inlay_hints(&tokens, Some(&symbols), &full_range());
+        let call_hints: Vec<_> = hints.iter().filter(|h| h.position.line == 3).collect();
+        assert_eq!(call_hints.len(), 2);
+        assert_eq!(hint_label_str(call_hints[0]), "a: ");
+        assert_eq!(hint_label_str(call_hints[1]), "b: ");
     }
 }
