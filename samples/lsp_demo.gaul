@@ -1,0 +1,159 @@
+// ============================================================
+// LSP Feature Demo
+// ============================================================
+// Open this file in VS Code or Neovim with gaul-lsp running
+// to see all the LSP features in action.
+//
+// TIP: These consecutive comment lines fold into one block.
+
+// ----------------------------------------------------------
+// SEMANTIC HIGHLIGHTING
+// ----------------------------------------------------------
+// Keywords, variables, functions, parameters, strings,
+// numbers, and operators all get distinct colors.
+
+let Greeting = "hello"
+var Counter = 0
+let Pi = 3.14159
+let Active = true
+
+// ----------------------------------------------------------
+// DOCUMENT SYMBOLS (Ctrl+Shift+O in VS Code)
+// ----------------------------------------------------------
+// The outline panel shows all top-level functions and
+// variables defined in this file.
+
+fn Calculate Distance(X1, Y1, X2, Y2) {
+    let Dx = X2 - X1
+    let Dy = Y2 - Y1
+    (Dx * Dx + Dy * Dy).sqrt()
+}
+
+fn Greet(Name, Times) {
+    for(I : 1..Times + 1) {
+        println(format("{}: hello, {}!", I, Name))
+    }
+}
+
+fn Make Point(X, Y) {
+    ["x": X, "y": Y]
+}
+
+// ----------------------------------------------------------
+// INLAY HINTS
+// ----------------------------------------------------------
+// Parameter name labels appear at each argument.
+// Try: the calls below show hints like  X1: 0,  Y1: 0, etc.
+// Notice "Distance" gets NO hint on Greet because the arg
+// name doesn't match the param name.
+
+let Distance = Calculate Distance(0, 0, 3, 4)
+let Origin = Make Point(0, 0)
+
+Greet("world", 3)
+
+// Arguments that match param names suppress the hint:
+let Name = "gaul"
+let Times = 2
+Greet(Name, Times)
+
+// Native function calls get hints too:
+println(Distance)
+print(format("Pi is roughly {}\n", Pi))
+
+// ----------------------------------------------------------
+// SIGNATURE HELP
+// ----------------------------------------------------------
+// Place your cursor inside any of these parens and type a
+// comma — you'll see the function signature with the active
+// parameter highlighted.
+//
+// Try typing a new call:
+//   Calculate Distance(
+//   format(
+//   println(
+
+// ----------------------------------------------------------
+// RENAME SYMBOL (F2)
+// ----------------------------------------------------------
+// Put your cursor on "Counter" and press F2. All three
+// usages below update together. Works on functions and
+// parameters too — try renaming "Greet" or "Calculate Distance".
+
+Counter = Counter + 1
+println(Counter)
+
+// ----------------------------------------------------------
+// GO TO DEFINITION (F12 / Ctrl+Click)
+// ----------------------------------------------------------
+// Click on any variable or function reference to jump to
+// where it's defined. Try it on Distance, Greet, or Counter.
+
+let D2 = Calculate Distance(1, 1, 4, 5)
+println(D2)
+
+// ----------------------------------------------------------
+// HOVER (hold mouse over a symbol)
+// ----------------------------------------------------------
+// Hover over keywords like "let", "fn", "for" for descriptions.
+// Hover over variables to see their binding (e.g. "let Distance").
+// Hover over native functions like println for full docs.
+// Hover over methods like .sqrt() or .len() for all overloads.
+
+let Message = "hover over me"
+println(Message.len())
+println(Message.to_upper())
+
+// ----------------------------------------------------------
+// FOLDING
+// ----------------------------------------------------------
+// The blocks below can be collapsed in the editor gutter.
+// Arrays, maps, and nested blocks all fold independently.
+
+let Matrix = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1]
+]
+
+fn Process(Items) {
+    let Result = Items.filter(fn(X) { X > 0 }).map(fn(X) { X * 2 })
+    if(Result.len() > 0) {
+        Result.sum()
+    } else {
+        0
+    }
+}
+
+println(Process([1, -2, 3, -4, 5]))
+
+// ----------------------------------------------------------
+// SELECTION RANGES (Shift+Alt+Right to expand)
+// ----------------------------------------------------------
+// Put your cursor on a number inside the nested array above
+// and expand selection repeatedly — it grows from token to
+// array contents to array brackets to outer array to let
+// statement to the whole document.
+
+// ----------------------------------------------------------
+// COMPLETIONS
+// ----------------------------------------------------------
+// Start typing a variable, function, or keyword name and
+// completions appear. After a dot (like "Message.") you get
+// method completions. Inside import paths (after "from ")
+// you get file completions.
+
+// ----------------------------------------------------------
+// CODE ACTION — AUTO IMPORT
+// ----------------------------------------------------------
+// Uncomment the line below. The undefined variable "Clamp"
+// triggers a quick-fix that offers to add an import from
+// lsp_helper.gaul.
+//
+// let Clamped = Clamp(150, 0, 100)
+
+// ----------------------------------------------------------
+// RUN IT
+// ----------------------------------------------------------
+// This file is a valid Gaul program. Run it with:
+//   ./target/release/gaul-lang samples/lsp_demo.gaul

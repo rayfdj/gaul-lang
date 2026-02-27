@@ -1,0 +1,10 @@
+// Helper module for the LSP demo.
+// Exports a function so the code action can offer "import from lsp_helper".
+
+export fn Clamp(Value, Low, High) {
+    if(Value < Low) {
+        Low
+    } else {
+        if(Value > High) { High } else { Value }
+    }
+}
