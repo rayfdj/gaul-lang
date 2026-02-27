@@ -414,6 +414,68 @@ fn find_call_context(tokens: &[Token], pos: Position) -> Option<(String, bool, u
     Some((func_name, is_method, comma_count))
 }
 
+/// Extract the undefined variable name from a resolver diagnostic message.
+/// Handles "Undefined variable 'foo'" and "Undefined variable 'foo' (did you mean 'bar'?)".
+fn extract_undefined_name(msg: &str) -> Option<&str> {
+    let prefix = "Undefined variable '";
+    let start = msg.find(prefix)? + prefix.len();
+    let end = start + msg[start..].find('\'')?;
+    Some(&msg[start..end])
+}
+
+/// Find the line number (0-indexed) after the last import statement, or 0 if none.
+fn find_import_insertion_line(source: &str) -> u32 {
+    let mut last_import_line: Option<u32> = None;
+    for (i, line) in source.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("import ") || trimmed.starts_with("import\t") {
+            last_import_line = Some(i as u32);
+        }
+    }
+    match last_import_line {
+        Some(line) => line + 1,
+        None => 0,
+    }
+}
+
+/// Compute a relative module path from one file to another, stripping the .gaul extension.
+fn relative_module_path(from: &Path, to: &Path) -> Option<String> {
+    let from_dir = from.parent()?;
+    let to_dir = to.parent()?;
+    let to_stem = to.file_stem()?.to_str()?;
+
+    // If same directory, just use the filename stem
+    if from_dir == to_dir {
+        return Some(to_stem.to_string());
+    }
+
+    // Try to make a relative path
+    if let Ok(rel) = to.strip_prefix(from_dir) {
+        let mut path = rel.to_string_lossy().to_string();
+        if path.ends_with(".gaul") {
+            path.truncate(path.len() - 5);
+        }
+        return Some(path);
+    }
+
+    // Fall back: compute relative by walking up from `from_dir`
+    let mut prefix = PathBuf::from("..");
+    let mut ancestor = from_dir.parent();
+    while let Some(anc) = ancestor {
+        if let Ok(rel) = to.strip_prefix(anc) {
+            let mut path = prefix.join(rel).to_string_lossy().to_string();
+            if path.ends_with(".gaul") {
+                path.truncate(path.len() - 5);
+            }
+            return Some(path);
+        }
+        prefix = prefix.join("..");
+        ancestor = anc.parent();
+    }
+
+    None
+}
+
 /// Generate parameter name inlay hints for function/method call sites.
 fn compute_inlay_hints(
     tokens: &[Token],
@@ -978,6 +1040,13 @@ impl LanguageServer for Backend {
                     work_done_progress_options: WorkDoneProgressOptions::default(),
                 }),
                 inlay_hint_provider: Some(OneOf::Left(true)),
+                code_action_provider: Some(CodeActionProviderCapability::Options(
+                    CodeActionOptions {
+                        code_action_kinds: Some(vec![CodeActionKind::QUICKFIX]),
+                        work_done_progress_options: WorkDoneProgressOptions::default(),
+                        resolve_provider: None,
+                    },
+                )),
                 ..Default::default()
             },
             ..Default::default()
@@ -1497,6 +1566,103 @@ impl LanguageServer for Backend {
         )))
     }
 
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        let uri = params.text_document.uri;
+        let mut actions = Vec::new();
+
+        // Only process diagnostics from the resolver about undefined variables
+        for diag in &params.context.diagnostics {
+            let Some(name) = extract_undefined_name(&diag.message) else {
+                continue;
+            };
+
+            let current_path = match uri.to_file_path() {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+
+            // Check which names are already imported in this file
+            let already_imported = {
+                let docs = self.documents.lock().unwrap();
+                if let Some(doc) = docs.get(&uri) {
+                    doc.import_map.contains_key(name)
+                } else {
+                    false
+                }
+            };
+            if already_imported {
+                continue;
+            }
+
+            // Search workspace index for files that export this name
+            let index = self.workspace_index.lock().unwrap();
+            for (path, file_idx) in index.iter() {
+                // Skip current file
+                if *path == current_path {
+                    continue;
+                }
+
+                if !file_idx.exports.iter().any(|(n, _)| n == name) {
+                    continue;
+                }
+
+                let Some(module_path) = relative_module_path(&current_path, path) else {
+                    continue;
+                };
+
+                // Skip standard modules
+                if STANDARD_MODULES.contains(&module_path.as_str()) {
+                    continue;
+                }
+
+                // Build the import text
+                let source = {
+                    let docs = self.documents.lock().unwrap();
+                    docs.get(&uri).map(|d| d.source.clone())
+                };
+                let insert_line = source
+                    .as_deref()
+                    .map(find_import_insertion_line)
+                    .unwrap_or(0);
+
+                let import_text = format!("import {{ {} }} from \"{}\"\n", name, module_path);
+
+                let edit = TextEdit {
+                    range: Range {
+                        start: Position::new(insert_line, 0),
+                        end: Position::new(insert_line, 0),
+                    },
+                    new_text: import_text,
+                };
+
+                let mut changes = HashMap::new();
+                changes.insert(uri.clone(), vec![edit]);
+
+                let filename = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&module_path);
+
+                actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                    title: format!("Import '{}' from \"{}\"", name, filename),
+                    kind: Some(CodeActionKind::QUICKFIX),
+                    diagnostics: Some(vec![diag.clone()]),
+                    edit: Some(WorkspaceEdit {
+                        changes: Some(changes),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }));
+            }
+        }
+
+        if actions.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(actions))
+        }
+    }
+
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
         let uri = params.text_document.uri;
         let range = params.range;
@@ -1984,5 +2150,61 @@ mod tests {
         assert_eq!(call_hints.len(), 2);
         assert_eq!(hint_label_str(call_hints[0]), "a: ");
         assert_eq!(hint_label_str(call_hints[1]), "b: ");
+    }
+
+    #[test]
+    fn extract_undefined_name_basic() {
+        assert_eq!(
+            extract_undefined_name("Undefined variable 'foo'"),
+            Some("foo")
+        );
+    }
+
+    #[test]
+    fn extract_undefined_name_with_suggestion() {
+        assert_eq!(
+            extract_undefined_name("Undefined variable 'fo' (did you mean 'foo'?)"),
+            Some("fo")
+        );
+    }
+
+    #[test]
+    fn extract_undefined_name_no_match() {
+        assert_eq!(extract_undefined_name("some other error"), None);
+    }
+
+    #[test]
+    fn import_insertion_line_no_imports() {
+        assert_eq!(find_import_insertion_line("let x = 1\nlet y = 2"), 0);
+    }
+
+    #[test]
+    fn import_insertion_line_after_imports() {
+        let source = "import { foo } from \"bar\"\nimport { baz } from \"qux\"\nlet x = 1";
+        assert_eq!(find_import_insertion_line(source), 2);
+    }
+
+    #[test]
+    fn relative_module_path_same_dir() {
+        let from = Path::new("/project/src/main.gaul");
+        let to = Path::new("/project/src/utils.gaul");
+        assert_eq!(relative_module_path(from, to), Some("utils".to_string()));
+    }
+
+    #[test]
+    fn relative_module_path_subdir() {
+        let from = Path::new("/project/src/main.gaul");
+        let to = Path::new("/project/src/lib/helpers.gaul");
+        assert_eq!(
+            relative_module_path(from, to),
+            Some("lib/helpers".to_string())
+        );
+    }
+
+    #[test]
+    fn relative_module_path_parent_dir() {
+        let from = Path::new("/project/src/sub/main.gaul");
+        let to = Path::new("/project/src/utils.gaul");
+        assert_eq!(relative_module_path(from, to), Some("../utils".to_string()));
     }
 }
