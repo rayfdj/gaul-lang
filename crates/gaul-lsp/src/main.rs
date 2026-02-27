@@ -436,18 +436,41 @@ fn extract_undefined_name(msg: &str) -> Option<&str> {
 }
 
 /// Find the line number (0-indexed) after the last import statement, or 0 if none.
-fn find_import_insertion_line(source: &str) -> u32 {
-    let mut last_import_line: Option<u32> = None;
-    for (i, line) in source.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("import ") || trimmed.starts_with("import\t") {
-            last_import_line = Some(i as u32);
+fn find_import_insertion_line(tokens: &[Token]) -> u32 {
+    let mut last_import_end_line: Option<u32> = None;
+    let mut i = 0usize;
+
+    while i < tokens.len() {
+        if tokens[i].token_type != TokenType::Import {
+            i += 1;
+            continue;
         }
+
+        let mut end_line = tokens[i].span.line as u32;
+        let mut brace_depth = 0i32;
+        let mut j = i + 1;
+
+        while j < tokens.len() {
+            match tokens[j].token_type {
+                TokenType::LeftBrace => brace_depth += 1,
+                TokenType::RightBrace => brace_depth = (brace_depth - 1).max(0),
+                TokenType::String(_) if brace_depth == 0 => {
+                    end_line = tokens[j].span.line as u32;
+                    break;
+                }
+                TokenType::Import if brace_depth == 0 => {
+                    break;
+                }
+                _ => {}
+            }
+            j += 1;
+        }
+
+        last_import_end_line = Some(end_line);
+        i += 1;
     }
-    match last_import_line {
-        Some(line) => line + 1,
-        None => 0,
-    }
+
+    last_import_end_line.unwrap_or(0)
 }
 
 /// Compute a relative module path from one file to another, keeping .gaul extension.
@@ -1764,7 +1787,7 @@ impl LanguageServer for Backend {
                 return Ok(None);
             };
             (
-                find_import_insertion_line(&doc.source),
+                find_import_insertion_line(&doc.tokens),
                 doc.import_map.clone(),
             )
         };
@@ -2365,13 +2388,23 @@ mod tests {
 
     #[test]
     fn import_insertion_line_no_imports() {
-        assert_eq!(find_import_insertion_line("let x = 1\nlet y = 2"), 0);
+        let tokens = scan("let x = 1\nlet y = 2");
+        assert_eq!(find_import_insertion_line(&tokens), 0);
     }
 
     #[test]
     fn import_insertion_line_after_imports() {
         let source = "import { foo } from \"bar\"\nimport { baz } from \"qux\"\nlet x = 1";
-        assert_eq!(find_import_insertion_line(source), 2);
+        let tokens = scan(source);
+        assert_eq!(find_import_insertion_line(&tokens), 2);
+    }
+
+    #[test]
+    fn import_insertion_line_handles_multiline_import_block() {
+        let source =
+            "import {\n  foo,\n  bar\n} from \"lib\"\nimport { baz } from \"qux\"\nlet x = 1";
+        let tokens = scan(source);
+        assert_eq!(find_import_insertion_line(&tokens), 5);
     }
 
     #[test]
