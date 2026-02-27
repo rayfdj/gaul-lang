@@ -51,7 +51,7 @@ struct Backend {
     client: Client,
     keywords: RwLock<HashMap<String, TokenType>>,
     documents: Mutex<HashMap<Url, DocumentState>>,
-    workspace_root: Mutex<Option<PathBuf>>,
+    workspace_roots: Mutex<Vec<PathBuf>>,
     workspace_index: Mutex<HashMap<PathBuf, FileIndex>>,
 }
 
@@ -482,22 +482,26 @@ fn escape_gaul_string_literal(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-fn workspace_root_from_initialize(params: &InitializeParams) -> Option<PathBuf> {
+fn workspace_roots_from_initialize(params: &InitializeParams) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+
     if let Some(root_uri) = &params.root_uri
         && let Ok(path) = root_uri.to_file_path()
     {
-        return Some(path);
+        roots.push(path);
     }
 
     if let Some(folders) = &params.workspace_folders {
         for folder in folders {
             if let Ok(path) = folder.uri.to_file_path() {
-                return Some(path);
+                roots.push(path);
             }
         }
     }
 
-    None
+    let mut seen = HashSet::new();
+    roots.retain(|path| seen.insert(path.clone()));
+    roots
 }
 
 fn local_module_completion_label(current_file: &Path, candidate: &Path) -> Option<String> {
@@ -1084,11 +1088,9 @@ fn compute_selection_ranges(
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        // Store workspace root for file indexing.
+        // Store workspace roots for file indexing.
         // Some clients provide `workspace_folders` without `root_uri`.
-        if let Some(path) = workspace_root_from_initialize(&params) {
-            *self.workspace_root.lock().unwrap() = Some(path);
-        }
+        *self.workspace_roots.lock().unwrap() = workspace_roots_from_initialize(&params);
 
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
@@ -1172,8 +1174,8 @@ impl LanguageServer for Backend {
         }
 
         // Build initial workspace index
-        let root = self.workspace_root.lock().unwrap().clone();
-        if let Some(root) = root {
+        let roots = self.workspace_roots.lock().unwrap().clone();
+        for root in roots {
             self.index_workspace(&root);
         }
 
@@ -1343,15 +1345,23 @@ impl LanguageServer for Backend {
             };
 
             let index = self.workspace_index.lock().unwrap();
-            if let Some(file_idx) = index.get(&target_path)
-                && let Some((_, export_span)) =
-                    file_idx.exports.iter().find(|(name, _)| name == &def.name)
-                && let Ok(target_uri) = Url::from_file_path(&target_path)
+            let mut candidates = vec![target_path.clone()];
+            if let Ok(canonical) = std::fs::canonicalize(&target_path)
+                && canonical != target_path
             {
-                return Ok(Some(GotoDefinitionResponse::Scalar(Location {
-                    uri: target_uri,
-                    range: span_to_range(*export_span),
-                })));
+                candidates.insert(0, canonical);
+            }
+            for candidate in candidates {
+                if let Some(file_idx) = index.get(&candidate)
+                    && let Some((_, export_span)) =
+                        file_idx.exports.iter().find(|(name, _)| name == &def.name)
+                    && let Ok(target_uri) = Url::from_file_path(&candidate)
+                {
+                    return Ok(Some(GotoDefinitionResponse::Scalar(Location {
+                        uri: target_uri,
+                        range: span_to_range(*export_span),
+                    })));
+                }
             }
         }
 
@@ -2009,7 +2019,7 @@ async fn main() {
         client,
         keywords: RwLock::new(keywords),
         documents: Mutex::new(HashMap::new()),
-        workspace_root: Mutex::new(None),
+        workspace_roots: Mutex::new(Vec::new()),
         workspace_index: Mutex::new(HashMap::new()),
     });
 
@@ -2381,7 +2391,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_root_from_initialize_prefers_root_uri() {
+    fn workspace_roots_from_initialize_prefers_root_uri_order() {
         let params = InitializeParams {
             root_uri: Some(Url::parse("file:///project/root").unwrap()),
             workspace_folders: Some(vec![WorkspaceFolder {
@@ -2391,13 +2401,16 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            workspace_root_from_initialize(&params),
-            Some(PathBuf::from("/project/root"))
+            workspace_roots_from_initialize(&params),
+            vec![
+                PathBuf::from("/project/root"),
+                PathBuf::from("/project/folder")
+            ]
         );
     }
 
     #[test]
-    fn workspace_root_from_initialize_falls_back_to_workspace_folder() {
+    fn workspace_roots_from_initialize_falls_back_to_workspace_folder() {
         let params = InitializeParams {
             workspace_folders: Some(vec![WorkspaceFolder {
                 uri: Url::parse("file:///project/folder").unwrap(),
@@ -2406,8 +2419,24 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            workspace_root_from_initialize(&params),
-            Some(PathBuf::from("/project/folder"))
+            workspace_roots_from_initialize(&params),
+            vec![PathBuf::from("/project/folder")]
+        );
+    }
+
+    #[test]
+    fn workspace_roots_from_initialize_deduplicates() {
+        let params = InitializeParams {
+            root_uri: Some(Url::parse("file:///project/root").unwrap()),
+            workspace_folders: Some(vec![WorkspaceFolder {
+                uri: Url::parse("file:///project/root").unwrap(),
+                name: "root".to_string(),
+            }]),
+            ..Default::default()
+        };
+        assert_eq!(
+            workspace_roots_from_initialize(&params),
+            vec![PathBuf::from("/project/root")]
         );
     }
 
