@@ -283,6 +283,59 @@ fn build_ref_map(symbols: &SymbolTable) -> HashMap<(usize, usize), usize> {
         .collect()
 }
 
+/// Build a map from the *name* token position to the definition index.
+///
+/// `SymbolDef.span` points to the keyword (`let`, `fn`, etc.), not the name.
+/// For each definition, we scan tokens on the same line for the first `Identifier`
+/// with a matching lexeme after the keyword column.
+fn build_def_name_map(tokens: &[Token], symbols: &SymbolTable) -> HashMap<(usize, usize), usize> {
+    let mut map = HashMap::new();
+    for (idx, def) in symbols.definitions.iter().enumerate() {
+        for t in tokens {
+            if t.token_type == TokenType::Identifier
+                && t.lexeme == def.name
+                && t.span.line == def.span.line
+                && t.span.col > def.span.col
+            {
+                map.insert((t.span.line, t.span.col), idx);
+                break;
+            }
+        }
+    }
+    map
+}
+
+/// Resolve the token at the given position to a definition index.
+/// Checks references first, then definition name sites.
+fn resolve_token_to_def<'a>(
+    tokens: &'a [Token],
+    symbols: &'a SymbolTable,
+    pos: Position,
+) -> Option<(usize, &'a Token)> {
+    let token = find_token_at_position(tokens, pos)?;
+    if token.token_type != TokenType::Identifier {
+        return None;
+    }
+    let key = (token.span.line, token.span.col);
+
+    // Check if it's a reference site
+    if let Some(sym_ref) = symbols
+        .references
+        .iter()
+        .find(|r| (r.span.line, r.span.col) == key)
+    {
+        return Some((sym_ref.def_index, token));
+    }
+
+    // Check if it's a definition name site
+    let def_name_map = build_def_name_map(tokens, symbols);
+    if let Some(&def_idx) = def_name_map.get(&key) {
+        return Some((def_idx, token));
+    }
+
+    None
+}
+
 fn encode_semantic_tokens(tokens: &[Token], symbols: Option<&SymbolTable>) -> Vec<SemanticToken> {
     let ref_map = symbols.map(build_ref_map);
 
@@ -683,6 +736,10 @@ impl LanguageServer for Backend {
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
                 selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
+                rename_provider: Some(OneOf::Right(RenameOptions {
+                    prepare_provider: Some(true),
+                    work_done_progress_options: WorkDoneProgressOptions::default(),
+                })),
                 ..Default::default()
             },
             ..Default::default()
@@ -1202,6 +1259,86 @@ impl LanguageServer for Backend {
         )))
     }
 
+    async fn prepare_rename(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> Result<Option<PrepareRenameResponse>> {
+        let uri = params.text_document.uri;
+        let pos = params.position;
+
+        let docs = self.documents.lock().unwrap();
+        let Some(doc) = docs.get(&uri) else {
+            return Ok(None);
+        };
+        let Some(symbols) = &doc.symbols else {
+            return Ok(None);
+        };
+
+        let Some((_, token)) = resolve_token_to_def(&doc.tokens, symbols, pos) else {
+            return Ok(None);
+        };
+
+        Ok(Some(PrepareRenameResponse::RangeWithPlaceholder {
+            range: span_to_range(token.span),
+            placeholder: token.lexeme.clone(),
+        }))
+    }
+
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let uri = params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+        let new_name = params.new_name;
+
+        let docs = self.documents.lock().unwrap();
+        let Some(doc) = docs.get(&uri) else {
+            return Ok(None);
+        };
+        let Some(symbols) = &doc.symbols else {
+            return Ok(None);
+        };
+
+        let Some((def_idx, _)) = resolve_token_to_def(&doc.tokens, symbols, pos) else {
+            return Ok(None);
+        };
+
+        let mut edits = Vec::new();
+
+        // Edit at the definition name site
+        let def_name_map = build_def_name_map(&doc.tokens, symbols);
+        for (&(line, col), &idx) in &def_name_map {
+            if idx == def_idx {
+                let def = &symbols.definitions[idx];
+                let span = Span {
+                    line,
+                    col,
+                    length: def.name.len(),
+                };
+                edits.push(TextEdit {
+                    range: span_to_range(span),
+                    new_text: new_name.clone(),
+                });
+            }
+        }
+
+        // Edit at all reference sites
+        for sym_ref in &symbols.references {
+            if sym_ref.def_index == def_idx {
+                edits.push(TextEdit {
+                    range: span_to_range(sym_ref.span),
+                    new_text: new_name.clone(),
+                });
+            }
+        }
+
+        let mut changes = HashMap::new();
+        changes.insert(uri, edits);
+
+        Ok(Some(WorkspaceEdit {
+            changes: Some(changes),
+            ..Default::default()
+        }))
+    }
+
     #[allow(deprecated)] // SymbolInformation.deprecated field is itself deprecated
     async fn symbol(
         &self,
@@ -1367,5 +1504,87 @@ mod tests {
             current = parent;
         }
         assert_eq!(current.range.start, Position::new(0, 0));
+    }
+
+    fn analyze_source(source: &str) -> (Vec<Token>, SymbolTable) {
+        let keywords = load_keywords(None).unwrap();
+        let scanner = Scanner::new(source, &keywords);
+        let scan_result = scanner.scan_tokens();
+        let all_tokens = scan_result.tokens.clone();
+        let tokens_for_parser = scan_result.tokens_without_comments();
+        let parser = Parser::new(tokens_for_parser);
+        let mut program = parser.parse().unwrap();
+        let mut resolver = Resolver::new();
+        resolver.resolve(&mut program).unwrap();
+        let symbols = analysis::build_symbol_table(&program);
+        (all_tokens, symbols)
+    }
+
+    #[test]
+    fn rename_variable_def_and_ref() {
+        let source = "let foo = 1\nprintln(foo)";
+        let (tokens, symbols) = analyze_source(source);
+
+        // Cursor on the definition site "foo" (line 1, col 5 in 1-indexed = Position(0, 4))
+        let result = resolve_token_to_def(&tokens, &symbols, Position::new(0, 4));
+        assert!(result.is_some());
+        let (def_idx, token) = result.unwrap();
+        assert_eq!(token.lexeme, "foo");
+
+        // Cursor on the reference site "foo" (line 2, col 9 in 1-indexed = Position(1, 8))
+        let result2 = resolve_token_to_def(&tokens, &symbols, Position::new(1, 8));
+        assert!(result2.is_some());
+        let (def_idx2, _) = result2.unwrap();
+        assert_eq!(def_idx, def_idx2);
+
+        // All references for this def
+        let ref_count = symbols
+            .references
+            .iter()
+            .filter(|r| r.def_index == def_idx)
+            .count();
+        assert_eq!(ref_count, 1);
+    }
+
+    #[test]
+    fn rename_function_def_and_call() {
+        let source = "fn add(a, b) {\n  a + b\n}\nadd(1, 2)";
+        let (tokens, symbols) = analyze_source(source);
+
+        // Cursor on "add" at definition (line 1, col 4 in 1-indexed = Position(0, 3))
+        let result = resolve_token_to_def(&tokens, &symbols, Position::new(0, 3));
+        assert!(result.is_some());
+        let (def_idx, token) = result.unwrap();
+        assert_eq!(token.lexeme, "add");
+        assert_eq!(
+            symbols.definitions[def_idx].kind,
+            analysis::SymbolKind::Function
+        );
+    }
+
+    #[test]
+    fn rename_parameter() {
+        let source = "fn greet(name) {\n  println(name)\n}";
+        let (tokens, symbols) = analyze_source(source);
+
+        // Cursor on "name" parameter definition (line 1, col 10 = Position(0, 9))
+        let result = resolve_token_to_def(&tokens, &symbols, Position::new(0, 9));
+        assert!(result.is_some());
+        let (def_idx, token) = result.unwrap();
+        assert_eq!(token.lexeme, "name");
+        assert_eq!(
+            symbols.definitions[def_idx].kind,
+            analysis::SymbolKind::Parameter
+        );
+    }
+
+    #[test]
+    fn rename_rejects_keyword() {
+        let source = "let x = 1";
+        let (tokens, symbols) = analyze_source(source);
+
+        // Cursor on "let" keyword (Position(0, 0))
+        let result = resolve_token_to_def(&tokens, &symbols, Position::new(0, 0));
+        assert!(result.is_none());
     }
 }
