@@ -120,13 +120,7 @@ impl Backend {
 
         // Update workspace index for this file
         if let Ok(path) = uri.to_file_path() {
-            let keywords = self.keywords.read().unwrap().clone();
-            if let Some(file_index) = build_file_index(&text, &keywords) {
-                self.workspace_index
-                    .lock()
-                    .unwrap()
-                    .insert(path, file_index);
-            }
+            self.update_index_entry_from_source(path, &text);
         }
 
         self.client
@@ -146,6 +140,24 @@ impl Backend {
             {
                 index.insert(path, file_index);
             }
+        }
+    }
+
+    fn update_index_entry_from_source(&self, path: PathBuf, source: &str) {
+        let keywords = self.keywords.read().unwrap().clone();
+        let mut index = self.workspace_index.lock().unwrap();
+        if let Some(file_index) = build_file_index(source, &keywords) {
+            index.insert(path, file_index);
+        } else {
+            index.remove(path.as_path());
+        }
+    }
+
+    fn refresh_index_entry_from_disk(&self, path: &Path) {
+        if let Ok(source) = std::fs::read_to_string(path) {
+            self.update_index_entry_from_source(path.to_path_buf(), &source);
+        } else {
+            self.workspace_index.lock().unwrap().remove(path);
         }
     }
 }
@@ -468,6 +480,16 @@ fn import_path_string(path: &Path) -> String {
 
 fn escape_gaul_string_literal(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn local_module_completion_label(current_file: &Path, candidate: &Path) -> Option<String> {
+    if candidate == current_file || candidate.extension().is_none_or(|e| e != "gaul") {
+        return None;
+    }
+    candidate
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(ToString::to_string)
 }
 
 /// Generate parameter name inlay hints for function/method call sites.
@@ -1048,16 +1070,22 @@ impl LanguageServer for Backend {
     }
 
     async fn initialized(&self, _params: InitializedParams) {
-        // Register file watcher for keyword config changes
+        // Register file watchers for keyword config and workspace .gaul files.
         let registration = Registration {
             id: "keyword-watcher".to_string(),
             method: "workspace/didChangeWatchedFiles".to_string(),
             register_options: Some(
                 serde_json::to_value(DidChangeWatchedFilesRegistrationOptions {
-                    watchers: vec![FileSystemWatcher {
-                        glob_pattern: GlobPattern::String("**/.gaul-keywords.json".to_string()),
-                        kind: Some(WatchKind::Create | WatchKind::Change | WatchKind::Delete),
-                    }],
+                    watchers: vec![
+                        FileSystemWatcher {
+                            glob_pattern: GlobPattern::String("**/.gaul-keywords.json".to_string()),
+                            kind: Some(WatchKind::Create | WatchKind::Change | WatchKind::Delete),
+                        },
+                        FileSystemWatcher {
+                            glob_pattern: GlobPattern::String("**/*.gaul".to_string()),
+                            kind: Some(WatchKind::Create | WatchKind::Change | WatchKind::Delete),
+                        },
+                    ],
                 })
                 .unwrap(),
             ),
@@ -1106,32 +1134,62 @@ impl LanguageServer for Backend {
             let mut docs = self.documents.lock().unwrap();
             docs.remove(&uri);
         }
+
+        // If this file has unsaved in-memory edits, closing should restore index entry from disk.
+        if let Ok(path) = uri.to_file_path() {
+            self.refresh_index_entry_from_disk(&path);
+        }
+
         // Clear diagnostics for the closed file
         self.client.publish_diagnostics(uri, vec![], None).await;
     }
 
     async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        let mut keywords_changed = false;
+
         for change in &params.changes {
-            if !change.uri.as_str().ends_with(".gaul-keywords.json") {
+            let uri_str = change.uri.as_str();
+
+            if uri_str.ends_with(".gaul-keywords.json") {
+                let new_keywords = if change.typ == FileChangeType::DELETED {
+                    load_keywords(None).expect("default keywords must load")
+                } else {
+                    match change.uri.to_file_path() {
+                        Ok(path) => load_keywords(path.to_str()).unwrap_or_else(|_| {
+                            load_keywords(None).expect("default keywords must load")
+                        }),
+                        Err(_) => continue,
+                    }
+                };
+
+                {
+                    let mut kw = self.keywords.write().unwrap();
+                    *kw = new_keywords;
+                }
+                keywords_changed = true;
                 continue;
             }
 
-            let new_keywords = if change.typ == FileChangeType::DELETED {
-                load_keywords(None).expect("default keywords must load")
-            } else {
-                match change.uri.to_file_path() {
-                    Ok(path) => load_keywords(path.to_str()).unwrap_or_else(|_| {
-                        load_keywords(None).expect("default keywords must load")
-                    }),
-                    Err(_) => continue,
-                }
-            };
-
+            if uri_str.ends_with(".gaul")
+                && let Ok(path) = change.uri.to_file_path()
             {
-                let mut kw = self.keywords.write().unwrap();
-                *kw = new_keywords;
-            }
+                let is_open = {
+                    let docs = self.documents.lock().unwrap();
+                    docs.contains_key(&change.uri)
+                };
+                if is_open {
+                    continue;
+                }
 
+                if change.typ == FileChangeType::DELETED {
+                    self.workspace_index.lock().unwrap().remove(path.as_path());
+                } else {
+                    self.refresh_index_entry_from_disk(&path);
+                }
+            }
+        }
+
+        if keywords_changed {
             // Re-analyze all open documents with new keywords
             let uris_and_sources: Vec<_> = {
                 let docs = self.documents.lock().unwrap();
@@ -1142,8 +1200,6 @@ impl LanguageServer for Backend {
             for (uri, source) in uris_and_sources {
                 self.on_change(uri, source).await;
             }
-
-            break;
         }
     }
 
@@ -1354,12 +1410,9 @@ impl LanguageServer for Backend {
                 {
                     for entry in entries.flatten() {
                         let p = entry.path();
-                        if p.extension().is_some_and(|e| e == "gaul")
-                            && let Some(stem) = p.file_stem().and_then(|s| s.to_str())
-                            && p.as_path() != path.as_path()
-                        {
+                        if let Some(label) = local_module_completion_label(path.as_path(), &p) {
                             items.push(CompletionItem {
-                                label: stem.to_string(),
+                                label,
                                 kind: Some(CompletionItemKind::FILE),
                                 ..Default::default()
                             });
@@ -2220,6 +2273,26 @@ mod tests {
         assert_eq!(
             escape_gaul_string_literal("lib\\foo\"bar.gaul"),
             "lib\\\\foo\\\"bar.gaul"
+        );
+    }
+
+    #[test]
+    fn local_module_completion_label_uses_filename_with_extension() {
+        let current = Path::new("/project/src/main.gaul");
+        let candidate = Path::new("/project/src/utils.gaul");
+        assert_eq!(
+            local_module_completion_label(current, candidate),
+            Some("utils.gaul".to_string())
+        );
+    }
+
+    #[test]
+    fn local_module_completion_label_skips_current_file_and_non_gaul() {
+        let current = Path::new("/project/src/main.gaul");
+        assert_eq!(local_module_completion_label(current, current), None);
+        assert_eq!(
+            local_module_completion_label(current, Path::new("/project/src/readme.md")),
+            None
         );
     }
 }
