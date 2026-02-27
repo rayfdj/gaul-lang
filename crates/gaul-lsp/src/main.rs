@@ -502,7 +502,19 @@ fn import_path_string(path: &Path) -> String {
 }
 
 fn escape_gaul_string_literal(text: &str) -> String {
-    text.replace('\\', "\\\\").replace('"', "\\\"")
+    let mut escaped = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            c if c.is_control() => escaped.push_str(&format!("\\u{{{:x}}}", c as u32)),
+            c => escaped.push(c),
+        }
+    }
+    escaped
 }
 
 #[allow(deprecated)] // root_path fallback supports older LSP clients.
@@ -773,8 +785,12 @@ fn emit_param_hint(
         first_token.span.col.saturating_sub(1) as u32,
     );
 
-    // Only emit if within requested range
-    if hint_pos.line < range.start.line || hint_pos.line > range.end.line {
+    // Only emit if the hint start is within the requested range bounds.
+    let after_start = hint_pos.line > range.start.line
+        || (hint_pos.line == range.start.line && hint_pos.character >= range.start.character);
+    let before_end = hint_pos.line < range.end.line
+        || (hint_pos.line == range.end.line && hint_pos.character <= range.end.character);
+    if !after_start || !before_end {
         return;
     }
 
@@ -2363,6 +2379,17 @@ mod tests {
     }
 
     #[test]
+    fn inlay_hints_respect_character_bounds() {
+        let tokens = scan("println(42)");
+        let narrow_range = Range {
+            start: Position::new(0, 0),
+            end: Position::new(0, 7), // just before argument token at char 8
+        };
+        let hints = compute_inlay_hints(&tokens, None, &narrow_range);
+        assert!(hints.is_empty());
+    }
+
+    #[test]
     fn inlay_hints_skip_matching_name() {
         let source = "fn greet(name) {\n  println(name)\n}";
         let (tokens, symbols) = analyze_source(source);
@@ -2467,6 +2494,14 @@ mod tests {
         assert_eq!(
             escape_gaul_string_literal("lib\\foo\"bar.gaul"),
             "lib\\\\foo\\\"bar.gaul"
+        );
+    }
+
+    #[test]
+    fn escape_gaul_string_literal_escapes_control_chars() {
+        assert_eq!(
+            escape_gaul_string_literal("lib\nfoo\tbar\rbaz.gaul"),
+            "lib\\nfoo\\tbar\\rbaz.gaul"
         );
     }
 
