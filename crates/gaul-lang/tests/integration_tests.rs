@@ -50,6 +50,16 @@ fn eval(source: &str) -> Result<Value, String> {
         .map_err(|e| format!("{:?}", e))
 }
 
+fn assert_eval_err_contains(source: &str, needle: &str) {
+    let err = eval(source).expect_err("expected runtime error");
+    assert!(
+        err.contains(needle),
+        "expected error to contain '{}', got:\n{}",
+        needle,
+        err
+    );
+}
+
 #[test]
 fn test_greedy_if_bug() {
     let code = r#"
@@ -790,6 +800,16 @@ fn test_string_char_at_out_of_bounds() {
 }
 
 #[test]
+fn test_string_char_at_fractional_index_errors() {
+    assert_eval_err_contains(r#""hello".char_at(1.5)"#, "not an integer");
+}
+
+#[test]
+fn test_string_char_at_negative_index_errors() {
+    assert_eval_err_contains(r#""hello".char_at(-1)"#, "is negative");
+}
+
+#[test]
 fn test_string_substring() {
     let result = eval(r#""hello world".substring(0, 5)"#);
     match result {
@@ -805,6 +825,16 @@ fn test_string_substring_to_end() {
         Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "world"),
         _ => panic!("Expected 'world', got {:?}", result),
     }
+}
+
+#[test]
+fn test_string_substring_fractional_start_errors() {
+    assert_eval_err_contains(r#""hello".substring(1.2, 3)"#, "not an integer");
+}
+
+#[test]
+fn test_string_substring_negative_end_errors() {
+    assert_eval_err_contains(r#""hello".substring(0, -1)"#, "is negative");
 }
 
 #[test]
@@ -1137,6 +1167,11 @@ fn test_array_get_out_of_bounds() {
 }
 
 #[test]
+fn test_array_get_fractional_index_errors() {
+    assert_eval_err_contains("[10, 20, 30].get(1.9)", "not an integer");
+}
+
+#[test]
 fn test_array_first() {
     let result = eval("[10, 20, 30].first()");
     match result {
@@ -1260,6 +1295,15 @@ fn test_array_set_out_of_bounds() {
 }
 
 #[test]
+fn test_array_set_fractional_index_errors() {
+    let code = r#"
+    let arr = [1, 2, 3]
+    arr.set(1.1, 99)
+    "#;
+    assert_eval_err_contains(code, "not an integer");
+}
+
+#[test]
 fn test_array_remove() {
     let code = r#"
     let arr = [1, 2, 3]
@@ -1294,6 +1338,15 @@ fn test_array_remove_out_of_bounds() {
     "#;
     let result = eval(code);
     assert!(result.is_err());
+}
+
+#[test]
+fn test_array_remove_negative_index_errors() {
+    let code = r#"
+    let arr = [1, 2, 3]
+    arr.remove(-1)
+    "#;
+    assert_eval_err_contains(code, "is negative");
 }
 
 #[test]
@@ -4651,6 +4704,16 @@ fn test_string_repeat_one() {
     }
 }
 
+#[test]
+fn test_string_repeat_negative_count_errors() {
+    assert_eval_err_contains(r#""ab".repeat(-1)"#, "is negative");
+}
+
+#[test]
+fn test_string_repeat_fractional_count_errors() {
+    assert_eval_err_contains(r#""ab".repeat(2.5)"#, "not an integer");
+}
+
 // --- Array slice ---
 
 #[test]
@@ -4716,6 +4779,16 @@ fn test_array_slice_out_of_bounds() {
         Ok(Value::Str(s)) => assert_eq!(s.as_ref(), "20,30"),
         _ => panic!("Expected '20,30', got {:?}", result),
     }
+}
+
+#[test]
+fn test_array_slice_negative_start_errors() {
+    assert_eval_err_contains("[10, 20, 30].slice(-1, 2)", "is negative");
+}
+
+#[test]
+fn test_array_slice_fractional_end_errors() {
+    assert_eval_err_contains("[10, 20, 30].slice(0, 1.5)", "not an integer");
 }
 
 #[test]
@@ -8834,6 +8907,11 @@ fn test_array_chunk_empty() {
     assert_eq!(result.to_string(), "[]");
 }
 
+#[test]
+fn test_array_chunk_fractional_size_errors() {
+    assert_eval_err_contains("[1, 2, 3].chunk(1.5)", "not an integer");
+}
+
 // ── take ──
 
 #[test]
@@ -8857,6 +8935,11 @@ fn test_array_take_zero() {
     assert_eq!(result.to_string(), "[]");
 }
 
+#[test]
+fn test_array_take_fractional_count_errors() {
+    assert_eval_err_contains("[1, 2, 3].take(1.5)", "not an integer");
+}
+
 // ── skip ──
 
 #[test]
@@ -8878,6 +8961,11 @@ fn test_array_skip_zero() {
     let code = r#"[1, 2, 3].skip(0)"#;
     let result = eval(code).unwrap();
     assert_eq!(result.to_string(), "[1, 2, 3]");
+}
+
+#[test]
+fn test_array_skip_negative_count_errors() {
+    assert_eval_err_contains("[1, 2, 3].skip(-1)", "is negative");
 }
 
 // ── insert ──
@@ -8926,6 +9014,11 @@ fn test_array_insert_out_of_bounds() {
     assert!(eval(r#"[1, 2].insert(5, 99)"#).is_err());
 }
 
+#[test]
+fn test_array_insert_negative_index_errors() {
+    assert_eval_err_contains("[1, 2].insert(-1, 99)", "is negative");
+}
+
 // ── swap ──
 
 #[test]
@@ -8962,6 +9055,11 @@ Arr
 #[test]
 fn test_array_swap_out_of_bounds() {
     assert!(eval(r#"[1, 2].swap(0, 5)"#).is_err());
+}
+
+#[test]
+fn test_array_swap_fractional_index_errors() {
+    assert_eval_err_contains("[1, 2, 3].swap(0.5, 1)", "not an integer");
 }
 
 // ── any ──

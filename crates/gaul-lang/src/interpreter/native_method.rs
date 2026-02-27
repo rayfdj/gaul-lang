@@ -2,37 +2,50 @@ use crate::interpreter::value::{MapKey, Value};
 use std::cell::RefCell;
 use std::rc::Rc;
 
+fn checked_index_from_number(n: f64) -> Result<usize, String> {
+    if !n.is_finite() {
+        return Err(format!("index {} is not finite", n));
+    }
+    if n < 0.0 {
+        return Err(format!("index {} is negative", n));
+    }
+    if n.fract() != 0.0 {
+        return Err(format!("index {} is not an integer", n));
+    }
+    if n > usize::MAX as f64 {
+        return Err(format!("index {} is too large", n));
+    }
+    Ok(n as usize)
+}
+
+fn checked_index_arg(args: &[Value], arg_idx: usize, expected_err: &str) -> Result<usize, String> {
+    let n = match args.get(arg_idx) {
+        Some(Value::Num(n)) => *n,
+        _ => return Err(expected_err.into()),
+    };
+    checked_index_from_number(n)
+}
+
 pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Result<Value, String> {
     match (receiver, name) {
         // String methods!
         (Value::Str(s), "len") => Ok(Value::Num(s.chars().count() as f64)),
         (Value::Str(s), "char_at") => {
-            let idx = match args.first() {
-                Some(Value::Num(n)) => *n as usize,
-                _ => return Err("char_at expects a number".into()),
-            };
+            let idx = checked_index_arg(args, 0, "char_at expects a number")?;
             match s.chars().nth(idx) {
                 Some(c) => Ok(Value::Str(c.to_string().into())),
                 None => Err(format!("index {} out of bounds", idx)),
             }
         }
         (Value::Str(s), "substring") => {
-            let start = match args.first() {
-                Some(Value::Num(n)) => *n as usize,
-                _ => return Err("substring expects a start index".into()),
-            };
+            let start = checked_index_arg(args, 0, "substring expects a start index")?;
 
             let chars: Vec<char> = s.chars().collect();
 
-            let end = match args.get(1) {
-                Some(Value::Num(n)) => *n as usize,
-                None => chars.len(),
-                _ => {
-                    return Err(format!(
-                        "unexpected error in 'substring' with args: '{:?}'",
-                        args
-                    ));
-                }
+            let end = if args.get(1).is_some() {
+                checked_index_arg(args, 1, "substring end must be a number")?
+            } else {
+                chars.len()
             };
 
             let result: String = chars
@@ -124,10 +137,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         (Value::Str(s), "to_upper") => Ok(Value::Str(s[..].to_uppercase().into())),
         (Value::Str(s), "to_lower") => Ok(Value::Str(s[..].to_lowercase().into())),
         (Value::Str(s), "repeat") => {
-            let n = match args.first() {
-                Some(Value::Num(n)) => *n as usize,
-                _ => return Err("repeat expects a number".into()),
-            };
+            let n = checked_index_arg(args, 0, "repeat expects a number")?;
             Ok(Value::Str(s[..].repeat(n).into()))
         }
 
@@ -182,10 +192,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
         }
         (Value::Array(elements), "len") => Ok(Value::Num(elements.borrow().len() as f64)),
         (Value::Array(elements), "get") => {
-            let idx = match args.first() {
-                Some(Value::Num(n)) => *n as usize,
-                _ => return Err("get expects a number".into()),
-            };
+            let idx = checked_index_arg(args, 0, "get expects a number")?;
             elements
                 .borrow()
                 .get(idx)
@@ -208,10 +215,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             Ok(elements.borrow_mut().pop().unwrap_or(Value::Null))
         }
         (Value::Array(elements), "set") => {
-            let idx = match args.first() {
-                Some(Value::Num(n)) => *n as usize,
-                _ => return Err("set expects index as number".into()),
-            };
+            let idx = checked_index_arg(args, 0, "set expects index as number")?;
             let val = args.get(1).ok_or("set expects a value")?.clone();
 
             let mut arr = elements.borrow_mut();
@@ -223,10 +227,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             }
         }
         (Value::Array(elements), "remove") => {
-            let idx = match args.first() {
-                Some(Value::Num(n)) => *n as usize,
-                _ => return Err("remove expects index as number".into()),
-            };
+            let idx = checked_index_arg(args, 0, "remove expects index as number")?;
 
             let mut arr = elements.borrow_mut();
             if idx < arr.len() {
@@ -344,15 +345,12 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             }
         }
         (Value::Array(elements), "slice") => {
-            let start = match args.first() {
-                Some(Value::Num(n)) => *n as usize,
-                _ => return Err("slice expects a start index".into()),
-            };
+            let start = checked_index_arg(args, 0, "slice expects a start index")?;
             let arr = elements.borrow();
-            let end = match args.get(1) {
-                Some(Value::Num(n)) => (*n as usize).min(arr.len()),
-                None => arr.len(),
-                _ => return Err("slice end must be a number".into()),
+            let end = if args.get(1).is_some() {
+                checked_index_arg(args, 1, "slice end must be a number")?.min(arr.len())
+            } else {
+                arr.len()
             };
             let start = start.min(arr.len());
             let sliced: Vec<Value> = arr.get(start..end).unwrap_or_default().to_vec();
@@ -396,10 +394,7 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             Ok(Value::Array(Rc::new(RefCell::new(pairs))))
         }
         (Value::Array(elements), "chunk") => {
-            let n = match args.first() {
-                Some(Value::Num(n)) => *n as usize,
-                _ => return Err("chunk expects a number".into()),
-            };
+            let n = checked_index_arg(args, 0, "chunk expects a number")?;
             if n == 0 {
                 return Err("chunk size must be greater than 0".into());
             }
@@ -411,28 +406,21 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             Ok(Value::Array(Rc::new(RefCell::new(chunks))))
         }
         (Value::Array(elements), "take") => {
-            let n = match args.first() {
-                Some(Value::Num(n)) => (*n as usize).min(elements.borrow().len()),
-                _ => return Err("take expects a number".into()),
-            };
+            let n = checked_index_arg(args, 0, "take expects a number")?;
             let arr = elements.borrow();
+            let n = n.min(arr.len());
             let taken: Vec<Value> = arr[..n].to_vec();
             Ok(Value::Array(Rc::new(RefCell::new(taken))))
         }
         (Value::Array(elements), "skip") => {
-            let n = match args.first() {
-                Some(Value::Num(n)) => (*n as usize).min(elements.borrow().len()),
-                _ => return Err("skip expects a number".into()),
-            };
+            let n = checked_index_arg(args, 0, "skip expects a number")?;
             let arr = elements.borrow();
+            let n = n.min(arr.len());
             let skipped: Vec<Value> = arr[n..].to_vec();
             Ok(Value::Array(Rc::new(RefCell::new(skipped))))
         }
         (Value::Array(elements), "insert") => {
-            let idx = match args.first() {
-                Some(Value::Num(n)) => *n as usize,
-                _ => return Err("insert expects an index".into()),
-            };
+            let idx = checked_index_arg(args, 0, "insert expects an index")?;
             let val = args.get(1).ok_or("insert expects a value")?.clone();
             let mut arr = elements.borrow_mut();
             if idx > arr.len() {
@@ -446,14 +434,8 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             Ok(Value::Null)
         }
         (Value::Array(elements), "swap") => {
-            let i = match args.first() {
-                Some(Value::Num(n)) => *n as usize,
-                _ => return Err("swap expects two indices".into()),
-            };
-            let j = match args.get(1) {
-                Some(Value::Num(n)) => *n as usize,
-                _ => return Err("swap expects two indices".into()),
-            };
+            let i = checked_index_arg(args, 0, "swap expects two indices")?;
+            let j = checked_index_arg(args, 1, "swap expects two indices")?;
             let mut arr = elements.borrow_mut();
             if i >= arr.len() || j >= arr.len() {
                 return Err(format!(
@@ -533,5 +515,44 @@ pub fn call_native_method(receiver: &Value, name: &str, args: &[Value]) -> Resul
             "'{}' is not a valid method for object '{}'",
             name, receiver
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_array(values: Vec<Value>) -> Value {
+        Value::Array(Rc::new(RefCell::new(values)))
+    }
+
+    #[test]
+    fn native_method_rejects_nan_index() {
+        let err = call_native_method(
+            &Value::Str("hello".into()),
+            "char_at",
+            &[Value::Num(f64::NAN)],
+        )
+        .expect_err("NaN index should be rejected");
+        assert!(
+            err.contains("not finite"),
+            "expected finite check error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn native_method_rejects_infinite_index() {
+        let err = call_native_method(
+            &test_array(vec![Value::Num(1.0), Value::Num(2.0)]),
+            "get",
+            &[Value::Num(f64::INFINITY)],
+        )
+        .expect_err("infinite index should be rejected");
+        assert!(
+            err.contains("not finite"),
+            "expected finite check error, got: {}",
+            err
+        );
     }
 }
