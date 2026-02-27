@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
 
@@ -480,6 +480,24 @@ fn import_path_string(path: &Path) -> String {
 
 fn escape_gaul_string_literal(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn workspace_root_from_initialize(params: &InitializeParams) -> Option<PathBuf> {
+    if let Some(root_uri) = &params.root_uri
+        && let Ok(path) = root_uri.to_file_path()
+    {
+        return Some(path);
+    }
+
+    if let Some(folders) = &params.workspace_folders {
+        for folder in folders {
+            if let Ok(path) = folder.uri.to_file_path() {
+                return Some(path);
+            }
+        }
+    }
+
+    None
 }
 
 fn local_module_completion_label(current_file: &Path, candidate: &Path) -> Option<String> {
@@ -1011,10 +1029,9 @@ fn compute_selection_ranges(
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        // Store workspace root for file indexing
-        if let Some(root_uri) = params.root_uri
-            && let Ok(path) = root_uri.to_file_path()
-        {
+        // Store workspace root for file indexing.
+        // Some clients provide `workspace_folders` without `root_uri`.
+        if let Some(path) = workspace_root_from_initialize(&params) {
             *self.workspace_root.lock().unwrap() = Some(path);
         }
 
@@ -1616,33 +1633,42 @@ impl LanguageServer for Backend {
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         let uri = params.text_document.uri;
         let mut actions = Vec::new();
+        let mut seen = HashSet::new();
+        let current_path = match uri.to_file_path() {
+            Ok(p) => p,
+            Err(_) => return Ok(None),
+        };
+
+        // Snapshot document state once. Avoid nested lock ordering with workspace_index.
+        let (insert_line, import_map) = {
+            let docs = self.documents.lock().unwrap();
+            let Some(doc) = docs.get(&uri) else {
+                return Ok(None);
+            };
+            (
+                find_import_insertion_line(&doc.source),
+                doc.import_map.clone(),
+            )
+        };
+
+        let index = self.workspace_index.lock().unwrap();
 
         // Only process diagnostics from the resolver about undefined variables
         for diag in &params.context.diagnostics {
+            if diag.source.as_deref() != Some("gaul-resolve") {
+                continue;
+            }
+
             let Some(name) = extract_undefined_name(&diag.message) else {
                 continue;
             };
 
-            let current_path = match uri.to_file_path() {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-
             // Check which names are already imported in this file
-            let already_imported = {
-                let docs = self.documents.lock().unwrap();
-                if let Some(doc) = docs.get(&uri) {
-                    doc.import_map.contains_key(name)
-                } else {
-                    false
-                }
-            };
-            if already_imported {
+            if import_map.contains_key(name) {
                 continue;
             }
 
             // Search workspace index for files that export this name
-            let index = self.workspace_index.lock().unwrap();
             for (path, file_idx) in index.iter() {
                 // Skip current file
                 if *path == current_path {
@@ -1662,16 +1688,13 @@ impl LanguageServer for Backend {
                     continue;
                 }
 
-                // Build the import text
-                let source = {
-                    let docs = self.documents.lock().unwrap();
-                    docs.get(&uri).map(|d| d.source.clone())
-                };
-                let insert_line = source
-                    .as_deref()
-                    .map(find_import_insertion_line)
-                    .unwrap_or(0);
+                // Avoid duplicate actions when the same undefined name appears multiple times.
+                let key = (name.to_string(), module_path.clone());
+                if !seen.insert(key) {
+                    continue;
+                }
 
+                // Build the import text
                 let import_text = format!(
                     "import {{ {} }} from \"{}\"\n",
                     name,
@@ -2293,6 +2316,37 @@ mod tests {
         assert_eq!(
             local_module_completion_label(current, Path::new("/project/src/readme.md")),
             None
+        );
+    }
+
+    #[test]
+    fn workspace_root_from_initialize_prefers_root_uri() {
+        let params = InitializeParams {
+            root_uri: Some(Url::parse("file:///project/root").unwrap()),
+            workspace_folders: Some(vec![WorkspaceFolder {
+                uri: Url::parse("file:///project/folder").unwrap(),
+                name: "folder".to_string(),
+            }]),
+            ..Default::default()
+        };
+        assert_eq!(
+            workspace_root_from_initialize(&params),
+            Some(PathBuf::from("/project/root"))
+        );
+    }
+
+    #[test]
+    fn workspace_root_from_initialize_falls_back_to_workspace_folder() {
+        let params = InitializeParams {
+            workspace_folders: Some(vec![WorkspaceFolder {
+                uri: Url::parse("file:///project/folder").unwrap(),
+                name: "folder".to_string(),
+            }]),
+            ..Default::default()
+        };
+        assert_eq!(
+            workspace_root_from_initialize(&params),
+            Some(PathBuf::from("/project/folder"))
         );
     }
 }
