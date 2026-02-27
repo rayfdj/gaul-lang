@@ -713,7 +713,9 @@ npm install
 
 Then open the `editors/vscode/` folder in VS Code's "Install from VSIX" or symlink it into `~/.vscode/extensions/`. The extension auto-detects `gaul-lsp` from your cargo build output or `PATH`.
 
-You can also set `gaul.lsp.path` in VS Code settings to point at a specific binary.
+Settings:
+- `gaul.lsp.path` — path to the `gaul-lsp` binary (leave empty to auto-detect)
+- `gaul.inlayHints.parameterNames.enabled` — show parameter name hints at call sites (default: on)
 
 ### Neovim
 
@@ -745,6 +747,33 @@ vim.filetype.add({
   },
 })
 ```
+
+**Inlay hints** (Neovim 0.10+): Enable parameter name hints at call sites with:
+
+```lua
+vim.lsp.inlay_hint.enable(true)
+```
+
+Or toggle per-buffer with `:lua vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled())`.
+
+### LSP Features
+
+The language server (`gaul-lsp`) provides:
+
+- **Semantic highlighting** — context-aware coloring for keywords, variables, functions, parameters
+- **Diagnostics** — scan, parse, and resolve errors shown inline
+- **Go to definition** — jump to symbol definitions, including cross-file imports
+- **Find references** — locate all usages of a symbol (planned)
+- **Rename symbol** — rename variables, functions, and parameters across all usage sites
+- **Signature help** — parameter info as you type function calls, triggered on `(` and `,`
+- **Inlay hints** — parameter name labels at call sites
+- **Code actions** — quick-fix to auto-import undefined variables from workspace files
+- **Hover** — type info for variables, functions, methods, and keywords
+- **Completions** — symbols, native functions, methods (on `.`), keywords, import paths (on `"`)
+- **Document symbols** — outline of functions, variables, and imports
+- **Workspace symbols** — search symbols across all `.gaul` files
+- **Folding ranges** — collapse blocks, arrays, comment groups, and import groups
+- **Selection ranges** — expand/shrink selection by syntactic structure
 
 ---
 
