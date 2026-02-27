@@ -482,6 +482,7 @@ fn escape_gaul_string_literal(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+#[allow(deprecated)] // root_path fallback supports older LSP clients.
 fn workspace_roots_from_initialize(params: &InitializeParams) -> Vec<PathBuf> {
     let mut roots = Vec::new();
 
@@ -499,9 +500,42 @@ fn workspace_roots_from_initialize(params: &InitializeParams) -> Vec<PathBuf> {
         }
     }
 
+    if roots.is_empty()
+        && let Some(root_path) = &params.root_path
+    {
+        roots.push(PathBuf::from(root_path));
+    }
+
     let mut seen = HashSet::new();
     roots.retain(|path| seen.insert(path.clone()));
     roots
+}
+
+fn apply_workspace_folder_event(
+    roots: &mut Vec<PathBuf>,
+    event: &WorkspaceFoldersChangeEvent,
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let mut removed_roots = Vec::new();
+    for folder in &event.removed {
+        if let Ok(path) = folder.uri.to_file_path()
+            && roots.iter().any(|root| root == &path)
+        {
+            roots.retain(|root| root != &path);
+            removed_roots.push(path);
+        }
+    }
+
+    let mut added_roots = Vec::new();
+    for folder in &event.added {
+        if let Ok(path) = folder.uri.to_file_path()
+            && !roots.iter().any(|root| root == &path)
+        {
+            roots.push(path.clone());
+            added_roots.push(path);
+        }
+    }
+
+    (added_roots, removed_roots)
 }
 
 fn local_module_completion_label(current_file: &Path, candidate: &Path) -> Option<String> {
@@ -1274,6 +1308,22 @@ impl LanguageServer for Backend {
             for (uri, source) in uris_and_sources {
                 self.on_change(uri, source).await;
             }
+        }
+    }
+
+    async fn did_change_workspace_folders(&self, params: DidChangeWorkspaceFoldersParams) {
+        let (added_roots, removed_roots) = {
+            let mut roots = self.workspace_roots.lock().unwrap();
+            apply_workspace_folder_event(&mut roots, &params.event)
+        };
+
+        if !removed_roots.is_empty() {
+            let mut index = self.workspace_index.lock().unwrap();
+            index.retain(|path, _| !removed_roots.iter().any(|root| path.starts_with(root)));
+        }
+
+        for root in added_roots {
+            self.index_workspace(&root);
         }
     }
 
@@ -2437,6 +2487,55 @@ mod tests {
         assert_eq!(
             workspace_roots_from_initialize(&params),
             vec![PathBuf::from("/project/root")]
+        );
+    }
+
+    #[test]
+    #[allow(deprecated)] // root_path is intentionally tested for compatibility.
+    fn workspace_roots_from_initialize_falls_back_to_root_path() {
+        let params = InitializeParams {
+            root_path: Some("/project/root".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            workspace_roots_from_initialize(&params),
+            vec![PathBuf::from("/project/root")]
+        );
+    }
+
+    #[test]
+    fn apply_workspace_folder_event_adds_and_removes_roots() {
+        let mut roots = vec![PathBuf::from("/project/a"), PathBuf::from("/project/b")];
+        let event = WorkspaceFoldersChangeEvent {
+            added: vec![
+                WorkspaceFolder {
+                    uri: Url::parse("file:///project/c").unwrap(),
+                    name: "c".to_string(),
+                },
+                WorkspaceFolder {
+                    uri: Url::parse("file:///project/a").unwrap(),
+                    name: "a".to_string(),
+                },
+            ],
+            removed: vec![
+                WorkspaceFolder {
+                    uri: Url::parse("file:///project/b").unwrap(),
+                    name: "b".to_string(),
+                },
+                WorkspaceFolder {
+                    uri: Url::parse("file:///project/missing").unwrap(),
+                    name: "missing".to_string(),
+                },
+            ],
+        };
+
+        let (added_roots, removed_roots) = apply_workspace_folder_event(&mut roots, &event);
+
+        assert_eq!(added_roots, vec![PathBuf::from("/project/c")]);
+        assert_eq!(removed_roots, vec![PathBuf::from("/project/b")]);
+        assert_eq!(
+            roots,
+            vec![PathBuf::from("/project/a"), PathBuf::from("/project/c")]
         );
     }
 

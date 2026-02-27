@@ -719,42 +719,20 @@ Settings:
 
 ### Neovim
 
-With [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig), add a custom server config:
+Install the plugin from `editors/neovim/`. It gives you filetype detection, syntax highlighting, and proper editor settings out of the box.
+
+With **lazy.nvim**:
 
 ```lua
-local lspconfig = require('lspconfig')
-local configs = require('lspconfig.configs')
-
-if not configs.gaul_lsp then
-  configs.gaul_lsp = {
-    default_config = {
-      cmd = { 'gaul-lsp' },  -- or full path to the binary
-      filetypes = { 'gaul' },
-      root_dir = lspconfig.util.root_pattern('.git', '.gaul-keywords.json'),
-    },
-  }
-end
-
-lspconfig.gaul_lsp.setup({})
+{
+  'yourusername/gaul-lang',
+  config = function(plugin)
+    vim.opt.rtp:append(plugin.dir .. '/editors/neovim')
+  end,
+}
 ```
 
-You'll also want to tell Neovim about `.gaul` files:
-
-```lua
-vim.filetype.add({
-  extension = {
-    gaul = 'gaul',
-  },
-})
-```
-
-**Inlay hints** (Neovim 0.10+): Enable parameter name hints at call sites with:
-
-```lua
-vim.lsp.inlay_hint.enable(true)
-```
-
-Or toggle per-buffer with `:lua vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled())`.
+Then configure the LSP separately (nvim-lspconfig or native `vim.lsp.config`). See [`editors/neovim/README.md`](editors/neovim/README.md) for full setup instructions including LSP configuration and inlay hints.
 
 ### LSP Features
 
