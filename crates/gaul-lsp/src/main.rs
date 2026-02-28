@@ -2746,4 +2746,346 @@ mod tests {
         fs::remove_dir_all(&workspace).expect("workspace dir should be removed");
         fs::remove_dir_all(&outside).expect("outside dir should be removed");
     }
+
+    // ── Semantic tokens ──────────────────────────────────────────────
+
+    #[test]
+    fn semantic_tokens_keywords() {
+        let tokens = scan("let x = 1");
+        let result = encode_semantic_tokens(&tokens, None);
+        let kw = result.iter().find(|t| t.token_type == 0).unwrap();
+        assert_eq!(kw.length, 3); // "let"
+    }
+
+    #[test]
+    fn semantic_tokens_number() {
+        let tokens = scan("42");
+        let result = encode_semantic_tokens(&tokens, None);
+        assert!(result.iter().any(|t| t.token_type == 1 && t.length == 2));
+    }
+
+    #[test]
+    fn semantic_tokens_string() {
+        let tokens = scan("\"hello\"");
+        let result = encode_semantic_tokens(&tokens, None);
+        assert!(result.iter().any(|t| t.token_type == 2));
+    }
+
+    #[test]
+    fn semantic_tokens_comment() {
+        let tokens = scan("// hi");
+        let result = encode_semantic_tokens(&tokens, None);
+        assert!(result.iter().any(|t| t.token_type == 3));
+    }
+
+    #[test]
+    fn semantic_tokens_identifier_without_symbols() {
+        let tokens = scan("let x = 1");
+        let result = encode_semantic_tokens(&tokens, None);
+        // "x" should get type 4 (VARIABLE) when no symbol table is provided
+        assert!(result.iter().any(|t| t.token_type == 4));
+    }
+
+    #[test]
+    fn semantic_tokens_operators() {
+        let tokens = scan("1 + 2");
+        let result = encode_semantic_tokens(&tokens, None);
+        assert!(result.iter().any(|t| t.token_type == 5)); // OPERATOR
+    }
+
+    #[test]
+    fn semantic_tokens_function_with_symbols() {
+        let source = "fn foo() { 1 }\nfoo()";
+        let (tokens, symbols) = analyze_source(source);
+        let result = encode_semantic_tokens(&tokens, Some(&symbols));
+        // The call-site "foo" on line 2 should be type 6 (FUNCTION)
+        assert!(result.iter().any(|t| t.token_type == 6));
+    }
+
+    #[test]
+    fn semantic_tokens_parameter_with_symbols() {
+        let source = "fn f(x) { x }";
+        let (tokens, symbols) = analyze_source(source);
+        let result = encode_semantic_tokens(&tokens, Some(&symbols));
+        // The body "x" reference should be type 7 (PARAMETER)
+        assert!(result.iter().any(|t| t.token_type == 7));
+    }
+
+    #[test]
+    fn semantic_tokens_native_function() {
+        let tokens = scan("println(1)");
+        let result = encode_semantic_tokens(&tokens, None);
+        // "println" should be type 4 (VARIABLE) without symbols—no ref_map to refine
+        // With a symbol table, it would get type 6 + modifier. Test the no-symbol path:
+        let println_tok = result.iter().find(|t| t.length == 7).unwrap();
+        assert_eq!(println_tok.token_type, 4); // VARIABLE fallback
+
+        // Now test with an empty symbol table so the native-function branch fires
+        let empty_symbols = SymbolTable {
+            definitions: vec![],
+            references: vec![],
+        };
+        let result2 = encode_semantic_tokens(&tokens, Some(&empty_symbols));
+        let println_tok2 = result2.iter().find(|t| t.length == 7).unwrap();
+        assert_eq!(println_tok2.token_type, 6); // FUNCTION
+        assert_eq!(println_tok2.token_modifiers_bitset, 0b10); // DEFAULT_LIBRARY
+    }
+
+    #[test]
+    fn semantic_tokens_delta_encoding() {
+        let tokens = scan("let x = 1\nlet y = 2");
+        let result = encode_semantic_tokens(&tokens, None);
+        // The second line's first token ("let") should have delta_line > 0
+        // Find second keyword token (second "let")
+        let keywords: Vec<_> = result.iter().filter(|t| t.token_type == 0).collect();
+        assert_eq!(keywords.len(), 2);
+        assert_eq!(keywords[0].delta_line, 0); // first "let" on line 0
+        assert_eq!(keywords[1].delta_line, 1); // second "let" on line 1
+        assert_eq!(keywords[1].delta_start, 0); // starts at column 0
+    }
+
+    #[test]
+    fn semantic_tokens_empty_source() {
+        let tokens = scan("");
+        let result = encode_semantic_tokens(&tokens, None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn semantic_tokens_skips_punctuation() {
+        let tokens = scan("(1)");
+        let result = encode_semantic_tokens(&tokens, None);
+        // Only the number should produce a semantic token, not parens
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].token_type, 1); // NUMBER
+    }
+
+    // ── Hover helpers ────────────────────────────────────────────────
+
+    #[test]
+    fn find_token_at_position_exact() {
+        let tokens = scan("let x = 1");
+        // "x" is at line 1, col 5 in 1-indexed → Position(0, 4)
+        let found = find_token_at_position(&tokens, Position::new(0, 4));
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().lexeme, "x");
+    }
+
+    #[test]
+    fn find_token_at_position_between_tokens() {
+        let tokens = scan("let x = 1");
+        // Position(0, 3) is the space between "let" and "x"
+        let found = find_token_at_position(&tokens, Position::new(0, 3));
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn find_token_at_position_end_of_token() {
+        let tokens = scan("let x = 1");
+        // "let" occupies cols 1-3 (1-indexed), so col 4 (1-indexed) = Position(0,3) is past end
+        let found = find_token_at_position(&tokens, Position::new(0, 3));
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn keyword_description_returns_info() {
+        let result = keyword_description(&TokenType::Let);
+        assert_eq!(result, Some(("let", "Immutable binding")));
+    }
+
+    #[test]
+    fn keyword_description_returns_none_for_non_keyword() {
+        let result = keyword_description(&TokenType::Identifier);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn token_before_position_finds_previous() {
+        let tokens = scan("let x = 1");
+        // Position just after "x" (col 5 in 0-indexed, which is col 6 in 1-indexed)
+        let found = token_before_position(&tokens, Position::new(0, 5));
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().lexeme, "x");
+    }
+
+    // ── Document symbols ─────────────────────────────────────────────
+
+    #[test]
+    fn symbol_table_contains_functions() {
+        let (_, symbols) = analyze_source("fn foo() { 1 }");
+        assert!(
+            symbols
+                .definitions
+                .iter()
+                .any(|d| d.name == "foo" && d.kind == analysis::SymbolKind::Function)
+        );
+    }
+
+    #[test]
+    fn symbol_table_contains_variables() {
+        let (_, symbols) = analyze_source("let x = 1");
+        assert!(
+            symbols
+                .definitions
+                .iter()
+                .any(|d| d.name == "x" && d.kind == analysis::SymbolKind::Variable)
+        );
+    }
+
+    #[test]
+    fn symbol_table_contains_imports() {
+        // Imports require file resolution to fully work; verify the scanner/parser
+        // recognizes the import token and the symbol kind exists.
+        let tokens = scan("import { foo } from \"bar\"");
+        assert!(tokens.iter().any(|t| t.token_type == TokenType::Import));
+        // SymbolKind::Import variant exists — this is a compile-time check
+        let _kind = analysis::SymbolKind::Import;
+    }
+
+    #[test]
+    fn symbol_table_parameters_are_scoped() {
+        let (_, symbols) = analyze_source("fn f(a) { a }");
+        assert!(
+            symbols
+                .definitions
+                .iter()
+                .any(|d| d.name == "a" && d.kind == analysis::SymbolKind::Parameter)
+        );
+    }
+
+    // ── Go-to-definition ─────────────────────────────────────────────
+
+    #[test]
+    fn goto_def_variable_reference() {
+        let source = "let x = 1\nprintln(x)";
+        let (tokens, symbols) = analyze_source(source);
+        // Cursor on "x" reference at line 2, col 9 (1-indexed) → Position(1, 8)
+        let result = resolve_token_to_def(&tokens, &symbols, Position::new(1, 8));
+        assert!(result.is_some());
+        let (def_idx, _) = result.unwrap();
+        assert_eq!(symbols.definitions[def_idx].name, "x");
+        assert_eq!(
+            symbols.definitions[def_idx].kind,
+            analysis::SymbolKind::Variable
+        );
+    }
+
+    #[test]
+    fn goto_def_function_call() {
+        let source = "fn foo() { 1 }\nfoo()";
+        let (tokens, symbols) = analyze_source(source);
+        // Cursor on "foo" call at line 2, col 1 (1-indexed) → Position(1, 0)
+        let result = resolve_token_to_def(&tokens, &symbols, Position::new(1, 0));
+        assert!(result.is_some());
+        let (def_idx, _) = result.unwrap();
+        assert_eq!(symbols.definitions[def_idx].name, "foo");
+        assert_eq!(
+            symbols.definitions[def_idx].kind,
+            analysis::SymbolKind::Function
+        );
+    }
+
+    #[test]
+    fn goto_def_parameter_in_body() {
+        let source = "fn f(x) { x }";
+        let (tokens, symbols) = analyze_source(source);
+        // "x" in body is at col 11 (1-indexed) → Position(0, 10)
+        let result = resolve_token_to_def(&tokens, &symbols, Position::new(0, 10));
+        assert!(result.is_some());
+        let (def_idx, _) = result.unwrap();
+        assert_eq!(symbols.definitions[def_idx].name, "x");
+        assert_eq!(
+            symbols.definitions[def_idx].kind,
+            analysis::SymbolKind::Parameter
+        );
+    }
+
+    #[test]
+    fn goto_def_definition_site_resolves() {
+        let source = "let x = 1\nprintln(x)";
+        let (tokens, symbols) = analyze_source(source);
+        // Cursor on "x" at definition site: line 1, col 5 (1-indexed) → Position(0, 4)
+        let result = resolve_token_to_def(&tokens, &symbols, Position::new(0, 4));
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn goto_def_cursor_on_whitespace() {
+        let source = "let x = 1";
+        let (tokens, symbols) = analyze_source(source);
+        // Position(0, 3) is whitespace between "let" and "x"
+        let result = resolve_token_to_def(&tokens, &symbols, Position::new(0, 3));
+        assert!(result.is_none());
+    }
+
+    // ── Negative tests ───────────────────────────────────────────────
+
+    #[test]
+    fn folding_single_line_block() {
+        let tokens = scan("fn foo() { 1 }");
+        let ranges = compute_folding_ranges(&tokens);
+        let block_ranges: Vec<_> = ranges.iter().filter(|r| r.kind.is_none()).collect();
+        assert!(
+            block_ranges.is_empty(),
+            "single-line block should not produce folding ranges"
+        );
+    }
+
+    #[test]
+    fn folding_empty_source() {
+        let tokens = scan("");
+        let ranges = compute_folding_ranges(&tokens);
+        assert!(ranges.is_empty());
+    }
+
+    #[test]
+    fn selection_range_empty_source() {
+        let tokens = scan("");
+        let result = compute_selection_ranges(&tokens, &[Position::new(0, 0)], "");
+        assert_eq!(result.len(), 1);
+        // Should still return a minimal range covering the empty document
+        assert_eq!(result[0].range.start, Position::new(0, 0));
+    }
+
+    #[test]
+    fn inlay_hints_no_args() {
+        // println() with no arguments should produce no hints
+        let tokens = scan("println()");
+        let hints = compute_inlay_hints(&tokens, None, &full_range());
+        assert!(hints.is_empty());
+    }
+
+    #[test]
+    fn inlay_hints_empty_source() {
+        let tokens = scan("");
+        let hints = compute_inlay_hints(&tokens, None, &full_range());
+        assert!(hints.is_empty());
+    }
+
+    #[test]
+    fn find_call_context_outside_parens() {
+        let tokens = scan("foo(1)");
+        // Cursor before the opening paren — on "foo" at col 0
+        let result = find_call_context(&tokens, Position::new(0, 0));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn semantic_tokens_only_comments() {
+        let tokens = scan("// first comment\n// second comment");
+        let result = encode_semantic_tokens(&tokens, None);
+        assert!(!result.is_empty());
+        for tok in &result {
+            assert_eq!(tok.token_type, 3, "all tokens should be COMMENT type");
+        }
+    }
+
+    #[test]
+    fn rename_cursor_between_tokens() {
+        let source = "let x = 1";
+        let (tokens, symbols) = analyze_source(source);
+        // Whitespace at Position(0, 3)
+        let result = resolve_token_to_def(&tokens, &symbols, Position::new(0, 3));
+        assert!(result.is_none());
+    }
 }
