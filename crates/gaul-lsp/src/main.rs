@@ -45,6 +45,7 @@ struct DocumentState {
 struct FileIndex {
     exports: Vec<(String, Span)>,
     symbols: Vec<SymbolDef>,
+    source: String,
 }
 
 struct Backend {
@@ -64,7 +65,7 @@ impl Backend {
         let mut diagnostics: Vec<Diagnostic> = scan_result
             .errors
             .iter()
-            .map(|e| span_to_diagnostic(e.span, &e.message, "scan"))
+            .map(|e| span_to_diagnostic(e.span, &e.message, "scan", text))
             .collect();
 
         let tokens_for_parser = scan_result.tokens_without_comments();
@@ -85,14 +86,14 @@ impl Backend {
 
                 let mut resolver = Resolver::new();
                 if let Err(e) = resolver.resolve(&mut program) {
-                    diagnostics.push(span_to_diagnostic(e.span, &e.message, "resolve"));
+                    diagnostics.push(span_to_diagnostic(e.span, &e.message, "resolve", text));
                 } else {
                     symbols = Some(analysis::build_symbol_table(&program));
                 }
             }
             Err(errors) => {
                 for e in &errors {
-                    diagnostics.push(span_to_diagnostic(e.span, &e.message, "parse"));
+                    diagnostics.push(span_to_diagnostic(e.span, &e.message, "parse", text));
                 }
             }
         }
@@ -162,15 +163,52 @@ impl Backend {
     }
 }
 
-fn span_to_diagnostic(span: Span, message: &str, source: &str) -> Diagnostic {
-    // Gaul spans are 1-indexed, LSP is 0-indexed
-    let line = span.line.saturating_sub(1) as u32;
-    let col = span.col.saturating_sub(1) as u32;
+fn line_text(source: &str, line_1_based: usize) -> &str {
+    source
+        .split('\n')
+        .nth(line_1_based.saturating_sub(1))
+        .unwrap_or("")
+}
+
+fn char_col_to_utf16_col(line: &str, char_col: usize) -> u32 {
+    line.chars()
+        .take(char_col)
+        .map(|c| c.len_utf16() as u32)
+        .sum()
+}
+
+fn utf16_col_to_char_col(line: &str, utf16_col: u32) -> usize {
+    let mut units = 0u32;
+    let mut chars = 0usize;
+    for ch in line.chars() {
+        let width = ch.len_utf16() as u32;
+        if units + width > utf16_col {
+            break;
+        }
+        units += width;
+        chars += 1;
+    }
+    chars
+}
+
+fn span_to_range_in_source(span: Span, source: &str) -> Range {
+    // Gaul spans are 1-indexed in char columns, LSP uses UTF-16 code units.
+    let line_index = span.line.saturating_sub(1) as u32;
+    let line_source = line_text(source, span.line);
+    let start_char = span.col.saturating_sub(1);
+    let end_char = start_char.saturating_add(span.length);
+    let start_utf16 = char_col_to_utf16_col(line_source, start_char);
+    let end_utf16 = char_col_to_utf16_col(line_source, end_char);
+    Range {
+        start: Position::new(line_index, start_utf16),
+        end: Position::new(line_index, end_utf16),
+    }
+}
+
+fn span_to_diagnostic(span: Span, message: &str, source: &str, text: &str) -> Diagnostic {
+    let range = span_to_range_in_source(span, text);
     Diagnostic {
-        range: Range {
-            start: Position::new(line, col),
-            end: Position::new(line, col + span.length as u32),
-        },
+        range,
         severity: Some(DiagnosticSeverity::ERROR),
         source: Some(format!("gaul-{}", source)),
         message: message.to_string(),
@@ -178,13 +216,11 @@ fn span_to_diagnostic(span: Span, message: &str, source: &str) -> Diagnostic {
     }
 }
 
-fn span_to_range(span: Span) -> Range {
-    let line = span.line.saturating_sub(1) as u32;
-    let col = span.col.saturating_sub(1) as u32;
-    Range {
-        start: Position::new(line, col),
-        end: Position::new(line, col + span.length as u32),
-    }
+fn lsp_to_char_position(pos: Position, source: &str) -> Position {
+    let line_1_based = pos.line as usize + 1;
+    let line_source = line_text(source, line_1_based);
+    let char_col = utf16_col_to_char_col(line_source, pos.character);
+    Position::new(pos.line, char_col as u32)
 }
 
 fn find_token_at_position(tokens: &[Token], pos: Position) -> Option<&Token> {
@@ -653,6 +689,7 @@ fn compute_inlay_hints(
     tokens: &[Token],
     symbols: Option<&SymbolTable>,
     range: &Range,
+    source: &str,
 ) -> Vec<InlayHint> {
     let mut hints = Vec::new();
 
@@ -720,6 +757,7 @@ fn compute_inlay_hints(
                                     &param_names,
                                     param_idx,
                                     range,
+                                    source,
                                     &mut hints,
                                 );
                             }
@@ -734,6 +772,7 @@ fn compute_inlay_hints(
                                 &param_names,
                                 param_idx,
                                 range,
+                                source,
                                 &mut hints,
                             );
                         }
@@ -759,6 +798,7 @@ fn emit_param_hint(
     param_names: &[String],
     param_idx: usize,
     range: &Range,
+    source: &str,
     hints: &mut Vec<InlayHint>,
 ) {
     if param_idx >= param_names.len() {
@@ -780,9 +820,12 @@ fn emit_param_hint(
         return;
     }
 
+    let hint_line = first_token.span.line.saturating_sub(1) as u32;
+    let hint_line_source = line_text(source, first_token.span.line);
+    let hint_char = first_token.span.col.saturating_sub(1);
     let hint_pos = Position::new(
-        first_token.span.line.saturating_sub(1) as u32,
-        first_token.span.col.saturating_sub(1) as u32,
+        hint_line,
+        char_col_to_utf16_col(hint_line_source, hint_char),
     );
 
     // Only emit if the hint start is within the requested range bounds.
@@ -806,7 +849,11 @@ fn emit_param_hint(
     });
 }
 
-fn encode_semantic_tokens(tokens: &[Token], symbols: Option<&SymbolTable>) -> Vec<SemanticToken> {
+fn encode_semantic_tokens(
+    tokens: &[Token],
+    symbols: Option<&SymbolTable>,
+    source: &str,
+) -> Vec<SemanticToken> {
     let ref_map = symbols.map(build_ref_map);
 
     let mut result = Vec::new();
@@ -840,9 +887,13 @@ fn encode_semantic_tokens(tokens: &[Token], symbols: Option<&SymbolTable>) -> Ve
             }
         };
 
-        let line = token.span.line.saturating_sub(1) as u32;
-        let start = token.span.col.saturating_sub(1) as u32;
-        let length = token.span.length as u32;
+        let line_1_based = token.span.line;
+        let line = line_1_based.saturating_sub(1) as u32;
+        let line_source = line_text(source, line_1_based);
+        let start_char = token.span.col.saturating_sub(1);
+        let end_char = start_char.saturating_add(token.span.length);
+        let start = char_col_to_utf16_col(line_source, start_char);
+        let length = char_col_to_utf16_col(line_source, end_char).saturating_sub(start);
 
         if length == 0 {
             continue;
@@ -901,6 +952,7 @@ fn build_file_index(source: &str, keywords: &HashMap<String, TokenType>) -> Opti
     Some(FileIndex {
         exports,
         symbols: table.definitions,
+        source: source.to_string(),
     })
 }
 
@@ -1072,20 +1124,20 @@ fn bracket_kind(tt: &TokenType) -> Option<(u8, bool)> {
     }
 }
 
-fn compute_bracket_pairs(tokens: &[Token]) -> Vec<BracketPair> {
+fn compute_bracket_pairs(tokens: &[Token], source: &str) -> Vec<BracketPair> {
     let mut stack: Vec<(Range, u8)> = Vec::new();
     let mut pairs = Vec::new();
 
     for token in tokens {
         if let Some((kind, is_open)) = bracket_kind(&token.token_type) {
             if is_open {
-                stack.push((span_to_range(token.span), kind));
+                stack.push((span_to_range_in_source(token.span, source), kind));
             } else {
                 while let Some((open_range, open_kind)) = stack.pop() {
                     if open_kind == kind {
                         pairs.push(BracketPair {
                             open: open_range,
-                            close: span_to_range(token.span),
+                            close: span_to_range_in_source(token.span, source),
                         });
                         break;
                     }
@@ -1111,18 +1163,24 @@ fn compute_selection_ranges(
     source: &str,
 ) -> Vec<SelectionRange> {
     let line_count = source.split('\n').count().max(1);
-    let last_line_len = source.split('\n').next_back().map(|l| l.len()).unwrap_or(0);
+    let last_line_len = source
+        .split('\n')
+        .next_back()
+        .map(|l| l.encode_utf16().count())
+        .unwrap_or(0);
     let doc_range = Range {
         start: Position::new(0, 0),
         end: Position::new(line_count.saturating_sub(1) as u32, last_line_len as u32),
     };
 
-    let pairs = compute_bracket_pairs(tokens);
+    let pairs = compute_bracket_pairs(tokens, source);
 
     positions
         .iter()
         .map(|pos| {
-            let token_range = find_token_at_position(tokens, *pos).map(|t| span_to_range(t.span));
+            let token_pos = lsp_to_char_position(*pos, source);
+            let token_range = find_token_at_position(tokens, token_pos)
+                .map(|t| span_to_range_in_source(t.span, source));
 
             // Bracket pairs whose full range contains this position, innermost first
             let mut containing: Vec<&BracketPair> = pairs
@@ -1393,7 +1451,7 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let encoded = encode_semantic_tokens(&doc.tokens, doc.symbols.as_ref());
+        let encoded = encode_semantic_tokens(&doc.tokens, doc.symbols.as_ref(), &doc.source);
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
             result_id: None,
             data: encoded,
@@ -1405,7 +1463,7 @@ impl LanguageServer for Backend {
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
         let uri = params.text_document_position_params.text_document.uri;
-        let pos = params.text_document_position_params.position;
+        let lsp_pos = params.text_document_position_params.position;
 
         // Extract what we need, then release the documents lock
         let lookup = {
@@ -1413,6 +1471,7 @@ impl LanguageServer for Backend {
             let Some(doc) = docs.get(&uri) else {
                 return Ok(None);
             };
+            let pos = lsp_to_char_position(lsp_pos, &doc.source);
             let Some(symbols) = &doc.symbols else {
                 return Ok(None);
             };
@@ -1433,10 +1492,10 @@ impl LanguageServer for Backend {
             } else {
                 None
             };
-            (def, module_path)
+            (def, module_path, doc.source.clone())
         };
 
-        let (def, module_path) = lookup;
+        let (def, module_path, current_source) = lookup;
 
         // Cross-file: if the definition is an import, look up in workspace index
         if let Some(module_path) = module_path
@@ -1465,7 +1524,7 @@ impl LanguageServer for Backend {
                 {
                     return Ok(Some(GotoDefinitionResponse::Scalar(Location {
                         uri: target_uri,
-                        range: span_to_range(*export_span),
+                        range: span_to_range_in_source(*export_span, &file_idx.source),
                     })));
                 }
             }
@@ -1474,7 +1533,7 @@ impl LanguageServer for Backend {
         // Same-file definition
         Ok(Some(GotoDefinitionResponse::Scalar(Location {
             uri: uri.clone(),
-            range: span_to_range(def.span),
+            range: span_to_range_in_source(def.span, &current_source),
         })))
     }
 
@@ -1504,21 +1563,18 @@ impl LanguageServer for Backend {
                         | analysis::SymbolKind::Import
                 )
             })
-            .map(|d| {
-                let range = span_to_range(d.span);
-                DocumentSymbol {
-                    name: d.name.clone(),
-                    detail: Some(d.detail.clone()),
-                    kind: match d.kind {
-                        analysis::SymbolKind::Function => SymbolKind::FUNCTION,
-                        _ => SymbolKind::VARIABLE,
-                    },
-                    tags: None,
-                    deprecated: None,
-                    range,
-                    selection_range: range,
-                    children: None,
-                }
+            .map(|d| DocumentSymbol {
+                name: d.name.clone(),
+                detail: Some(d.detail.clone()),
+                kind: match d.kind {
+                    analysis::SymbolKind::Function => SymbolKind::FUNCTION,
+                    _ => SymbolKind::VARIABLE,
+                },
+                tags: None,
+                deprecated: None,
+                range: span_to_range_in_source(d.span, &doc.source),
+                selection_range: span_to_range_in_source(d.span, &doc.source),
+                children: None,
             })
             .collect();
 
@@ -1527,12 +1583,13 @@ impl LanguageServer for Backend {
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = params.text_document_position.text_document.uri;
-        let pos = params.text_document_position.position;
+        let lsp_pos = params.text_document_position.position;
 
         let docs = self.documents.lock().unwrap();
         let Some(doc) = docs.get(&uri) else {
             return Ok(None);
         };
+        let pos = lsp_to_char_position(lsp_pos, &doc.source);
 
         let trigger = params
             .context
@@ -1666,12 +1723,13 @@ impl LanguageServer for Backend {
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
-        let pos = params.text_document_position_params.position;
+        let lsp_pos = params.text_document_position_params.position;
 
         let docs = self.documents.lock().unwrap();
         let Some(doc) = docs.get(&uri) else {
             return Ok(None);
         };
+        let pos = lsp_to_char_position(lsp_pos, &doc.source);
 
         let Some(token) = find_token_at_position(&doc.tokens, pos) else {
             return Ok(None);
@@ -1690,7 +1748,7 @@ impl LanguageServer for Backend {
                     kind: MarkupKind::Markdown,
                     value: text,
                 }),
-                range: Some(span_to_range(token.span)),
+                range: Some(span_to_range_in_source(token.span, &doc.source)),
             }));
         }
 
@@ -1719,7 +1777,7 @@ impl LanguageServer for Backend {
                         kind: MarkupKind::Markdown,
                         value: methods.join("\n\n---\n\n"),
                     }),
-                    range: Some(span_to_range(token.span)),
+                    range: Some(span_to_range_in_source(token.span, &doc.source)),
                 }));
             }
         }
@@ -1738,7 +1796,7 @@ impl LanguageServer for Backend {
                         kind: MarkupKind::Markdown,
                         value: format!("```\n{}\n```", def.detail),
                     }),
-                    range: Some(span_to_range(token.span)),
+                    range: Some(span_to_range_in_source(token.span, &doc.source)),
                 }));
             }
 
@@ -1753,7 +1811,7 @@ impl LanguageServer for Backend {
                         kind: MarkupKind::Markdown,
                         value: format!("```\n{}\n```", def.detail),
                     }),
-                    range: Some(span_to_range(token.span)),
+                    range: Some(span_to_range_in_source(token.span, &doc.source)),
                 }));
             }
         }
@@ -1771,7 +1829,7 @@ impl LanguageServer for Backend {
                         info.name, info.params, info.returns, info.doc
                     ),
                 }),
-                range: Some(span_to_range(token.span)),
+                range: Some(span_to_range_in_source(token.span, &doc.source)),
             }));
         }
 
@@ -1915,18 +1973,19 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let hints = compute_inlay_hints(&doc.tokens, doc.symbols.as_ref(), &range);
+        let hints = compute_inlay_hints(&doc.tokens, doc.symbols.as_ref(), &range, &doc.source);
         Ok(Some(hints))
     }
 
     async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
         let uri = params.text_document_position_params.text_document.uri;
-        let pos = params.text_document_position_params.position;
+        let lsp_pos = params.text_document_position_params.position;
 
         let docs = self.documents.lock().unwrap();
         let Some(doc) = docs.get(&uri) else {
             return Ok(None);
         };
+        let pos = lsp_to_char_position(lsp_pos, &doc.source);
 
         let Some((func_name, is_method, active_param)) = find_call_context(&doc.tokens, pos) else {
             return Ok(None);
@@ -1989,12 +2048,13 @@ impl LanguageServer for Backend {
         params: TextDocumentPositionParams,
     ) -> Result<Option<PrepareRenameResponse>> {
         let uri = params.text_document.uri;
-        let pos = params.position;
+        let lsp_pos = params.position;
 
         let docs = self.documents.lock().unwrap();
         let Some(doc) = docs.get(&uri) else {
             return Ok(None);
         };
+        let pos = lsp_to_char_position(lsp_pos, &doc.source);
         let Some(symbols) = &doc.symbols else {
             return Ok(None);
         };
@@ -2004,20 +2064,21 @@ impl LanguageServer for Backend {
         };
 
         Ok(Some(PrepareRenameResponse::RangeWithPlaceholder {
-            range: span_to_range(token.span),
+            range: span_to_range_in_source(token.span, &doc.source),
             placeholder: token.lexeme.clone(),
         }))
     }
 
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
         let uri = params.text_document_position.text_document.uri;
-        let pos = params.text_document_position.position;
+        let lsp_pos = params.text_document_position.position;
         let new_name = params.new_name;
 
         let docs = self.documents.lock().unwrap();
         let Some(doc) = docs.get(&uri) else {
             return Ok(None);
         };
+        let pos = lsp_to_char_position(lsp_pos, &doc.source);
         let Some(symbols) = &doc.symbols else {
             return Ok(None);
         };
@@ -2036,10 +2097,10 @@ impl LanguageServer for Backend {
                 let span = Span {
                     line,
                     col,
-                    length: def.name.len(),
+                    length: def.name.chars().count(),
                 };
                 edits.push(TextEdit {
-                    range: span_to_range(span),
+                    range: span_to_range_in_source(span, &doc.source),
                     new_text: new_name.clone(),
                 });
             }
@@ -2049,7 +2110,7 @@ impl LanguageServer for Backend {
         for sym_ref in &symbols.references {
             if sym_ref.def_index == def_idx {
                 edits.push(TextEdit {
-                    range: span_to_range(sym_ref.span),
+                    range: span_to_range_in_source(sym_ref.span, &doc.source),
                     new_text: new_name.clone(),
                 });
             }
@@ -2092,7 +2153,7 @@ impl LanguageServer for Backend {
                         deprecated: None,
                         location: Location {
                             uri,
-                            range: span_to_range(sym.span),
+                            range: span_to_range_in_source(sym.span, &file_idx.source),
                         },
                         container_name: path
                             .file_name()
@@ -2465,31 +2526,34 @@ mod tests {
 
     #[test]
     fn inlay_hints_native_call() {
-        let tokens = scan("println(42)");
-        let hints = compute_inlay_hints(&tokens, None, &full_range());
+        let source = "println(42)";
+        let tokens = scan(source);
+        let hints = compute_inlay_hints(&tokens, None, &full_range(), source);
         assert_eq!(hints.len(), 1);
         assert_eq!(hint_label_str(&hints[0]), "value: ");
     }
 
     #[test]
     fn inlay_hints_respect_character_bounds() {
-        let tokens = scan("println(42)");
+        let source = "println(42)";
+        let tokens = scan(source);
         let narrow_range = Range {
             start: Position::new(0, 0),
             end: Position::new(0, 7), // just before argument token at char 8
         };
-        let hints = compute_inlay_hints(&tokens, None, &narrow_range);
+        let hints = compute_inlay_hints(&tokens, None, &narrow_range, source);
         assert!(hints.is_empty());
     }
 
     #[test]
     fn inlay_hints_excludes_end_boundary_position() {
-        let tokens = scan("println(42)");
+        let source = "println(42)";
+        let tokens = scan(source);
         let end_boundary = Range {
             start: Position::new(0, 0),
             end: Position::new(0, 8), // hint starts here; LSP end is exclusive
         };
-        let hints = compute_inlay_hints(&tokens, None, &end_boundary);
+        let hints = compute_inlay_hints(&tokens, None, &end_boundary, source);
         assert!(hints.is_empty());
     }
 
@@ -2497,7 +2561,7 @@ mod tests {
     fn inlay_hints_skip_matching_name() {
         let source = "fn greet(name) {\n  println(name)\n}";
         let (tokens, symbols) = analyze_source(source);
-        let hints = compute_inlay_hints(&tokens, Some(&symbols), &full_range());
+        let hints = compute_inlay_hints(&tokens, Some(&symbols), &full_range(), source);
         let println_hints: Vec<_> = hints.iter().filter(|h| h.position.line == 1).collect();
         assert_eq!(println_hints.len(), 1);
     }
@@ -2506,11 +2570,23 @@ mod tests {
     fn inlay_hints_user_function() {
         let source = "fn add(a, b) {\n  a + b\n}\nadd(1, 2)";
         let (tokens, symbols) = analyze_source(source);
-        let hints = compute_inlay_hints(&tokens, Some(&symbols), &full_range());
+        let hints = compute_inlay_hints(&tokens, Some(&symbols), &full_range(), source);
         let call_hints: Vec<_> = hints.iter().filter(|h| h.position.line == 3).collect();
         assert_eq!(call_hints.len(), 2);
         assert_eq!(hint_label_str(call_hints[0]), "a: ");
         assert_eq!(hint_label_str(call_hints[1]), "b: ");
+    }
+
+    #[test]
+    fn inlay_hints_use_utf16_positions() {
+        let source = "format(\"😀\", 1)";
+        let tokens = scan(source);
+        let hints = compute_inlay_hints(&tokens, None, &full_range(), source);
+        let vararg_hint = hints
+            .iter()
+            .find(|h| hint_label_str(h) == "...args: ")
+            .expect("expected variadic argument hint");
+        assert_eq!(vararg_hint.position, Position::new(0, 13));
     }
 
     #[test]
@@ -2855,45 +2931,51 @@ mod tests {
 
     #[test]
     fn semantic_tokens_keywords() {
-        let tokens = scan("let x = 1");
-        let result = encode_semantic_tokens(&tokens, None);
+        let source = "let x = 1";
+        let tokens = scan(source);
+        let result = encode_semantic_tokens(&tokens, None, source);
         let kw = result.iter().find(|t| t.token_type == 0).unwrap();
         assert_eq!(kw.length, 3); // "let"
     }
 
     #[test]
     fn semantic_tokens_number() {
-        let tokens = scan("42");
-        let result = encode_semantic_tokens(&tokens, None);
+        let source = "42";
+        let tokens = scan(source);
+        let result = encode_semantic_tokens(&tokens, None, source);
         assert!(result.iter().any(|t| t.token_type == 1 && t.length == 2));
     }
 
     #[test]
     fn semantic_tokens_string() {
-        let tokens = scan("\"hello\"");
-        let result = encode_semantic_tokens(&tokens, None);
+        let source = "\"hello\"";
+        let tokens = scan(source);
+        let result = encode_semantic_tokens(&tokens, None, source);
         assert!(result.iter().any(|t| t.token_type == 2));
     }
 
     #[test]
     fn semantic_tokens_comment() {
-        let tokens = scan("// hi");
-        let result = encode_semantic_tokens(&tokens, None);
+        let source = "// hi";
+        let tokens = scan(source);
+        let result = encode_semantic_tokens(&tokens, None, source);
         assert!(result.iter().any(|t| t.token_type == 3));
     }
 
     #[test]
     fn semantic_tokens_identifier_without_symbols() {
-        let tokens = scan("let x = 1");
-        let result = encode_semantic_tokens(&tokens, None);
+        let source = "let x = 1";
+        let tokens = scan(source);
+        let result = encode_semantic_tokens(&tokens, None, source);
         // "x" should get type 4 (VARIABLE) when no symbol table is provided
         assert!(result.iter().any(|t| t.token_type == 4));
     }
 
     #[test]
     fn semantic_tokens_operators() {
-        let tokens = scan("1 + 2");
-        let result = encode_semantic_tokens(&tokens, None);
+        let source = "1 + 2";
+        let tokens = scan(source);
+        let result = encode_semantic_tokens(&tokens, None, source);
         assert!(result.iter().any(|t| t.token_type == 5)); // OPERATOR
     }
 
@@ -2901,7 +2983,7 @@ mod tests {
     fn semantic_tokens_function_with_symbols() {
         let source = "fn foo() { 1 }\nfoo()";
         let (tokens, symbols) = analyze_source(source);
-        let result = encode_semantic_tokens(&tokens, Some(&symbols));
+        let result = encode_semantic_tokens(&tokens, Some(&symbols), source);
         // The call-site "foo" on line 2 should be type 6 (FUNCTION)
         assert!(result.iter().any(|t| t.token_type == 6));
     }
@@ -2910,15 +2992,16 @@ mod tests {
     fn semantic_tokens_parameter_with_symbols() {
         let source = "fn f(x) { x }";
         let (tokens, symbols) = analyze_source(source);
-        let result = encode_semantic_tokens(&tokens, Some(&symbols));
+        let result = encode_semantic_tokens(&tokens, Some(&symbols), source);
         // The body "x" reference should be type 7 (PARAMETER)
         assert!(result.iter().any(|t| t.token_type == 7));
     }
 
     #[test]
     fn semantic_tokens_native_function() {
-        let tokens = scan("println(1)");
-        let result = encode_semantic_tokens(&tokens, None);
+        let source = "println(1)";
+        let tokens = scan(source);
+        let result = encode_semantic_tokens(&tokens, None, source);
         let println_src = tokens
             .iter()
             .find(|t| t.token_type == TokenType::Identifier && t.lexeme == "println")
@@ -2941,7 +3024,7 @@ mod tests {
             definitions: vec![],
             references: vec![],
         };
-        let result2 = encode_semantic_tokens(&tokens, Some(&empty_symbols));
+        let result2 = encode_semantic_tokens(&tokens, Some(&empty_symbols), source);
         let decoded2 = decode_semantic_tokens(&result2);
         let println_tok2 = decoded2
             .iter()
@@ -2957,8 +3040,9 @@ mod tests {
 
     #[test]
     fn semantic_tokens_delta_encoding() {
-        let tokens = scan("let x = 1\nlet y = 2");
-        let result = encode_semantic_tokens(&tokens, None);
+        let source = "let x = 1\nlet y = 2";
+        let tokens = scan(source);
+        let result = encode_semantic_tokens(&tokens, None, source);
         // The second line's first token ("let") should have delta_line > 0
         // Find second keyword token (second "let")
         let keywords: Vec<_> = result.iter().filter(|t| t.token_type == 0).collect();
@@ -2970,18 +3054,42 @@ mod tests {
 
     #[test]
     fn semantic_tokens_empty_source() {
-        let tokens = scan("");
-        let result = encode_semantic_tokens(&tokens, None);
+        let source = "";
+        let tokens = scan(source);
+        let result = encode_semantic_tokens(&tokens, None, source);
         assert!(result.is_empty());
     }
 
     #[test]
     fn semantic_tokens_skips_punctuation() {
-        let tokens = scan("(1)");
-        let result = encode_semantic_tokens(&tokens, None);
+        let source = "(1)";
+        let tokens = scan(source);
+        let result = encode_semantic_tokens(&tokens, None, source);
         // Only the number should produce a semantic token, not parens
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].token_type, 1); // NUMBER
+    }
+
+    #[test]
+    fn semantic_tokens_use_utf16_offsets() {
+        let source = "\"😀\" + 1";
+        let tokens = scan(source);
+        let result = encode_semantic_tokens(&tokens, None, source);
+        let decoded = decode_semantic_tokens(&result);
+
+        let string_token = decoded
+            .iter()
+            .find(|(_, _, _, token_type, _)| *token_type == 2)
+            .expect("string token should be encoded");
+        assert_eq!(string_token.1, 0);
+        assert_eq!(string_token.2, 4);
+
+        let number_token = decoded
+            .iter()
+            .find(|(_, _, _, token_type, _)| *token_type == 1)
+            .expect("number token should be encoded");
+        assert_eq!(number_token.1, 7);
+        assert_eq!(number_token.2, 1);
     }
 
     // ── Hover helpers ────────────────────────────────────────────────
@@ -3009,6 +3117,44 @@ mod tests {
         // "let" occupies cols 1-3 (1-indexed), so col 4 (1-indexed) = Position(0,3) is past end
         let found = find_token_at_position(&tokens, Position::new(0, 3));
         assert!(found.is_none());
+    }
+
+    #[test]
+    fn lsp_to_char_position_handles_surrogate_pairs() {
+        let source = "a😀b";
+        // Position inside the surrogate pair snaps to the emoji character.
+        assert_eq!(
+            lsp_to_char_position(Position::new(0, 2), source),
+            Position::new(0, 1)
+        );
+        // Position after the surrogate pair maps to the next character.
+        assert_eq!(
+            lsp_to_char_position(Position::new(0, 3), source),
+            Position::new(0, 2)
+        );
+    }
+
+    #[test]
+    fn span_to_range_uses_utf16_columns() {
+        let source = "a😀b";
+        let range = span_to_range_in_source(
+            Span {
+                line: 1,
+                col: 3,
+                length: 1,
+            },
+            source,
+        );
+        assert_eq!(range.start, Position::new(0, 3));
+        assert_eq!(range.end, Position::new(0, 4));
+    }
+
+    #[test]
+    fn selection_range_document_end_uses_utf16_length() {
+        let tokens = scan("");
+        let result = compute_selection_ranges(&tokens, &[Position::new(0, 0)], "😀");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].range.end, Position::new(0, 2));
     }
 
     #[test]
@@ -3175,15 +3321,17 @@ mod tests {
     #[test]
     fn inlay_hints_no_args() {
         // println() with no arguments should produce no hints
-        let tokens = scan("println()");
-        let hints = compute_inlay_hints(&tokens, None, &full_range());
+        let source = "println()";
+        let tokens = scan(source);
+        let hints = compute_inlay_hints(&tokens, None, &full_range(), source);
         assert!(hints.is_empty());
     }
 
     #[test]
     fn inlay_hints_empty_source() {
-        let tokens = scan("");
-        let hints = compute_inlay_hints(&tokens, None, &full_range());
+        let source = "";
+        let tokens = scan(source);
+        let hints = compute_inlay_hints(&tokens, None, &full_range(), source);
         assert!(hints.is_empty());
     }
 
@@ -3197,8 +3345,9 @@ mod tests {
 
     #[test]
     fn semantic_tokens_only_comments() {
-        let tokens = scan("// first comment\n// second comment");
-        let result = encode_semantic_tokens(&tokens, None);
+        let source = "// first comment\n// second comment";
+        let tokens = scan(source);
+        let result = encode_semantic_tokens(&tokens, None, source);
         assert!(!result.is_empty());
         for tok in &result {
             assert_eq!(tok.token_type, 3, "all tokens should be COMMENT type");
@@ -3335,5 +3484,68 @@ mod tests {
                 .any(|item| item.get("label") == Some(&json!("len"))),
             "dot completion should contain native methods"
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn protocol_rename_unicode_identifier_uses_character_length() {
+        let mut service = test_lsp_service();
+        initialize_service(&mut service).await;
+
+        let uri = unique_test_uri("rename_unicode");
+        let open = Request::build("textDocument/didOpen")
+            .params(json!({
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": "gaul",
+                    "version": 1,
+                    "text": "let café = 1\ncafé"
+                }
+            }))
+            .finish();
+        let open_response = service
+            .ready()
+            .await
+            .expect("service should be ready for didOpen")
+            .call(open)
+            .await
+            .expect("didOpen should succeed");
+        assert!(open_response.is_none());
+
+        let rename = Request::build("textDocument/rename")
+            .id(4)
+            .params(json!({
+                "textDocument": {"uri": uri},
+                "position": {"line": 1, "character": 0},
+                "newName": "bean"
+            }))
+            .finish();
+        let rename_response = service
+            .ready()
+            .await
+            .expect("service should be ready for rename")
+            .call(rename)
+            .await
+            .expect("rename should succeed")
+            .expect("rename should return a response");
+        assert!(
+            rename_response.error().is_none(),
+            "rename returned an error"
+        );
+        let rename_result = rename_response
+            .result()
+            .expect("rename should include result");
+        let edits = rename_result["changes"][uri.as_str()]
+            .as_array()
+            .expect("rename result should include edits for the open file");
+        assert_eq!(edits.len(), 2);
+        for edit in edits {
+            let start = edit["range"]["start"]["character"]
+                .as_u64()
+                .expect("start character should be numeric");
+            let end = edit["range"]["end"]["character"]
+                .as_u64()
+                .expect("end character should be numeric");
+            assert_eq!(end - start, 4, "rename range should span `café`");
+        }
     }
 }
