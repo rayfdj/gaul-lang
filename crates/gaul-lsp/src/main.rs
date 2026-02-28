@@ -789,7 +789,7 @@ fn emit_param_hint(
     let after_start = hint_pos.line > range.start.line
         || (hint_pos.line == range.start.line && hint_pos.character >= range.start.character);
     let before_end = hint_pos.line < range.end.line
-        || (hint_pos.line == range.end.line && hint_pos.character <= range.end.character);
+        || (hint_pos.line == range.end.line && hint_pos.character < range.end.character);
     if !after_start || !before_end {
         return;
     }
@@ -2137,6 +2137,11 @@ mod tests {
     use super::*;
     use gaul_core::keywords::load_keywords;
     use gaul_core::scanner::Scanner;
+    use serde_json::json;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use tower::Service;
+    use tower::ServiceExt;
+    use tower_lsp::jsonrpc::Request;
 
     fn scan(source: &str) -> Vec<Token> {
         let keywords = load_keywords(None).unwrap();
@@ -2244,6 +2249,94 @@ mod tests {
         resolver.resolve(&mut program).unwrap();
         let symbols = analysis::build_symbol_table(&program);
         (all_tokens, symbols)
+    }
+
+    fn decode_semantic_tokens(tokens: &[SemanticToken]) -> Vec<(u32, u32, u32, u32, u32)> {
+        let mut decoded = Vec::with_capacity(tokens.len());
+        let mut line = 0u32;
+        let mut start = 0u32;
+        for token in tokens {
+            line += token.delta_line;
+            if token.delta_line == 0 {
+                start += token.delta_start;
+            } else {
+                start = token.delta_start;
+            }
+            decoded.push((
+                line,
+                start,
+                token.length,
+                token.token_type,
+                token.token_modifiers_bitset,
+            ));
+        }
+        decoded
+    }
+
+    fn test_lsp_service() -> LspService<Backend> {
+        let keywords = load_keywords(None).unwrap();
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            keywords: RwLock::new(keywords),
+            documents: Mutex::new(HashMap::new()),
+            workspace_roots: Mutex::new(Vec::new()),
+            workspace_index: Mutex::new(HashMap::new()),
+        });
+        service
+    }
+
+    async fn initialize_service(service: &mut LspService<Backend>) -> serde_json::Value {
+        let root_uri = Url::from_file_path(std::env::temp_dir())
+            .expect("temp dir should produce file URI")
+            .to_string();
+        let initialize = Request::build("initialize")
+            .id(1)
+            .params(json!({
+                "capabilities": {},
+                "workspaceFolders": [{"uri": root_uri, "name": "tmp"}]
+            }))
+            .finish();
+
+        let response = service
+            .ready()
+            .await
+            .expect("service should be ready")
+            .call(initialize)
+            .await
+            .expect("initialize call should succeed")
+            .expect("initialize should return a response");
+
+        assert!(response.error().is_none(), "initialize returned error");
+        let result = response
+            .result()
+            .cloned()
+            .expect("initialize should include result");
+
+        let initialized = Request::build("initialized").params(json!({})).finish();
+        let initialized_response = service
+            .ready()
+            .await
+            .expect("service should be ready after initialize")
+            .call(initialized)
+            .await
+            .expect("initialized notification should succeed");
+        assert!(initialized_response.is_none());
+
+        result
+    }
+
+    fn unique_test_uri(name: &str) -> Url {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "gaul_lsp_protocol_{}_{}_{}.gaul",
+            name,
+            std::process::id(),
+            nonce
+        ));
+        Url::from_file_path(path).expect("temporary path should produce file URI")
     }
 
     #[test]
@@ -2386,6 +2479,17 @@ mod tests {
             end: Position::new(0, 7), // just before argument token at char 8
         };
         let hints = compute_inlay_hints(&tokens, None, &narrow_range);
+        assert!(hints.is_empty());
+    }
+
+    #[test]
+    fn inlay_hints_excludes_end_boundary_position() {
+        let tokens = scan("println(42)");
+        let end_boundary = Range {
+            start: Position::new(0, 0),
+            end: Position::new(0, 8), // hint starts here; LSP end is exclusive
+        };
+        let hints = compute_inlay_hints(&tokens, None, &end_boundary);
         assert!(hints.is_empty());
     }
 
@@ -2815,10 +2919,22 @@ mod tests {
     fn semantic_tokens_native_function() {
         let tokens = scan("println(1)");
         let result = encode_semantic_tokens(&tokens, None);
-        // "println" should be type 4 (VARIABLE) without symbols—no ref_map to refine
-        // With a symbol table, it would get type 6 + modifier. Test the no-symbol path:
-        let println_tok = result.iter().find(|t| t.length == 7).unwrap();
-        assert_eq!(println_tok.token_type, 4); // VARIABLE fallback
+        let println_src = tokens
+            .iter()
+            .find(|t| t.token_type == TokenType::Identifier && t.lexeme == "println")
+            .expect("source should contain println token");
+        let println_line = println_src.span.line.saturating_sub(1) as u32;
+        let println_col = println_src.span.col.saturating_sub(1) as u32;
+        let decoded = decode_semantic_tokens(&result);
+        let println_tok = decoded
+            .iter()
+            .find(|(line, col, length, _, _)| {
+                *line == println_line
+                    && *col == println_col
+                    && *length == println_src.span.length as u32
+            })
+            .expect("semantic output should include println");
+        assert_eq!(println_tok.3, 4); // VARIABLE fallback
 
         // Now test with an empty symbol table so the native-function branch fires
         let empty_symbols = SymbolTable {
@@ -2826,9 +2942,17 @@ mod tests {
             references: vec![],
         };
         let result2 = encode_semantic_tokens(&tokens, Some(&empty_symbols));
-        let println_tok2 = result2.iter().find(|t| t.length == 7).unwrap();
-        assert_eq!(println_tok2.token_type, 6); // FUNCTION
-        assert_eq!(println_tok2.token_modifiers_bitset, 0b10); // DEFAULT_LIBRARY
+        let decoded2 = decode_semantic_tokens(&result2);
+        let println_tok2 = decoded2
+            .iter()
+            .find(|(line, col, length, _, _)| {
+                *line == println_line
+                    && *col == println_col
+                    && *length == println_src.span.length as u32
+            })
+            .expect("semantic output should include println with symbols");
+        assert_eq!(println_tok2.3, 6); // FUNCTION
+        assert_eq!(println_tok2.4, 0b10); // DEFAULT_LIBRARY
     }
 
     #[test]
@@ -2934,12 +3058,13 @@ mod tests {
 
     #[test]
     fn symbol_table_contains_imports() {
-        // Imports require file resolution to fully work; verify the scanner/parser
-        // recognizes the import token and the symbol kind exists.
-        let tokens = scan("import { foo } from \"bar\"");
-        assert!(tokens.iter().any(|t| t.token_type == TokenType::Import));
-        // SymbolKind::Import variant exists — this is a compile-time check
-        let _kind = analysis::SymbolKind::Import;
+        let (_, symbols) = analyze_source("import { foo } from \"bar\"");
+        assert!(
+            symbols
+                .definitions
+                .iter()
+                .any(|d| d.name == "foo" && d.kind == analysis::SymbolKind::Import)
+        );
     }
 
     #[test]
@@ -3087,5 +3212,128 @@ mod tests {
         // Whitespace at Position(0, 3)
         let result = resolve_token_to_def(&tokens, &symbols, Position::new(0, 3));
         assert!(result.is_none());
+    }
+
+    // ── Protocol integration ─────────────────────────────────────────
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn protocol_initialize_advertises_expected_capabilities() {
+        let mut service = test_lsp_service();
+        let result = initialize_service(&mut service).await;
+        let caps = &result["capabilities"];
+        assert_eq!(caps["inlayHintProvider"], json!(true));
+        assert_eq!(
+            caps["workspace"]["workspaceFolders"]["supported"],
+            json!(true)
+        );
+        assert_eq!(
+            caps["workspace"]["workspaceFolders"]["changeNotifications"],
+            json!(true)
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn protocol_hover_after_did_open_returns_symbol_info() {
+        let mut service = test_lsp_service();
+        initialize_service(&mut service).await;
+
+        let uri = unique_test_uri("hover");
+        let open = Request::build("textDocument/didOpen")
+            .params(json!({
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": "gaul",
+                    "version": 1,
+                    "text": "let x = 1\nx"
+                }
+            }))
+            .finish();
+        let open_response = service
+            .ready()
+            .await
+            .expect("service should be ready for didOpen")
+            .call(open)
+            .await
+            .expect("didOpen should succeed");
+        assert!(open_response.is_none());
+
+        let hover = Request::build("textDocument/hover")
+            .id(2)
+            .params(json!({
+                "textDocument": {"uri": uri},
+                "position": {"line": 1, "character": 0}
+            }))
+            .finish();
+        let hover_response = service
+            .ready()
+            .await
+            .expect("service should be ready for hover")
+            .call(hover)
+            .await
+            .expect("hover should succeed")
+            .expect("hover should return a response");
+        assert!(hover_response.error().is_none(), "hover returned an error");
+        let hover_result = hover_response
+            .result()
+            .expect("hover should include a result")
+            .to_string();
+        assert!(hover_result.contains("x"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn protocol_dot_completion_returns_methods() {
+        let mut service = test_lsp_service();
+        initialize_service(&mut service).await;
+
+        let uri = unique_test_uri("completion");
+        let open = Request::build("textDocument/didOpen")
+            .params(json!({
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": "gaul",
+                    "version": 1,
+                    "text": "let s = \"hi\"\ns."
+                }
+            }))
+            .finish();
+        let open_response = service
+            .ready()
+            .await
+            .expect("service should be ready for didOpen")
+            .call(open)
+            .await
+            .expect("didOpen should succeed");
+        assert!(open_response.is_none());
+
+        let completion = Request::build("textDocument/completion")
+            .id(3)
+            .params(json!({
+                "textDocument": {"uri": uri},
+                "position": {"line": 1, "character": 2},
+                "context": {"triggerKind": 2, "triggerCharacter": "."}
+            }))
+            .finish();
+        let completion_response = service
+            .ready()
+            .await
+            .expect("service should be ready for completion")
+            .call(completion)
+            .await
+            .expect("completion should succeed")
+            .expect("completion should return a response");
+        assert!(
+            completion_response.error().is_none(),
+            "completion returned an error"
+        );
+        let items = completion_response
+            .result()
+            .and_then(|v| v.as_array())
+            .expect("completion result should be an array");
+        assert!(
+            items
+                .iter()
+                .any(|item| item.get("label") == Some(&json!("len"))),
+            "dot completion should contain native methods"
+        );
     }
 }

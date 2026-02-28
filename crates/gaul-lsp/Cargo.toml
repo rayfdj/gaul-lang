@@ -12,3 +12,6 @@ gaul-core = { path = "../gaul-core" }
 tower-lsp = "0.20"
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
+
+[dev-dependencies]
+tower = { version = "0.4", features = ["util"] }
